@@ -52,6 +52,25 @@ export function safeNext(next: string | null | undefined): string {
   } catch {
     return "/";
   }
-  if (url.origin !== base) return "/";
-  return url.pathname + url.search + url.hash;
+  // Dot segments collapse during parsing ("/.//evil.com" -> pathname "//evil.com"), so check the resolved
+  // pathname too: a leading "//" or "/\\" would be read as a protocol-relative URL by the redirect.
+  if (url.origin !== base || url.pathname.startsWith("//") || url.pathname.startsWith("/\\")) return "/";
+  const out = url.pathname + url.search + url.hash;
+  // Belt and braces: the result must resolve to the same origin when used as a relative Location.
+  try {
+    if (new URL(out, base).origin !== base) return "/";
+  } catch {
+    return "/";
+  }
+  return out;
+}
+
+// The daily purge cron (/api/cron/purge) authenticates with `Authorization: Bearer ${CRON_SECRET}`, which Vercel
+// sends on cron invocations. False when CRON_SECRET is unset or shorter than 16 characters.
+export const CRON_PURGE_PATH = "/api/cron/purge";
+
+export function cronAuthorized(authorization: string | null | undefined): boolean {
+  const secret = process.env.CRON_SECRET;
+  if (!secret || secret.length < 16 || !authorization) return false;
+  return safeEqual(authorization, `Bearer ${secret}`);
 }

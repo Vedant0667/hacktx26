@@ -1,16 +1,14 @@
 "use client";
-// `/`: create a lobby on a decision point, or join one with a 4-letter code.
+// `/`: join a lobby with its 4-letter code, or create one on a decision point. Phone first: join sits on
+// top because most people arrive holding a phone; the host block follows under a 2 px rule.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { COPY } from "@/lib/copy";
 import { ApiError, api } from "@/lib/client/api";
-import { rememberHost, rememberHostToken, rememberName } from "@/lib/client/identity";
+import { createErrorText, createLobby } from "@/lib/client/session";
 import type { DecisionIndexEntry } from "@/lib/types";
-import { Button, Label } from "./ui";
-
-const inputCls =
-  "h-14 w-full rounded-ctl border border-rule bg-surface px-4 text-24 text-ink placeholder:text-ink-3 hover:bg-surface-2 aria-invalid:border-flag-red";
+import { Button, ErrorText, Field, FieldLabel } from "./ui";
 
 export function HomeScreen({ index }: { index: DecisionIndexEntry[] }) {
   const router = useRouter();
@@ -28,22 +26,12 @@ export function HomeScreen({ index }: { index: DecisionIndexEntry[] }) {
     setCreateErr(null);
     setBusy("create");
     try {
-      const lobby = await api.createLobby(decision, n);
-      rememberName(lobby.code, n);
-      rememberHost(lobby.code);
-      // Shown once by the server; without it this browser can't advance the lobby's phases.
-      rememberHostToken(lobby.code, lobby.host_token);
+      // Stores the host token (shown once) so this browser can advance the lobby's phases.
+      const lobby = await createLobby(decision, n);
       router.push(`/host/${lobby.code}`);
     } catch (err) {
       setBusy(null);
-      const status = err instanceof ApiError ? err.status : -1;
-      setCreateErr(
-        status === 0
-          ? COPY.error.connectionLost
-          : status === 429
-            ? COPY.home.createLimited((err as ApiError).retryAfter)
-            : COPY.home.createFailed,
-      );
+      setCreateErr(createErrorText(err));
     }
   }
 
@@ -69,105 +57,122 @@ export function HomeScreen({ index }: { index: DecisionIndexEntry[] }) {
   }
 
   return (
-    <main className="mx-auto grid min-h-dvh max-w-[1440px] grid-cols-1 gap-12 px-4 py-8 md:grid-cols-12 md:px-12 md:py-12">
-      <section className="flex flex-col gap-8 md:col-span-7">
-        <div className="flex flex-col gap-4">
-          <h1 className="text-56 font-extrabold uppercase stretch-125 tracking-hero leading-hero md:text-96">{COPY.home.title}</h1>
-          <p className="max-w-[40ch] text-24 text-ink-2">{COPY.home.subtitle}</p>
-        </div>
+    <main className="mx-auto grid min-h-dvh w-full max-w-[1440px] grid-cols-4 content-start gap-x-4 pb-[max(24px,env(safe-area-inset-bottom))] md:grid-cols-12 md:gap-x-6 md:px-14 md:pb-12">
+      <div className="meta col-span-4 flex h-13 items-center justify-between px-5 md:col-span-12 md:h-24 md:px-0 md:text-lg">
+        {/* Wordmark: plain text, never a logo. */}
+        <span className="font-sans text-lg font-black normal-case tracking-tight md:text-2xl">{COPY.home.title}</span>
+        <Link href="/leaderboard" className="underline decoration-2 underline-offset-4 hover:decoration-ink-3">
+          {COPY.homeUi.leaderboardTitle}
+        </Link>
+      </div>
 
-        <form onSubmit={create} className="flex flex-col gap-6" noValidate>
-          <fieldset className="flex flex-col gap-2">
-            <legend className="mb-2">
-              <Label>{COPY.home.decisionLabel}</Label>
-            </legend>
-            <div role="radiogroup" className="flex flex-col gap-0.5">
+      <header className="col-span-4 flex flex-col gap-4 px-5 pt-4 md:col-span-8 md:px-0 md:pt-6">
+        <h1 className="display text-3xl md:text-5xl">{COPY.homeUi.joinTitle}.</h1>
+        <p className="max-w-[36ch] text-md md:text-xl">{COPY.home.subtitle}</p>
+      </header>
+
+      <section className="col-span-4 mt-8 flex flex-col md:col-span-5 md:mt-14">
+        <form onSubmit={join} className="flex flex-col gap-3" noValidate>
+          <div className="flex flex-col gap-2 px-5 md:px-0">
+            <FieldLabel htmlFor="room-code">{COPY.home.joinLabel}</FieldLabel>
+            <CodeBoxes value={code} invalid={!!joinErr} onChange={setCode} />
+            <p id="join-hint" className="text-sm text-ink-2">
+              {COPY.homeUi.joinHint}
+            </p>
+            <ErrorText id="join-err">{joinErr}</ErrorText>
+          </div>
+          <Button type="submit" size="lg" className="h-24! w-full justify-between! px-6 text-2xl! font-black" busy={busy === "join"}>
+            {COPY.home.join}
+            <span className="nums text-xs font-medium text-[#bdbdbd]">{code.padEnd(4, "·")}</span>
+          </Button>
+        </form>
+      </section>
+
+      <section className="col-span-4 mt-12 flex flex-col px-5 md:col-span-6 md:col-start-7 md:mt-14 md:px-0">
+        <form onSubmit={create} className="flex flex-col gap-6 border-t-2 border-ink pt-4" noValidate>
+          <div className="flex flex-col gap-1">
+            <h2 className="text-xl font-black tracking-tight md:text-2xl">{COPY.homeUi.hostTitle}</h2>
+            <p className="text-sm text-ink-2 md:text-base">{COPY.homeUi.hostHint}</p>
+          </div>
+          <fieldset className="flex flex-col">
+            <legend className="meta mb-2 text-ink-2">{COPY.home.decisionLabel}</legend>
+            <div role="radiogroup" className="flex flex-col border-t border-line">
               {index.map((d) => {
                 const on = d.id === decision;
                 return (
                   <label
                     key={d.id}
-                    className={`flex h-14 cursor-pointer items-center gap-4 px-4 text-20 transition-colors duration-[120ms] has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink ${
-                      on ? "bg-ink text-bg" : "bg-surface hover:bg-surface-2"
+                    className={`flex min-h-16 cursor-pointer items-center gap-4 border-b px-3 transition-colors duration-150 has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink ${
+                      on ? "border-ink bg-ink text-white" : "border-line hover:bg-soft"
                     }`}
                   >
-                    <input
-                      type="radio"
-                      name="decision"
-                      value={d.id}
-                      checked={on}
-                      onChange={() => setDecision(d.id)}
-                      className="sr-only"
-                    />
-                    <span className="nums w-16 font-bold uppercase stretch-75">{d.race.match(/\d{4}/)?.[0]}</span>
-                    <span className="font-semibold">{d.title}</span>
+                    <input type="radio" name="decision" value={d.id} checked={on} onChange={() => setDecision(d.id)} className="sr-only" />
+                    <span className="nums w-12 shrink-0 text-sm font-bold">{d.race.match(/\d{4}/)?.[0]}</span>
+                    <span className="min-w-0 flex-1 text-base font-bold leading-snug">{d.title}</span>
+                    <span aria-hidden className={`size-4 shrink-0 border-2 ${on ? "border-white bg-white" : "border-ink"}`} />
                   </label>
                 );
               })}
             </div>
           </fieldset>
-
-          <div className="flex flex-col gap-2">
-            <label htmlFor="host-name">
-              <Label>{COPY.home.nameLabel}</Label>
-            </label>
-            <input
+          <div className="flex flex-col gap-1">
+            <FieldLabel htmlFor="host-name">{COPY.home.nameLabel}</FieldLabel>
+            <Field
               id="host-name"
-              className={inputCls}
               value={name}
               maxLength={24}
               autoComplete="nickname"
               placeholder={COPY.home.namePlaceholder}
               onChange={(e) => setName(e.target.value)}
               aria-invalid={!!createErr || undefined}
-              aria-describedby={createErr ? "create-err" : undefined}
+              aria-describedby="create-err"
             />
-            {createErr && (
-              <p id="create-err" className="text-20 text-flag-red">
-                {createErr}
-              </p>
-            )}
           </div>
-          <Button type="submit" className="h-14 self-start text-20" busy={busy === "create"} busyLabel={COPY.home.creating} disabled={!decision}>
+          <ErrorText id="create-err">{createErr}</ErrorText>
+          <Button type="submit" variant="secondary" size="lg" className="w-full md:w-auto md:self-start" busy={busy === "create"} busyLabel={COPY.home.creating} disabled={!decision}>
             {COPY.home.create}
           </Button>
         </form>
       </section>
 
-      <section className="flex flex-col gap-8 md:col-span-5 md:border-l md:border-rule md:pl-12">
-        <form onSubmit={join} className="flex flex-col gap-2" noValidate>
-          <label htmlFor="room-code">
-            <Label>{COPY.home.joinLabel}</Label>
-          </label>
-          <div className="flex gap-2">
-            <input
-              id="room-code"
-              className={`${inputCls} nums h-[72px] min-w-0 text-40 font-extrabold uppercase stretch-125 tracking-code`}
-              value={code}
-              maxLength={4}
-              autoCapitalize="characters"
-              autoComplete="off"
-              spellCheck={false}
-              inputMode="text"
-              onChange={(e) => setCode(e.target.value.replace(/[^a-z]/gi, "").toUpperCase())}
-              aria-invalid={!!joinErr || undefined}
-              aria-describedby={joinErr ? "join-err" : undefined}
-            />
-            <Button type="submit" className="h-[72px] shrink-0 text-20" busy={busy === "join"}>
-              {COPY.home.join}
-            </Button>
-          </div>
-          {joinErr && (
-            <p id="join-err" className="text-20 text-flag-red">
-              {joinErr}
-            </p>
-          )}
-        </form>
-        <Link href="/leaderboard" className="self-start text-20 text-ink-2 underline underline-offset-4 hover:text-ink">
-          {COPY.home.leaderboard}
-        </Link>
-        <p className="mt-auto text-14 text-ink-3">{COPY.home.footer}</p>
-      </section>
+      <footer className="col-span-4 mt-12 border-t border-line px-5 pt-4 md:col-span-12 md:mt-16 md:px-0">
+        <p className="text-xs text-ink-2">{COPY.home.footer}</p>
+      </footer>
     </main>
+  );
+}
+
+// Four square cells over one real input: typing, paste, autofill and screen readers all hit the input.
+function CodeBoxes({ value, invalid, onChange }: { value: string; invalid: boolean; onChange: (v: string) => void }) {
+  const [focus, setFocus] = useState(false);
+  return (
+    <div className="relative grid grid-cols-4 gap-2">
+      {Array.from({ length: 4 }, (_, i) => (
+        <div
+          key={i}
+          aria-hidden
+          className={`nums grid h-21 place-items-center border-ink text-4xl font-bold transition-[border-width] duration-100 ${
+            invalid || (focus && i === Math.min(value.length, 3)) ? "border-4" : "border-2"
+          }`}
+        >
+          {value[i] ?? ""}
+        </div>
+      ))}
+      <input
+        id="room-code"
+        className="absolute inset-0 h-full w-full cursor-text bg-transparent text-transparent caret-transparent outline-none selection:bg-transparent"
+        value={value}
+        maxLength={4}
+        autoCapitalize="characters"
+        autoComplete="off"
+        spellCheck={false}
+        inputMode="text"
+        onFocus={() => setFocus(true)}
+        onBlur={() => setFocus(false)}
+        onChange={(e) => onChange(e.target.value.replace(/[^a-z]/gi, "").toUpperCase().slice(0, 4))}
+        aria-invalid={invalid || undefined}
+        aria-describedby="join-err join-hint"
+      />
+    </div>
   );
 }

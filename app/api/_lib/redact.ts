@@ -7,6 +7,11 @@ export function isRevealed(phase: string): boolean {
 
 export function redactForPhase(state: LobbyStateResponse): LobbyStateResponse {
   if (isRevealed(state.phase)) return state;
+  return redactSubmissions(state);
+}
+
+// The pre-reveal view in any phase: who has called, nothing about what or why.
+export function redactSubmissions(state: LobbyStateResponse): LobbyStateResponse {
   return {
     ...state,
     // Re-sorted by name: the stored order is by score, which would give the answer away.

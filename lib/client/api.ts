@@ -1,5 +1,6 @@
 // Browser-side fetchers for the lobby API (app/api/**) and the blind static race data (public/data/**).
 import type { LobbyStateResponse } from "@/lib/db";
+import { recallHostToken, recallName, recallPlayerToken } from "./identity";
 import type { GroundTruthFile } from "./mode";
 import type { Call, DecisionIndexEntry, DecisionPoint, LapFrame, Submission } from "@/lib/types";
 
@@ -111,6 +112,17 @@ export type JoinResponse = LobbyStateResponse & { player_token: string | null; r
 
 const enc = encodeURIComponent;
 
+// /reveal and leaderboard?lobby= need proof this device is in the lobby: the host token if it holds one,
+// otherwise the player token for the name it joined as.
+function lobbyAuth(code: string | null | undefined): Record<string, string> | undefined {
+  if (!code) return undefined;
+  const host = recallHostToken(code);
+  if (host) return { "x-host-token": host };
+  const name = recallName(code);
+  const player = name ? recallPlayerToken(code, name) : null;
+  return player ? { "x-player-token": player } : undefined;
+}
+
 export const api = {
   // host_token comes back once; keep it (identity.rememberHostToken) to advance phases.
   createLobby: (decision_id: string, host_name: string) =>
@@ -118,7 +130,8 @@ export const api = {
   // consent is the ticked checkbox; the route rejects a join without it. playerToken proves a rejoin.
   join: (code: string, name: string, consent: true, playerToken?: string | null) =>
     post<JoinResponse>(`/api/lobby/${enc(code)}/join`, { name, consent }, tokenHeader("x-player-token", playerToken)),
-  lobby: (code: string) => request<LobbyStateResponse>(`/api/lobby/${enc(code)}`),
+  // The token matters after the reveal: without it the server redacts the calls.
+  lobby: (code: string) => request<LobbyStateResponse>(`/api/lobby/${enc(code)}`, { headers: lobbyAuth(code) }),
   phase: (code: string, phase: string, hostToken: string | null) =>
     post<LobbyStateResponse>(`/api/lobby/${enc(code)}/phase`, { phase }, tokenHeader("x-host-token", hostToken)),
   // `call` is the button the player picked; the route currently ignores it and parses the transcript.
@@ -127,12 +140,17 @@ export const api = {
     body: { player_name: string; transcript: string; seconds_to_call: number; call: Call | null },
     playerToken: string | null,
   ) => post<SubmitResponse>(`/api/lobby/${enc(code)}/submit`, body, tokenHeader("x-player-token", playerToken)),
-  reveal: (code: string) => request<RevealResponse>(`/api/lobby/${enc(code)}/reveal`),
+  reveal: (code: string) => request<RevealResponse>(`/api/lobby/${enc(code)}/reveal`, { headers: lobbyAuth(code) }),
+  // Host only: removes a player from the lobby (x-host-token).
+  kick: (code: string, name: string, hostToken: string | null) =>
+    post<LobbyStateResponse>(`/api/lobby/${enc(code)}/kick`, { name }, tokenHeader("x-host-token", hostToken)),
   parse: (transcript: string) => post<{ call: Call | null; factors_named: string[] }>("/api/parse", { transcript }),
-  camps: (code: string) => request<CampsResponse>(`/api/lobby/${enc(code)}/camps`),
+  camps: (code: string) => request<CampsResponse>(`/api/lobby/${enc(code)}/camps`, { headers: lobbyAuth(code) }),
   // Pass the viewer's lobby: team, engine and calls come back only once that lobby has revealed.
   leaderboard: (decisionId: string, lobby?: string | null) =>
-    request<LeaderboardResponse>(`/api/leaderboard?decision_id=${enc(decisionId)}${lobby ? `&lobby=${enc(lobby)}` : ""}`),
+    request<LeaderboardResponse>(`/api/leaderboard?decision_id=${enc(decisionId)}${lobby ? `&lobby=${enc(lobby)}` : ""}`, {
+      headers: lobbyAuth(lobby),
+    }),
 };
 
 const staticCache = new Map<string, Promise<unknown>>();

@@ -22,8 +22,14 @@ export async function guardLobbyRead(req: Request, code: string, withState: bool
     missWindowS: LOBBY_MISS_WINDOW_S,
     withState,
   });
-  if (g.reads > LOBBY_READ_LIMIT || g.misses > LOBBY_MISS_LIMIT) throw tooMany(g.retry_after_s);
+  if (lobbyReadBlocked(g)) throw tooMany(g.retry_after_s);
   return g;
+}
+
+// The miss limit blocks only lookups of codes that do not exist, so a burst of typos on a shared network
+// cannot lock that network out of a real lobby (re-audit R3). Existing codes see only the read limit.
+export function lobbyReadBlocked(g: Pick<LobbyReadGuard, "found" | "reads" | "misses">): boolean {
+  return g.reads > LOBBY_READ_LIMIT || (!g.found && g.misses > LOBBY_MISS_LIMIT);
 }
 
 export async function guardLobbyCreate(req: Request): Promise<void> {

@@ -1,10 +1,11 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { getLobbyMeta, getSubmission, getTotals, insertSubmission } from "@/lib/db";
+import { getSubmission, getTotals, insertSubmission, claimSubmission, type DriverSubmission } from "@/lib/db";
+import { decisionForDriver } from "@/lib/data";
 import { parseCall } from "@/lib/muse";
 import { CALL_WINDOW_S, percentile, scoreCall } from "@/lib/scoring";
-import type { Submission } from "@/lib/types";
-import { handle, HttpError, normalizeCode, readBody, requireDecision, tokenMatches } from "../../../_lib/http";
+import { lobbyMetaGuarded } from "../../../_lib/access";
+import { driverFor, handle, HttpError, normalizeCode, readBody, requireDecision, tokenMatches } from "../../../_lib/http";
 
 const REVEAL_GRACE_S = 2;
 
@@ -17,32 +18,40 @@ const Body = z.object({
   call: z.enum(["BOX", "STAY"]).nullable().optional(),
 });
 
-// Requires x-player-token (from join) for player_name.
+// Requires x-player-token (from join) for player_name. Scored against the player's own car (Round 4).
 // Response: { submission, percentile, lobby_rank, lobby_players_submitted, duplicate }.
 export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobby/[code]/submit">) => {
   const code = normalizeCode((await ctx.params).code);
   const { player_name, transcript, call } = await readBody(req, Body);
 
-  const meta = await getLobbyMeta(code, player_name);
-  if (!meta) throw new HttpError(404, "Lobby not found");
-  if (!meta.is_player) throw new HttpError(403, `${player_name} has not joined lobby ${code}`);
-  if (!tokenMatches(req.headers.get("x-player-token"), meta.player_token_hash)) {
-    throw new HttpError(403, `This device is not signed in as ${player_name}`);
+  // Miss-limited lookup; an unknown code answers 403 like a wrong token, so it does not reveal which codes exist.
+  const denied = `This device is not signed in as ${player_name} in this lobby`;
+  const { meta } = await lobbyMetaGuarded(req, code, player_name, denied);
+  if (!meta.is_player || !tokenMatches(req.headers.get("x-player-token"), meta.player_token_hash)) {
+    throw new HttpError(403, denied);
   }
   // Calls count during the decision, plus a short grace for auto-sends in flight when the host reveals.
   const late = meta.phase === "reveal" && meta.phase_elapsed_s < REVEAL_GRACE_S;
   if (meta.phase !== "decision" && !late) throw new HttpError(409, "Calls are closed for this moment");
   const seconds_to_call = meta.phase === "decision" ? Math.min(CALL_WINDOW_S, Math.round(meta.phase_elapsed_s * 10) / 10) : CALL_WINDOW_S;
-  const decision = await requireDecision(meta.decision_id);
+  const base = await requireDecision(meta.decision_id);
+  const driver = await driverFor(base.id, meta.player_driver_code, meta.driver_code);
+  const decision = decisionForDriver(base, driver);
 
   // First submission wins. A re-submit returns the stored row before any Muse call is made.
   const existing = meta.has_submitted ? await getSubmission(code, player_name, decision.id) : null;
-  let submission: Submission;
+  let submission: DriverSubmission;
   let duplicate: boolean;
   if (existing) {
     submission = existing;
     duplicate = true;
   } else {
+    if (!(await claimSubmission(code, player_name, decision.id))) {
+      // Another request for this player is already grading; that one returns the result.
+      const stored = await getSubmission(code, player_name, decision.id);
+      if (!stored) throw new HttpError(409, "Your call is already in and being graded");
+      return Response.json({ submission: { ...stored, score_call: 0, score_reasoning: 0, total: 0 }, percentile: null, lobby_rank: null, lobby_players_submitted: null, duplicate: true });
+    }
     // Muse grades which factors were named; the phone's BOX / STAY button still wins for the call.
     const parsed = await parseCall(transcript, decision, { lobbyCode: code });
     const finalCall = call ?? parsed.call;
@@ -57,7 +66,8 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
       transcript: parsed.transcript,
       seconds_to_call, // display and tie-break only; it does not affect the score
       ...score,
-    } satisfies Submission));
+      driver_code: driver.code,
+    } satisfies DriverSubmission));
   }
 
   // The score gives away the answer, so it stays hidden until the reveal; the phone reads it from the leaderboard then.

@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { claimMuseCamps, getLobbyState, getMuseCamps, saveMuseCamps, type LobbyStateResponse } from "@/lib/db";
 import { museCamps, parseCallLocal, type CampLabel } from "@/lib/muse";
 import type { Submission } from "@/lib/types";
+import { requireLobbyMember } from "../../../_lib/access";
 import { handle, HttpError, normalizeCode, requireDecision } from "../../../_lib/http";
 import { isRevealed } from "../../../_lib/redact";
 
@@ -48,11 +49,14 @@ async function campLabels(state: LobbyStateResponse): Promise<CampLabel[] | null
 // Response: { code, decision_id, phase, submitted, by_call: {BOX, STAY, none},
 //             camps: [{factor, count, players, quotes}] (largest first), no_factor: {count, players, quotes},
 //             labels: [{label, call: BOX|STAY|MIXED, players, count}] | null, labels_source: "muse" | "factors" }
-export const GET = handle(async (_req: NextRequest, ctx: RouteContext<"/api/lobby/[code]/camps">) => {
+// Host (x-host-token) or a player of this lobby (x-player-token) only; 403 otherwise, also for an unknown code
+// (miss-limited). The calls and spoken reasons are the answer, so they stay inside the lobby.
+export const GET = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobby/[code]/camps">) => {
   const code = normalizeCode((await ctx.params).code);
+  const { meta } = await requireLobbyMember(req, code);
+  if (!isRevealed(meta.phase)) throw new HttpError(409, "Camps open at the reveal");
   const state = await getLobbyState(code);
   if (!state) throw new HttpError(404, "Lobby not found");
-  if (!isRevealed(state.phase)) throw new HttpError(409, "Camps open at the reveal");
 
   const by_call = { BOX: 0, STAY: 0, none: 0 };
   const groups = new Map<string, { factor: string; count: number; players: string[]; quotes: string[] }>();

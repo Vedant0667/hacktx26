@@ -14,14 +14,26 @@ function sql() {
   return client;
 }
 
-async function query<T>(text: string, params: unknown[] = []): Promise<T[]> {
+export async function query<T>(text: string, params: unknown[] = []): Promise<T[]> {
   return (await sql().query(text, params)) as T[];
 }
 
 export const PHASES: LobbyPhase[] = ["waiting", "replay", "decision", "reveal", "done"];
 
-// LobbyState plus the server clock (ms), taken from the same now() that sets phase_started_at.
-export type LobbyStateResponse = LobbyState & { now: number };
+export type DriverMode = "same" | "choose";
+
+// A submission and the car it was scored against (Round 4; null only for rows from before per-driver play).
+export type DriverSubmission = Submission & { driver_code: string | null };
+
+// LobbyState plus the server clock (ms), taken from the same now() that sets phase_started_at, and the
+// per-driver fields (docs/audits/security-contract.md Round 4, 4.3).
+export type LobbyStateResponse = Omit<LobbyState, "players" | "submissions"> & {
+  now: number;
+  driver_mode: DriverMode;
+  driver_code: string | null; // the lobby's car in "same" mode; null in "choose"
+  players: { name: string; joined_at: number; driver_code: string | null }[];
+  submissions: DriverSubmission[];
+};
 
 const ms = (col: string) => `round(extract(epoch from ${col}) * 1000)::float8`;
 
@@ -29,10 +41,10 @@ const SUBMISSION_JSON = `json_build_object(
   'lobby_code', s.lobby_code, 'player_name', s.player_name, 'decision_id', s.decision_id,
   'call', s.call, 'reasons', s.reasons, 'factors_named', s.factors_named, 'transcript', s.transcript,
   'seconds_to_call', s.seconds_to_call, 'score_call', s.score_call, 'score_reasoning', s.score_reasoning,
-  'total', s.total)`;
+  'total', s.total, 'driver_code', s.driver_code)`;
 
 const SUBMISSION_COLS = `lobby_code, player_name, decision_id, call, reasons, factors_named, transcript,
-  seconds_to_call, score_call, score_reasoning, total`;
+  seconds_to_call, score_call, score_reasoning, total, driver_code`;
 
 // Players best first; ties go to the faster call, then the earlier row.
 const SUBMISSION_ORDER = "s.total desc, s.seconds_to_call asc, s.created_at asc";
@@ -43,22 +55,31 @@ function isPgError(err: unknown, code: string): boolean {
 
 // Returns false if the code is already taken (caller retries with a new code).
 // The host runs the shared screen and is not a player; players join from their phones.
-// Only the SHA-256 of the host token is stored.
-export async function createLobby(code: string, decisionId: string, hostTokenHash: string): Promise<boolean> {
+// Only the SHA-256 of the host token is stored. driverCode: the car everyone plays ("same"), null for "choose".
+export async function createLobby(
+  code: string,
+  decisionId: string,
+  hostTokenHash: string,
+  driverMode: DriverMode = "same",
+  driverCode: string | null = null,
+): Promise<boolean> {
   const rows = await query<{ code: string }>(
-    `insert into lobbies (code, decision_id, host_token_hash) values ($1, $2, $3) on conflict (code) do nothing returning code`,
-    [code, decisionId, hostTokenHash],
+    `insert into lobbies (code, decision_id, host_token_hash, driver_mode, driver_code) values ($1, $2, $3, $4, $5)
+     on conflict (code) do nothing returning code`,
+    [code, decisionId, hostTokenHash, driverMode, driverCode],
   );
   return rows.length === 1;
 }
 
-// Retention: games (lobbies, and by cascade players, submissions, camp labels) live 24 hours; rate-limit
-// windows a day. Run opportunistically on lobby creation. muse_calls holds no player text and stays for the cap.
-export async function purgeExpired(): Promise<void> {
-  await sql().transaction([
-    sql().query(`delete from lobbies where created_at < now() - interval '24 hours'`),
-    sql().query(`delete from rate_limits where window_start < now() - interval '1 day'`),
-  ]);
+// Retention: games (lobbies, and by cascade players, submissions, claims, kicks, camp labels) live 24 hours;
+// rate-limit windows (IP addresses) a day. Runs daily from the Vercel Cron (/api/cron/purge) and
+// opportunistically on lobby creation. muse_calls holds no player text and stays for the spend cap.
+export async function purgeExpired(): Promise<{ lobbies: number; rate_limits: number }> {
+  const [lobbies, limits] = (await sql().transaction([
+    sql().query(`delete from lobbies where created_at < now() - interval '24 hours' returning code`),
+    sql().query(`delete from rate_limits where window_start < now() - interval '1 day' returning bucket`),
+  ])) as unknown as [unknown[], unknown[]];
+  return { lobbies: lobbies.length, rate_limits: limits.length };
 }
 
 // ---- Rate limits (table rate_limits: fixed windows, one row per bucket, key and window) ----
@@ -76,15 +97,6 @@ export async function hitRateLimit(bucket: string, key: string, windowS: number)
     [bucket, key, windowS],
   );
   return rows[0];
-}
-
-// Gives back one hit (a correct password does not count against the unlock limit).
-export async function undoRateLimit(bucket: string, key: string, windowS: number): Promise<void> {
-  await query(
-    `update rate_limits set count = greatest(count - 1, 0)
-     where bucket = $1 and key = $2 and window_start = ${WINDOW("$3")}`,
-    [bucket, key, windowS],
-  );
 }
 
 export interface LobbyReadGuard {
@@ -141,10 +153,11 @@ export async function guardedLobbyRead(
 // One round trip: lobby, players, this decision's submissions, and the DB clock.
 export async function getLobbyState(code: string): Promise<LobbyStateResponse | null> {
   const rows = await query<LobbyStateResponse>(
-    `select l.code, l.decision_id, l.phase,
+    `select l.code, l.decision_id, l.phase, l.driver_mode, l.driver_code,
        ${ms("l.phase_started_at")} as phase_started_at,
        ${ms("now()")} as now,
-       coalesce((select json_agg(json_build_object('name', p.name, 'joined_at', ${ms("p.joined_at")})
+       coalesce((select json_agg(json_build_object('name', p.name, 'joined_at', ${ms("p.joined_at")},
+                                                   'driver_code', p.driver_code)
                    order by p.joined_at, p.name)
                  from players p where p.lobby_code = l.code), '[]'::json) as players,
        coalesce((select json_agg(${SUBMISSION_JSON} order by ${SUBMISSION_ORDER})
@@ -158,32 +171,63 @@ export async function getLobbyState(code: string): Promise<LobbyStateResponse | 
 
 export const MAX_PLAYERS = 12;
 
-// Adds a player (token hash and consent time stored) unless the lobby is full or the name is taken.
-// Serialised per lobby with an advisory lock so concurrent joins cannot pass the cap.
-// "taken" carries the stored token hash so the route can allow a rejoin by the same device.
+// Adds a player (token hash and consent time stored) unless the lobby is full, the name is taken, or the host
+// removed that name or the presented device token from this lobby (kicked_players).
+// Serialised per lobby with an advisory lock so concurrent joins cannot pass the cap or race a kick.
+// "taken" carries the stored token hash so the route can allow a rejoin by the same device. driverCode is stored
+// only on a new row: a rejoin keeps the car picked at the first join.
 export async function addPlayer(
   code: string,
   name: string,
   tokenHash: string,
-): Promise<{ result: "ok" } | { result: "taken"; token_hash: string | null } | { result: "full" | "no_lobby" }> {
+  presentedTokenHash: string | null = null,
+  driverCode: string | null = null,
+): Promise<{ result: "ok" } | { result: "taken"; token_hash: string | null } | { result: "full" | "no_lobby" | "kicked" }> {
   try {
     const results = (await sql().transaction([
       sql().query(`select pg_advisory_xact_lock(hashtext($1))`, [`lobby-join:${code}`]),
       sql().query(
-        `insert into players (lobby_code, name, token_hash, consent_at)
-         select $1, $2, $3, now() where (select count(*) from players where lobby_code = $1) < $4
+        `select exists(select 1 from kicked_players
+                       where lobby_code = $1 and (name = $2 or ($3::text is not null and token_hash = $3))) as kicked`,
+        [code, name, presentedTokenHash],
+      ),
+      sql().query(
+        `insert into players (lobby_code, name, token_hash, consent_at, driver_code)
+         select $1, $2, $3, now(), $6 where (select count(*) from players where lobby_code = $1) < $4
+           and not exists(select 1 from kicked_players
+                          where lobby_code = $1 and (name = $2 or ($5::text is not null and token_hash = $5)))
          on conflict (lobby_code, name) do nothing returning name`,
-        [code, name, tokenHash, MAX_PLAYERS],
+        [code, name, tokenHash, MAX_PLAYERS, presentedTokenHash, driverCode],
       ),
       sql().query(`select token_hash from players where lobby_code = $1 and name = $2`, [code, name]),
-    ])) as unknown as [unknown, { name: string }[], { token_hash: string | null }[]];
-    if (results[1].length === 1) return { result: "ok" };
-    if (results[2].length === 1) return { result: "taken", token_hash: results[2][0].token_hash };
+    ])) as unknown as [unknown, { kicked: boolean }[], { name: string }[], { token_hash: string | null }[]];
+    if (results[1][0]?.kicked) return { result: "kicked" };
+    if (results[2].length === 1) return { result: "ok" };
+    if (results[3].length === 1) return { result: "taken", token_hash: results[3][0].token_hash };
     return { result: "full" };
   } catch (err) {
     if (isPgError(err, "23503")) return { result: "no_lobby" }; // foreign key: lobby does not exist
     throw err;
   }
+}
+
+// Host removes a player: records the name and device token in kicked_players (so neither can rejoin), and,
+// before the reveal, deletes that player's submission and grading claim. False when no player has that name.
+export async function kickPlayer(code: string, name: string): Promise<boolean> {
+  const beforeReveal = `exists(select 1 from lobbies where code = $1 and phase in ('waiting', 'replay', 'decision'))`;
+  const results = (await sql().transaction([
+    sql().query(`select pg_advisory_xact_lock(hashtext($1))`, [`lobby-join:${code}`]),
+    sql().query(
+      `insert into kicked_players (lobby_code, name, token_hash)
+       select lobby_code, name, token_hash from players where lobby_code = $1 and name = $2
+       on conflict (lobby_code, name) do update set token_hash = excluded.token_hash, created_at = now()`,
+      [code, name],
+    ),
+    sql().query(`delete from submissions where lobby_code = $1 and player_name = $2 and ${beforeReveal}`, [code, name]),
+    sql().query(`delete from submission_claims where lobby_code = $1 and player_name = $2 and ${beforeReveal}`, [code, name]),
+    sql().query(`delete from players where lobby_code = $1 and name = $2 returning name`, [code, name]),
+  ])) as unknown as [unknown, unknown, unknown, unknown, { name: string }[]];
+  return results[4].length === 1;
 }
 
 export interface LobbyMeta {
@@ -194,24 +238,37 @@ export interface LobbyMeta {
   is_player: boolean;
   player_token_hash: string | null;
   has_submitted: boolean;
+  player_count: number; // players in the lobby now
+  submitted_count: number; // of those, how many have a call in on the current decision
+  token_player: string | null; // the player whose token hash is `playerTokenHash`, if any
+  driver_mode: DriverMode;
+  driver_code: string | null; // the lobby's car ("same" mode)
+  player_driver_code: string | null; // the car of `playerName`, if that player exists
 }
 
-export async function getLobbyMeta(code: string, playerName?: string): Promise<LobbyMeta | null> {
+export async function getLobbyMeta(code: string, playerName?: string, playerTokenHash?: string | null): Promise<LobbyMeta | null> {
   const rows = await query<LobbyMeta>(
-    `select l.decision_id, l.phase, l.host_token_hash,
+    `select l.decision_id, l.phase, l.host_token_hash, l.driver_mode, l.driver_code,
        extract(epoch from now() - l.phase_started_at)::float8 as phase_elapsed_s,
+       (select p.driver_code from players p where p.lobby_code = l.code and p.name = $2) as player_driver_code,
        exists(select 1 from players p where p.lobby_code = l.code and p.name = $2) as is_player,
        (select p.token_hash from players p where p.lobby_code = l.code and p.name = $2) as player_token_hash,
        exists(select 1 from submissions s where s.lobby_code = l.code and s.player_name = $2
-              and s.decision_id = l.decision_id) as has_submitted
+              and s.decision_id = l.decision_id) as has_submitted,
+       (select count(*) from players p where p.lobby_code = l.code)::int as player_count,
+       (select count(*) from players p where p.lobby_code = l.code and exists(
+          select 1 from submissions s where s.lobby_code = l.code and s.player_name = p.name
+          and s.decision_id = l.decision_id))::int as submitted_count,
+       (select p.name from players p where p.lobby_code = l.code and $3::text is not null and p.token_hash = $3
+        limit 1) as token_player
      from lobbies l where l.code = $1`,
-    [code, playerName ?? ""],
+    [code, playerName ?? "", playerTokenHash ?? null],
   );
   return rows[0] ?? null;
 }
 
-export async function getSubmission(code: string, playerName: string, decisionId: string): Promise<Submission | null> {
-  const rows = await query<{ row: Submission }>(
+export async function getSubmission(code: string, playerName: string, decisionId: string): Promise<DriverSubmission | null> {
+  const rows = await query<{ row: DriverSubmission }>(
     `select ${SUBMISSION_JSON} as row from submissions s
      where s.lobby_code = $1 and s.player_name = $2 and s.decision_id = $3`,
     [code, playerName, decisionId],
@@ -230,20 +287,30 @@ export async function advancePhase(code: string, from: LobbyPhase, to: LobbyPhas
 }
 
 // First submission wins: a re-submit returns the stored row with duplicate = true.
-export async function insertSubmission(s: Submission): Promise<{ submission: Submission; duplicate: boolean }> {
-  const inserted = await query<{ row: Submission }>(
+// True only for the first request per player and decision, so concurrent submits can't each pay for grading.
+export async function claimSubmission(code: string, playerName: string, decisionId: string): Promise<boolean> {
+  const rows = await query(
+    `insert into submission_claims (lobby_code, player_name, decision_id) values ($1, $2, $3)
+     on conflict do nothing returning lobby_code`,
+    [code, playerName, decisionId],
+  );
+  return rows.length === 1;
+}
+
+export async function insertSubmission(s: DriverSubmission): Promise<{ submission: DriverSubmission; duplicate: boolean }> {
+  const inserted = await query<{ row: DriverSubmission }>(
     `insert into submissions as s (${SUBMISSION_COLS})
-     values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10, $11)
+     values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10, $11, $12)
      on conflict (lobby_code, player_name, decision_id) do nothing
      returning ${SUBMISSION_JSON} as row`,
     [
       s.lobby_code, s.player_name, s.decision_id, s.call,
       JSON.stringify(s.reasons), JSON.stringify(s.factors_named), s.transcript,
-      s.seconds_to_call, s.score_call, s.score_reasoning, s.total,
+      s.seconds_to_call, s.score_call, s.score_reasoning, s.total, s.driver_code,
     ],
   );
   if (inserted.length === 1) return { submission: inserted[0].row, duplicate: false };
-  const existing = await query<{ row: Submission }>(
+  const existing = await query<{ row: DriverSubmission }>(
     `select ${SUBMISSION_JSON} as row from submissions s
      where s.lobby_code = $1 and s.player_name = $2 and s.decision_id = $3`,
     [s.lobby_code, s.player_name, s.decision_id],
@@ -270,13 +337,25 @@ export async function getDecisionTotals(decisionId: string): Promise<number[]> {
   return rows[0].totals;
 }
 
-export async function topSubmissions(decisionId: string, limit = 50): Promise<Submission[]> {
-  const rows = await query<{ row: Submission }>(
+export async function topSubmissions(decisionId: string, limit = 50): Promise<DriverSubmission[]> {
+  const rows = await query<{ row: DriverSubmission }>(
     `select ${SUBMISSION_JSON} as row from submissions s
      where s.decision_id = $1 and exists (select 1 from lobbies l where l.code = s.lobby_code and l.phase in ('reveal','done')) order by ${SUBMISSION_ORDER} limit $2`,
     [decisionId, limit],
   );
   return rows.map((r) => r.row);
+}
+
+// Every car played in a lobby: the lobby's car, each player's car and each stored call's car.
+export async function getLobbyDriverCodes(code: string): Promise<string[]> {
+  const rows = await query<{ driver_code: string }>(
+    `select driver_code from lobbies where code = $1 and driver_code is not null
+     union select driver_code from players where lobby_code = $1 and driver_code is not null
+     union select driver_code from submissions where lobby_code = $1 and driver_code is not null
+     order by 1`,
+    [code],
+  );
+  return rows.map((r) => r.driver_code);
 }
 
 // ---- Muse Spark spend log and camp cache (tables muse_calls, muse_camps) ----

@@ -31,6 +31,8 @@ export interface DriverFrame {
   compound: string | null;
   tyre_age: number | null;
   pitted_this_lap: boolean;
+  // This driver's time for this lap in seconds (the call-moment frame carries lap L-1's time).
+  lap_time_s: number | null;
 }
 
 export interface LapFrame {

@@ -26,6 +26,9 @@ export async function createLobby(decisionId: string, hostName: string): Promise
 // POST /api/lobby/[code]/phase with x-host-token. 403 when this browser did not create the lobby.
 export const advancePhase = (code: string, phase: string) => api.phase(code, phase, recallHostToken(code));
 
+// POST /api/lobby/[code]/kick with x-host-token: removes `name` from the lobby.
+export const kickPlayer = (code: string, name: string) => api.kick(code, name, recallHostToken(code));
+
 // True when this browser holds the host token for `code`.
 export const isHost = (code: string) => !!recallHostToken(code);
 
@@ -60,6 +63,7 @@ export function joinErrorText(e: unknown, code: string, name: string): string {
   if (!(e instanceof ApiError)) return COPY.error.connectionLost;
   if (e.status === 409) return isLobbyFull(e) ? COPY.error.lobbyFull : COPY.error.nameTaken(name);
   if (e.status === 404) return COPY.home.codeNotFound(code);
+  if (e.status === 403) return COPY.error.removed;
   if (e.status === 429) return COPY.error.rateLimited(e.retryAfter);
   if (e.status === 400) return COPY.play.consentMissing;
   return COPY.error.connectionLost;

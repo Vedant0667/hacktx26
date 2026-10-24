@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { GATE_COOKIE, gateMisconfigured, gatePassword, verifyGateToken } from "@/lib/gate";
+import { CRON_PURGE_PATH, cronAuthorized, GATE_COOKIE, gateMisconfigured, gatePassword, verifyGateToken } from "@/lib/gate";
 
 // Exact paths that skip the gate: the unlock page and its form handler, and the favicon. Checked here as
 // whole paths rather than matcher prefixes, so a future /unlock-foo or /iconic.json stays gated.
@@ -23,6 +23,8 @@ export function proxy(request: NextRequest) {
   const password = gatePassword();
   if (!password) return NextResponse.next(); // local dev only
   if (GATE_OPEN_PATHS.has(pathname)) return NextResponse.next();
+  // The daily purge cron carries no gate cookie: let exactly that path through, and only with the cron bearer.
+  if (pathname === CRON_PURGE_PATH && cronAuthorized(request.headers.get("authorization"))) return NextResponse.next();
 
   const cookie = request.cookies.get(GATE_COOKIE)?.value ?? "";
   if (cookie && verifyGateToken(cookie, password)) return NextResponse.next();

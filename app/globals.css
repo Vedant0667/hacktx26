@@ -1,78 +1,95 @@
 @import "tailwindcss";
 
-/* Visual system: docs/06-ui-rules.md section 1. Dark only, flat tokens, elevation by surface step. */
+/* Visual system: docs/06-ui-rules.md section 1 ("Field"). White page, near-black ink, square bands,
+   a strict 12-column grid, and one colour field: the player's team colour at the decision moment. */
 @theme {
   --color-*: initial;
-  --color-bg: #0c1010;
-  --color-surface: #161a1a;
-  --color-surface-2: #1e2323;
-  --color-rule: #353939;
-  --color-ink: #f3f6f6;
-  --color-ink-2: #b9bfbf;
-  --color-ink-3: #8e9393;
-  --color-ink-disabled: #525656;
-  --color-flag-yellow: #fbd530;
-  --color-flag-green: #50c76a;
-  --color-flag-red: #ea3d38;
-  --color-sector-purple: #a35de4;
-  --color-engine: #77cfd3;
-  --color-engine-deep: #096165;
+  --color-bg: #ffffff;
+  --color-soft: #f3f3f3;
+  --color-soft-2: #dadada;
+  --color-line: #dadada;
+  --color-ink: #0e0e0e;
+  --color-ink-2: #4a4a4a;
+  --color-ink-3: #8c8c8c;
+  --color-white: #ffffff;
+  --color-sc: #fbd530;
+  --color-green: #1a8f48;
+  /* Tyre compound colours are data, used only in the tyre glyph. */
+  --color-tyre-soft: #d6262b;
+  --color-tyre-medium: #e8b400;
+  --color-tyre-hard: #9a9a9a;
+  --color-tyre-inter: #1a8f48;
+  --color-tyre-wet: #2a6fdb;
   --color-transparent: transparent;
+  --color-current: currentColor;
+  /* The decision field: set inline from the player's team colour (lib/client/field.ts). */
+  --color-field: var(--field, #d9d9d6);
+  --color-on-field: var(--on-field, #0e0e0e);
 
   --font-*: initial;
-  --font-sans: var(--font-archivo), system-ui, sans-serif;
+  --font-sans: var(--font-schibsted), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-azeret), ui-monospace, monospace;
 
-  /* Fixed type scale (px): 14 16 20 24 32 40 56 72 96. No clamp(). */
+  /* Fixed rem scale. Phone: xs..3xl. Host adds 4xl/5xl for the 2 m read. */
   --text-*: initial;
-  --text-14: 0.875rem;
-  --text-16: 1rem;
-  --text-20: 1.25rem;
-  --text-24: 1.5rem;
-  --text-32: 2rem;
-  --text-40: 2.5rem;
-  --text-56: 3.5rem;
-  --text-72: 4.5rem;
-  --text-96: 6rem;
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.35;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.45;
+  --text-base: 1.0625rem;
+  --text-base--line-height: 1.45;
+  --text-md: 1.25rem;
+  --text-md--line-height: 1.35;
+  --text-lg: 1.5rem;
+  --text-lg--line-height: 1.25;
+  --text-xl: 1.75rem;
+  --text-xl--line-height: 1.15;
+  --text-2xl: 2.25rem;
+  --text-2xl--line-height: 1.05;
+  --text-3xl: 3.5rem;
+  --text-3xl--line-height: 0.96;
+  --text-4xl: 4.5rem;
+  --text-4xl--line-height: 0.94;
+  --text-5xl: 6rem;
+  --text-5xl--line-height: 0.92;
 
-  --leading-hero: 1;
-  --leading-row: 1.1;
-  --leading-body: 1.45;
-
-  --tracking-hero: 0.02em;
-  --tracking-label: 0.06em;
-  --tracking-code: 0.08em;
+  --tracking-display: -0.035em;
+  --tracking-tight: -0.02em;
 
   --radius-*: initial;
-  --radius-ctl: 2px;
 
-  --ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 :root {
   --z-sticky: 10;
-  --z-banner: 20;
-  --z-dialog: 30;
+  --z-dock: 20;
   --z-toast: 40;
-  color-scheme: dark;
+  color-scheme: light;
 }
 
-@utility stretch-62 {
-  font-stretch: 62%;
-}
-@utility stretch-75 {
-  font-stretch: 75%;
-}
-@utility stretch-100 {
-  font-stretch: 100%;
-}
-@utility stretch-112 {
-  font-stretch: 112%;
-}
-@utility stretch-125 {
-  font-stretch: 125%;
-}
 @utility nums {
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums slashed-zero;
+  letter-spacing: -0.01em;
+}
+@utility tnum {
+  font-variant-numeric: tabular-nums;
+}
+@utility display {
+  font-weight: 900;
+  letter-spacing: var(--tracking-display);
+  text-wrap: balance;
+}
+/* Short mono label: status lines, column heads. Never a sentence. */
+@utility meta {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  font-size: 0.6875rem;
+  line-height: 1.3;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-variant-numeric: tabular-nums;
 }
 
 html,
@@ -83,50 +100,100 @@ body {
 
 body {
   font-family: var(--font-sans);
-  line-height: var(--leading-body);
+  font-size: var(--text-base);
+  font-weight: 500;
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+
+h1,
+h2,
+h3 {
+  text-wrap: balance;
+}
+p {
+  text-wrap: pretty;
 }
 
 :focus-visible {
-  outline: 2px solid var(--color-ink);
+  outline: 3px solid var(--color-ink);
   outline-offset: 2px;
 }
-
-.on-yellow :focus-visible {
-  outline-color: var(--color-bg);
+.on-dark :focus-visible,
+.on-dark:focus-visible {
+  outline-color: var(--color-white);
 }
 
-/* Motion table, docs/06. */
-.tower-row {
-  transition:
-    transform 320ms var(--ease-quart),
-    color 200ms var(--ease-quart),
-    background-color 120ms var(--ease-quart);
-}
-.tower-dim .tower-row {
+::placeholder {
   color: var(--color-ink-3);
 }
-.tower-dim .tower-swatch {
-  opacity: 0.4;
+
+summary {
+  list-style: none;
+  cursor: pointer;
 }
-.tower-swatch {
-  transition: opacity 200ms var(--ease-quart);
+summary::-webkit-details-marker {
+  display: none;
+}
+details > summary .chev {
+  transition: transform 200ms var(--ease-out);
+}
+details[open] > summary .chev {
+  transform: rotate(90deg);
+}
+details[open] > .disclose {
+  animation: rise 220ms var(--ease-out) both;
 }
 
-.status-strip {
-  transition: background-color 200ms var(--ease-quart);
-}
-
-@keyframes wipe-in {
+/* Motion: short rises and fades; shared state never waits on them. */
+@keyframes rise {
   from {
-    clip-path: inset(0 100% 0 0);
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.rise {
+  animation: rise 280ms var(--ease-out) both;
+}
+.fade {
+  animation: fade 200ms var(--ease-out) both;
+}
+
+/* The colour field floods in from the top when the race freezes. */
+@keyframes flood {
+  from {
+    clip-path: inset(0 0 100% 0);
   }
   to {
     clip-path: inset(0);
   }
 }
-.wipe-in {
-  animation: wipe-in 240ms var(--ease-quart) both;
+.flood {
+  animation: flood 420ms var(--ease-out) both;
+}
+
+/* Timing tower rows sit in absolute slots, so an overtake animates as translateY. */
+.tower-row {
+  transition:
+    transform 360ms var(--ease-out),
+    background-color 160ms var(--ease-out),
+    color 160ms var(--ease-out);
+}
+.tower-dim .tower-row:not([aria-current]) {
+  color: var(--color-ink-3);
 }
 
 @keyframes countdown {
@@ -142,107 +209,20 @@ body {
   animation: countdown linear both;
 }
 
-@keyframes row-in {
+@keyframes ghost {
   from {
     opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.row-in {
-  animation: row-in 240ms var(--ease-quart) both;
-}
-
-@keyframes slide-in {
-  from {
-    transform: translateY(100%);
-    opacity: 0;
-  }
-  to {
-    transform: translateY(0);
-    opacity: 1;
-  }
-}
-.slide-in {
-  animation: slide-in 320ms var(--ease-quart) both;
-}
-
-@keyframes fade-in {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .tower-row {
-    transition: color 120ms linear;
-  }
-  .wipe-in,
-  .row-in,
-  .slide-in {
-    animation: fade-in 120ms linear both;
-  }
-  .countdown-bar {
-    display: none;
-  }
-}
-
-/* Last 5 s on the phone: each second lands with a short scale pulse. */
-@keyframes tick-pulse {
-  from {
-    transform: scale(1.14);
-  }
-  to {
-    transform: scale(1);
-  }
-}
-.tick-pulse {
-  display: inline-block;
-  transform-origin: right center;
-  animation: tick-pulse 320ms var(--ease-quart) both;
-}
-/* Rejoin ghost settles into its slot. */
-@keyframes ghost-in {
-  from {
-    opacity: 0;
-    translate: -24px 0;
+    translate: -16px 0;
   }
   to {
     opacity: 1;
     translate: 0 0;
   }
 }
-.ghost-in {
-  animation: ghost-in 480ms var(--ease-quart) 200ms both;
+.ghost {
+  animation: ghost 520ms var(--ease-out) 240ms both;
 }
-@keyframes grid-in {
-  from {
-    opacity: 0;
-    transform: translateY(16px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.grid-in {
-  animation: grid-in 320ms var(--ease-quart) both;
-}
-@media (prefers-reduced-motion: reduce) {
-  .tick-pulse,
-  .ghost-in,
-  .grid-in {
-    animation: fade-in 120ms linear both;
-  }
-}
-/* Reveal split bar grows from the middle line. */
-@keyframes split-grow {
+@keyframes grow-x {
   from {
     transform: scaleX(0);
   }
@@ -250,13 +230,67 @@ body {
     transform: scaleX(1);
   }
 }
-.split-grow {
-  flex-basis: 0;
-  transform-origin: center;
-  animation: split-grow 480ms var(--ease-quart) both;
+.grow-x {
+  transform-origin: left;
+  animation: grow-x 560ms var(--ease-out) both;
 }
+@keyframes draw {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+.draw {
+  stroke-dasharray: 1;
+  animation: draw 700ms var(--ease-out) both;
+}
+
+/* Last 5 s: each second lands with a small settle. */
+@keyframes tick {
+  from {
+    transform: scale(1.1);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+.tick {
+  display: inline-block;
+  transform-origin: left bottom;
+  animation: tick 300ms var(--ease-out) both;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0.25;
+  }
+}
+.rec-dot {
+  animation: blink 1s steps(2) infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .split-grow {
-    animation: fade-in 120ms linear both;
+  .rise,
+  .flood,
+  .ghost,
+  .grow-x,
+  .tick,
+  details[open] > .disclose {
+    animation: fade 120ms linear both;
+  }
+  .draw {
+    animation: none;
+    stroke-dasharray: none;
+  }
+  .rec-dot {
+    animation: none;
+  }
+  .tower-row {
+    transition: color 120ms linear;
+  }
+  .countdown-bar {
+    display: none;
   }
 }

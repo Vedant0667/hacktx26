@@ -32,6 +32,29 @@ export function parseCallLocal(transcript: string): ParsedCall {
   return { call, reasons, factors_named, transcript: text };
 }
 
+// Key terms per factor, broader than FACTOR_PATTERNS (which also needs the reason, e.g. "tyres" + "old").
+// Server-side check on Muse (re-audit R8): a factor Muse credits is kept only if the keyword parser also found
+// it, or one of these terms is in the transcript, so an instruction hidden in the speech cannot add factors.
+const CHEAP_STOP_TERMS =
+  /\b(cheap\w*|free|discount\w*|half[- ]price|bargain|costs? (less|nothing)|less time|lose less|losing less|pit ?loss|time loss|sav(e|es|ing|ed) (time|seconds)|only lose|smaller loss)\b/i;
+export const FACTOR_TERMS: Record<string, RegExp> = {
+  tyre_age:
+    /\b(tyres?|tires?|rubber|mediums?|softs?|hards?|inters?|compound|deg|degradation|degrading|grip|wear|worn|cooked|old set|fresh set|new set|stint)\b/i,
+  cheap_stop_under_sc: CHEAP_STOP_TERMS,
+  cheap_stop_under_vsc: CHEAP_STOP_TERMS,
+  similar_cars_pitted:
+    /\b(every(one|body)|field|others?|rivals?|pitted|pitting|boxed|boxing|competitors?|the pack|(other|rival|those|these|nearby) cars|cars? (around|behind|ahead|in front|near)|they('re| are| all)|verstappen|max|norris|lando|leclerc|russell|hamilton|antonelli|piastri|oscar|sainz|alonso|undercut)\b/i,
+  track_position:
+    /\b(track position|positions?|places?|overtak\w*|pass(ing|ed)?|dirty air|lead(ing)?|leader|p\d{1,2}|front|ahead|behind|undercut|overcut|clean air)\b/i,
+};
+
+// Keeps only factors grounded in the transcript: found by the keyword parser, or one of the factor's key
+// terms appears. Unknown factor ids with no term set must be found by the keyword parser.
+export function groundFactors(factors: string[], transcript: string, localFactors: string[] = parseCallLocal(transcript).factors_named): string[] {
+  const local = new Set(localFactors);
+  return factors.filter((f) => local.has(f) || (FACTOR_TERMS[f]?.test(transcript) ?? false));
+}
+
 const REASONS_MAX = 4;
 const REASON_CHARS = 120;
 
@@ -94,7 +117,7 @@ export async function parseCall(
       .filter(Boolean)
       .slice(0, REASONS_MAX)
       .map((r) => (r.length > REASON_CHARS ? `${r.slice(0, REASON_CHARS - 1)}…` : r)),
-    factors_named: [...new Set(out.factors_named.filter((f) => valid.has(f)))],
+    factors_named: groundFactors([...new Set(out.factors_named.filter((f) => valid.has(f)))], local.transcript, local.factors_named),
     transcript: local.transcript,
   };
 }

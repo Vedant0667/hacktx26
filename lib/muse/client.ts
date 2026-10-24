@@ -8,6 +8,7 @@ import { finishMuseCall, reserveMuseCall } from "../db";
 export const MUSE_MODEL = "muse-spark-1.3";
 const ENDPOINT = "https://api.meta.ai/v1/responses";
 const TIMEOUT_MS = 6000;
+const INPUT_FRAMING_TOKENS = 256;
 
 // muse-spark-1.3 prices, USD per token. output_tokens already includes reasoning tokens.
 const PRICE_INPUT = 1.25 / 1e6;
@@ -55,8 +56,11 @@ export async function museJson<T>(req: MuseRequest<T>): Promise<T | null> {
   const key = process.env.MODEL_API_KEY;
   if (!key) return null;
 
-  // Worst case for this call: input at 2 characters per token (English runs about 4) plus the full output allowance.
-  const worstInput = Math.ceil((req.instructions.length + req.input.length) / 2);
+  // Upper bound for this call. A BPE token is never shorter than one UTF-8 byte, so the byte length of
+  // everything billed as input (instructions, input and the JSON schema) bounds the input tokens; add a
+  // fixed allowance for message framing. Output is bounded by max_output_tokens.
+  const billedInput = req.instructions + req.input + JSON.stringify(req.jsonSchema) + req.schemaName;
+  const worstInput = Buffer.byteLength(billedInput, "utf8") + INPUT_FRAMING_TOKENS;
   const worstCost = Math.ceil(costOf(worstInput, 0, req.maxOutputTokens) * 1e6) / 1e6;
   let reservation: number | null;
   try {

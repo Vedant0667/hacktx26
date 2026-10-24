@@ -80,3 +80,108 @@ create table if not exists rate_limits (
 
 create index if not exists rate_limits_window on rate_limits (window_start);
 create index if not exists lobbies_created_at on lobbies (created_at);
+
+-- One grading claim per player and decision: only the request that wins it may call Muse.
+create table if not exists submission_claims (
+  lobby_code text not null references lobbies(code) on delete cascade,
+  player_name text not null,
+  decision_id text not null,
+  created_at timestamptz not null default now(),
+  primary key (lobby_code, player_name, decision_id)
+);
+
+-- Re-audit R5: players the host removed. Neither the name nor that device's token can rejoin the lobby.
+create table if not exists kicked_players (
+  lobby_code text not null references lobbies(code) on delete cascade,
+  name text not null,
+  token_hash text,
+  created_at timestamptz not null default now(),
+  primary key (lobby_code, name)
+);
+
+create index if not exists kicked_players_token on kicked_players (lobby_code, token_hash);
+create index if not exists players_token on players (lobby_code, token_hash);
+
+-- Race data (Round 3). Loaded by scripts/seed-db.mjs from engine/build.py's build/race-data/load.json, which is
+-- built from the cached Jolpica, OpenF1 and hand-entered sources in data/. lib/data.ts reads these tables.
+create table if not exists races (
+  key text primary key,
+  name text not null,
+  season int not null,
+  round int not null,
+  race_name text,
+  circuit text,
+  race_date date,
+  total_laps int not null,
+  source jsonb not null default '{}',
+  updated_at timestamptz not null default now()
+);
+
+-- One row per driver per lap: the timing tower state at the end of that lap.
+create table if not exists race_laps (
+  race_key text not null references races(key) on delete cascade,
+  lap int not null,
+  driver_number int not null,
+  driver_id text not null,
+  driver_code text not null,
+  team text not null,
+  team_colour text,
+  position int not null,
+  lap_time_s double precision,
+  gap_to_leader_s double precision,
+  compound text,
+  stint int,
+  tyre_age int,
+  pitted boolean not null default false,
+  track_status text not null,
+  primary key (race_key, lap, driver_number)
+);
+
+create index if not exists race_laps_race_lap_position on race_laps (race_key, lap, position);
+
+-- blind is the only column served before the reveal (GET /api/decisions/[id]). full, ground_truth and
+-- engine_inputs hold the answer and leave the server only through GET /api/lobby/[code]/reveal.
+create table if not exists decision_points (
+  id text primary key,
+  race_key text not null references races(key) on delete cascade,
+  lap int not null,
+  trigger text not null,
+  title text not null,
+  player_team text not null,
+  player_driver text not null,
+  player_number int not null,
+  blind jsonb not null,
+  "full" jsonb not null,
+  ground_truth jsonb not null,
+  engine_inputs jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create index if not exists decision_points_race on decision_points (race_key, lap);
+
+alter table decision_points add column if not exists player_code text;
+
+-- Round 4: each player plays one car. One row per car running at the decision lap. blind (identity and the
+-- neutral title) is served by GET /api/decisions/[id]/drivers for scorable cars, and full (that car's team call,
+-- engine call and ground truth) only by the reveal route.
+create table if not exists decision_drivers (
+  decision_id text not null references decision_points(id) on delete cascade,
+  driver_code text not null,
+  driver_number int not null,
+  driver_name text not null,
+  team text not null,
+  team_colour text,
+  position int not null,
+  scorable boolean not null,
+  blind jsonb not null,
+  "full" jsonb not null,
+  engine_inputs jsonb,
+  primary key (decision_id, driver_code)
+);
+
+-- driver_mode 'same': everyone plays lobbies.driver_code, and 'choose': each player picks players.driver_code on join.
+alter table lobbies add column if not exists driver_mode text not null default 'same';
+alter table lobbies add column if not exists driver_code text;
+alter table players add column if not exists driver_code text;
+alter table submissions add column if not exists driver_code text;

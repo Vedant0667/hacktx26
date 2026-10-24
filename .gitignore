@@ -39,3 +39,5 @@ yarn-error.log*
 .claude/ship-stamp
 
 certificatescertificates/
+ideas.md
+tasks/todo.md

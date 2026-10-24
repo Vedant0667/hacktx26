@@ -1,4 +1,4 @@
-"""Run: python3 engine/test_engine.py  (needs server-data built by engine/build.py)."""
+"""Run: python3 engine/test_engine.py  (reads build/race-data/full from engine/build.py; builds it if missing)."""
 import copy
 import json
 import sys
@@ -7,7 +7,15 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import engine as eng  # noqa: E402
 
-DATA = Path(__file__).resolve().parent.parent / "server-data"
+DATA = Path(__file__).resolve().parent.parent / "build" / "race-data" / "full"
+if not (DATA / "index.json").exists():
+    import contextlib
+    import io
+
+    import build  # noqa: E402
+
+    with contextlib.redirect_stdout(io.StringIO()):
+        build.main()
 QATAR_TRACK = {"normal_pit_loss_s": 28.3, "total_laps": 57, "max_stint_laps": 25}
 
 
@@ -66,7 +74,47 @@ def test_contract_keys():
         assert set(dec["ground_truth"]) == {"correct", "swing_s"}
         assert {f["lap"] for f in frames} == set(range(1, len(frames) + 1))
         for d in frames[0]["drivers"]:
-            assert set(d) == {"code", "number", "team", "team_colour", "position", "gap_to_leader_s", "compound", "tyre_age", "pitted_this_lap"}
+            assert set(d) == {"code", "number", "team", "team_colour", "position", "gap_to_leader_s", "compound", "tyre_age", "pitted_this_lap", "lap_time_s"}
+
+
+def test_per_driver_ground_truth_has_both_groups():
+    """Round 4: every scorable car has comparison cars on both calls and at least one complete pair."""
+    for entry in json.loads((DATA / "index.json").read_text()):
+        drivers = json.loads((DATA / entry["id"] / "drivers.json").read_text())
+        _, dec = load(entry["id"])
+        assert any(d["scorable"] for d in drivers)
+        for d in drivers:
+            gt = d["full"]["ground_truth_detail"]
+            both = bool(gt["group_player_call"]) and bool(gt["group_other_call"]) and bool(gt["pairs"])
+            assert d["scorable"] == both, (entry["id"], d["code"])
+            if d["scorable"]:
+                assert d["full"]["ground_truth"] == {"correct": gt["correct"], "swing_s": gt["swing_s"]}
+        mine = next(d for d in drivers if d["number"] == dec["player_role"]["number"])
+        assert mine["scorable"] and mine["full"]["ground_truth"] == dec["ground_truth"]
+
+
+def test_per_driver_no_lookahead():
+    """Round 4: each car's engine call uses laps 1..L only. Scrambling every later lap, and flipping lap-L stops
+    by cars behind that car, must not change its call; the stored call must equal a fresh run."""
+    for entry in json.loads((DATA / "index.json").read_text()):
+        frames, dec = load(entry["id"])
+        L = dec["lap"]
+        gt = json.loads((DATA / entry["id"] / "ground_truth.json").read_text())
+        track = {"normal_pit_loss_s": gt["pit_loss"]["normal_s"], "total_laps": len(frames),
+                 "max_stint_laps": QATAR_TRACK["max_stint_laps"] if entry["id"].startswith("qatar") else None}
+        for d in json.loads((DATA / entry["id"] / "drivers.json").read_text()):
+            base = eng.decide(frames[:L], L, d["code"], track)
+            if d["scorable"]:
+                assert base["call"] == d["full"]["engine"]["call"], (entry["id"], d["code"])
+            scrambled = copy.deepcopy(frames)
+            for f in scrambled[L:]:
+                for x in f["drivers"]:
+                    x["position"], x["pitted_this_lap"], x["tyre_age"] = 99, True, 0
+            start = {x["code"]: x["position"] for x in scrambled[L - 2]["drivers"]}
+            for x in scrambled[L - 1]["drivers"]:
+                if start.get(x["code"], 99) > start[d["code"]]:
+                    x["pitted_this_lap"] = not x["pitted_this_lap"]
+            assert eng.decide(scrambled[:L], L, d["code"], track) == base, (entry["id"], d["code"])
 
 
 if __name__ == "__main__":

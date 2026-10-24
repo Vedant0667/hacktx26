@@ -1,23 +1,19 @@
 "use client";
-// Reveal (four steps, right arrow skips) and the scoreboard for the host screen.
+// Reveal (four steps; ArrowRight or Next skips) and the scoreboard for the host screen. Renders only from
+// useReveal's full decision and frames, so race and team names may appear from here on.
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { COPY, factorLabel } from "@/lib/copy";
 import { api, type CampsResponse, type LeaderboardResponse, type LobbyStateResponse, type RevealDecision } from "@/lib/client/api";
-import {
-  MAX_TOTAL,
-  PLAYED_OUT_MS,
-  badgesFor,
-  fmtSeconds,
-  frameAt,
-  playedOutLap,
-  splitCalls,
-  tla,
-} from "@/lib/client/race";
+import { MAX_TOTAL, PLAYED_OUT_MS, badgesFor, fmtSeconds, playedOutLap, splitCalls, tla } from "@/lib/client/race";
 import type { Call, DecisionPoint, LapFrame, Submission } from "@/lib/types";
-import { Tower } from "../Tower";
-import { BadgeTags, Button, CallWord, Label } from "../ui";
 import type { DataMode, GroundTruthFile } from "@/lib/client/mode";
+import { Measured } from "../Measured";
+import { BadgeList, Button, CallWord, Check, clockText } from "../ui";
+import { DiffBars, boxMinusStay } from "./HostCharts";
+import { NeighbourList } from "../Telemetry";
+import { neighbourCalls, telemetry } from "@/lib/client/telemetry";
+import { callMomentFrames } from "@/lib/client/race";
 
 const STEP_AT = [0, 7000, 13000, 13000 + PLAYED_OUT_MS + 800];
 
@@ -40,6 +36,23 @@ function useLeaderboard(decisionId: string, code: string, when: boolean) {
     };
   }, [decisionId, code, when]);
   return lb;
+}
+
+function Steps({ step, onNext }: { step: number; onNext: () => void }) {
+  return (
+    <span className="flex items-center gap-4">
+      <span className="flex gap-1.5" role="img" aria-label={COPY.host.step(step + 1, STEP_AT.length)}>
+        {STEP_AT.map((_, i) => (
+          <span key={i} className={`size-3 ${i <= step ? "bg-ink" : "border-2 border-ink"}`} />
+        ))}
+      </span>
+      {step < STEP_AT.length - 1 && (
+        <Button variant="quiet" onClick={onNext}>
+          {COPY.host.next} ›
+        </Button>
+      )}
+    </span>
+  );
 }
 
 export function HostReveal({
@@ -67,6 +80,10 @@ export function HostReveal({
   const [skip, setSkip] = useState(0);
   const at = elapsed + skip;
   const step = STEP_AT.filter((s) => at >= s).length - 1;
+  const advance = () => {
+    const next = STEP_AT.find((s) => s > at);
+    if (next != null) setSkip((k) => k + (next - at));
+  };
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -90,169 +107,181 @@ export function HostReveal({
   const { box, stay } = splitCalls(subs);
 
   const lap = step < 2 ? decision.lap : step === 2 ? playedOutLap(decision, at - STEP_AT[2]) : decision.reveal_to_lap;
-  const frame = frameAt(frames, lap);
   const total = decision.total_laps;
 
-  // Cars that took the winning option at the call carry "{option} L{lap}" in their PIT cell.
-  const pitTags = useMemo(() => {
-    const m = new Map<number, string>();
-    const correct = decision.ground_truth.correct;
-    const tag = `${COPY.freeze.options[correct]} L${decision.lap}`;
-    const window = frames.filter((f) => f.lap >= decision.lap && f.lap <= decision.lap + 1);
-    const pitted = new Set(window.flatMap((f) => f.drivers.filter((d) => d.pitted_this_lap).map((d) => d.number)));
-    const all = frameAt(frames, decision.lap)?.drivers ?? [];
-    for (const d of all) if ((correct === "BOX") === pitted.has(d.number)) m.set(d.number, tag);
-    return m;
-  }, [decision, frames]);
 
-  const team = decision.team;
-  const engine = decision.engine;
+  const diff = useMemo(() => boxMinusStay(frames, decision.lap, decision.reveal_to_lap, decision.player_role.number), [frames, decision]);
+  // The cars either side at the call, now with what they actually did (full frames from the reveal route).
+  const near = useMemo(() => {
+    const t = telemetry(callMomentFrames(frames, decision), decision);
+    if (!t) return null;
+    return { t, revealed: neighbourCalls(frames, decision, { ahead: t.neighbours.ahead?.number, behind: t.neighbours.behind?.number }) };
+  }, [frames, decision]);
 
   if (step === 3) return <Verdict decision={decision} lobby={lobby} lb={lb} camps={camps} onNext={onNext} mode={mode} modeToggle={modeToggle} gt={gt} />;
 
-  const header = (
-    <div className="flex items-end justify-between gap-6">
-      <span className="flex flex-col items-start gap-3">
-        <span className="text-24 font-semibold">{COPY.reveal.heading(decision.lap)}</span>
+  const top = (
+    <header className="flex items-center justify-between gap-6 font-mono text-lg font-bold uppercase">
+      <span>{COPY.host.revealTag(Math.min(step + 1, 3), 3, decision.race, decision.lap)}</span>
+      <span className="flex items-center gap-6 font-sans normal-case">
         {modeToggle}
+        <Steps step={step} onNext={advance} />
       </span>
-      <span className="nums shrink-0 whitespace-nowrap text-72 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.replay.lap(lap, total)}</span>
-    </div>
+    </header>
   );
 
-  // Step 1: the lobby's calls get the whole screen (docs/06 3.4: the biggest social moment). The tower returns at step 2.
+  // Step 1: the room's calls get the whole screen, each player's own words under their call, grouped by camp.
   if (step === 0) {
-    // The room split: box on the left, stay out on the right, each player's own words under their call.
-    const sides: { call: Call | null; list: typeof players }[] = [
+    const sides: { call: Call; list: typeof players }[] = [
       { call: "BOX", list: players.filter((p) => p.sub?.call === "BOX") },
       { call: "STAY", list: players.filter((p) => p.sub?.call === "STAY") },
     ];
     const none = players.filter((p) => !p.sub?.call);
     const n = Math.max(1, box + stay);
-    const labelFor = (name: string) => camps?.labels?.find((c) => c.players.includes(name))?.label ?? null;
+    const campOf = (list: typeof players) => {
+      const names = new Set(list.map((p) => p.name));
+      const muse = camps?.labels?.filter((c) => c.players.some((x) => names.has(x))).sort((x, y) => y.count - x.count)[0];
+      if (muse) return muse.label;
+      const f = camps?.camps.filter((c) => c.players.some((x) => names.has(x))).sort((x, y) => y.count - x.count)[0];
+      return f ? factorLabel(f.factor) : null;
+    };
+    const many = players.length > 4;
     return (
-      <main className="flex h-dvh flex-col gap-6 overflow-hidden p-12">
-        <div className="flex items-baseline justify-between gap-6">
-          <span className="text-24 font-semibold">{COPY.reveal.heading(decision.lap)}</span>
-          <span className="nums text-40 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.reveal.split(box, stay)}</span>
-        </div>
-        <div className="flex h-16 gap-0.5" aria-hidden>
-          {box > 0 && (
-            <div className="split-grow flex items-center bg-ink px-6 text-40 font-extrabold uppercase stretch-125 leading-hero text-bg" style={{ flexGrow: box / n }}>
-              <span className="nums">{box}</span>
-            </div>
+      <main className="grid h-dvh grid-rows-[auto_auto_auto_1fr_auto] gap-y-6 overflow-hidden px-14 py-10">
+        {top}
+        <h1 className="display text-[5rem] leading-none">{COPY.host.roomSplit(box, stay)}</h1>
+        <div className="flex h-[120px] border-2 border-ink">
+          {sides.map((side) =>
+            side.list.length ? (
+              <div
+                key={side.call}
+                className={`grow-x flex items-center justify-between gap-4 px-8 ${side.call === "BOX" ? "on-dark bg-ink text-white" : "bg-soft text-ink"}`}
+                style={{ flexGrow: side.list.length / n, flexBasis: 0 }}
+              >
+                <CallWord call={side.call} className="text-[3.25rem] font-black tracking-[-0.03em]" />
+                <span className="truncate font-mono text-lg font-bold">{side.list.map((p) => tla(p.name)).join(" · ")}</span>
+              </div>
+            ) : null,
           )}
-          {stay > 0 && (
-            <div className="split-grow flex items-center justify-end border-2 border-ink px-6 text-40 font-extrabold uppercase stretch-125 leading-hero" style={{ flexGrow: stay / n }}>
-              <span className="nums">{stay}</span>
-            </div>
-          )}
-          {box + stay === 0 && <div className="flex-1 bg-surface" />}
+          {box + stay === 0 && <div className="flex-1 bg-soft" />}
         </div>
-        <div className="grid min-h-0 flex-1 grid-cols-2 gap-8">
+        <div className="grid min-h-0 gap-x-6" style={{ gridTemplateColumns: sides.map((s) => `${Math.max(0.3, s.list.length / n)}fr`).join(" ") }}>
           {sides.map((side) => (
-            <section key={side.call} className="flex min-h-0 flex-col gap-3">
-              <CallWord call={side.call} className={`text-72 ${side.call === "STAY" ? "stretch-100!" : ""}`} />
-              <ol className="flex min-h-0 flex-col gap-0.5 overflow-hidden">
+            <section key={side.call} className="flex min-h-0 flex-col border-t-2 border-ink pt-4">
+              <span className="meta text-ink-2">{COPY.host.campTag(COPY.freeze.options[side.call])}</span>
+              <h2 className="display mt-1 line-clamp-2 text-[3rem] leading-[0.98]">{campOf(side.list) ?? COPY.freeze.options[side.call]}</h2>
+              <ol className={`mt-5 grid min-h-0 gap-x-8 gap-y-5 overflow-hidden ${side.list.length > 1 && side.list.length / n > 0.5 ? "grid-cols-2" : "grid-cols-1"}`}>
                 {side.list.map((p, i) => (
-                  <li key={p.name} className="row-in flex flex-col gap-2 bg-surface px-6 py-4" style={{ animationDelay: `${300 + i * 500}ms` }}>
-                    <span className="flex items-baseline gap-4">
-                      <span className="text-40 font-bold uppercase stretch-75 leading-hero">{tla(p.name)}</span>
-                      {labelFor(p.name) && <span className="truncate text-20 text-ink-2">{labelFor(p.name)}</span>}
+                  <li key={p.name} className="rise flex flex-col gap-2 border-l-[3px] border-ink pl-5" style={{ animationDelay: `${200 + i * 300}ms` }}>
+                    {p.sub?.transcript && <q className={`line-clamp-4 ${many ? "text-2xl" : "text-[2rem]"} font-medium leading-[1.3]`}>{p.sub.transcript}</q>}
+                    <span className="font-mono text-sm">
+                      <b className="font-bold">{tla(p.name)}</b> <span className="text-ink-2">{COPY.host.calledAt(clockText(p.sub?.seconds_to_call ?? 0))}</span>
                     </span>
-                    {p.sub?.transcript ? <q className={`line-clamp-3 ${side.list.length > 2 ? "text-24" : "text-32"} leading-body text-ink`}>{p.sub.transcript}</q> : null}
                   </li>
                 ))}
               </ol>
             </section>
           ))}
         </div>
-        {none.length > 0 && (
-          <p className="text-24 text-ink-3">
-            {COPY.reveal.noCall}: <span className="font-bold uppercase stretch-75">{none.map((p) => tla(p.name)).join("  ")}</span>
-          </p>
-        )}
-        {camps?.labels_source === "muse" && camps.labels?.length ? <p className="text-16 text-ink-3">{COPY.reveal.campsByMuse}</p> : null}
+        <footer className="flex items-center justify-between gap-6 text-base">
+          {none.length > 0 ? (
+            <p className="text-ink-2">
+              {COPY.reveal.noCall}: <span className="font-black text-ink">{none.map((p) => tla(p.name)).join("  ")}</span>
+            </p>
+          ) : (
+            <span />
+          )}
+          {camps?.labels_source === "muse" && camps.labels?.length ? <p className="text-sm text-ink-2">{COPY.reveal.campsByMuse}</p> : null}
+        </footer>
       </main>
     );
   }
 
+  // Steps 2 and 3: team, engine and (from step 3) the outcome on the team-colour field, with the box-minus-stay bars playing out.
+  const team = decision.team;
+  const engine = decision.engine;
+  const correct = decision.ground_truth.correct;
+  const end = diff?.values.filter((v): v is number => v != null).at(-1) ?? null;
   return (
-    <main className="grid h-dvh grid-cols-[minmax(420px,5fr)_7fr] gap-12 overflow-hidden p-12">
-      <section className="min-h-0">
-        {frame && <Tower drivers={frame.drivers} playerNumber={decision.player_role.number} dim={step < 2} pitTags={step >= 2 ? pitTags : undefined} mode={mode} />}
-      </section>
-      <section className="flex min-h-0 flex-col gap-6">
-        {header}
-
-        <div className="row-in flex flex-col gap-4 bg-surface p-6">
-          <div className="flex flex-col gap-1">
-            <span className="text-56 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.reveal.teamRow(decision.player_role.team, team.call)}</span>
-            <span className="text-20 text-ink-2">{team.reasons[0] ?? COPY.empty.noRadio}</span>
-          </div>
-          <div className="row-in flex flex-col gap-1" style={{ animationDelay: "600ms" }}>
-            <span className="nums text-56 font-extrabold uppercase stretch-125 tracking-hero leading-hero text-engine">
-              {COPY.reveal.engineRow(engine.call, Math.round(engine.confidence * 100))}
-            </span>
-            {engine.reasons.length && mode === "simple" ? (
-              <span className="text-20 text-ink-2">{engine.reasons[0]}</span>
-            ) : engine.reasons.length ? (
-              <ol className="flex list-decimal flex-col gap-1 pl-6 text-20 text-ink-2">
-                {engine.reasons.map((r) => (
-                  <li key={r}>{r}</li>
-                ))}
-              </ol>
-            ) : (
-              <span className="text-20 text-ink-2">{COPY.empty.noEngine}</span>
-            )}
-          </div>
+    <main className="flood grid h-dvh grid-rows-[auto_auto_1fr] gap-y-6 overflow-hidden bg-field px-14 py-10 text-on-field">
+      <div className="[&_button]:text-on-field [&_span.size-3]:border-on-field [&_span.bg-ink]:bg-on-field">{top}</div>
+      <div className="grid grid-cols-3 gap-x-6">
+        <div className="rise flex flex-col border-t-2 border-on-field pt-4">
+          <span className="meta">{COPY.host.teamDid(decision.player_role.team)}</span>
+          <span className="display mt-3 text-[4rem] leading-none">{COPY.freeze.options[team.call]}</span>
+          <span className="mt-3 line-clamp-2 font-mono text-base">{team.reasons[0] ?? COPY.empty.noRadio}</span>
         </div>
-        <ol className="flex flex-wrap gap-0.5">
+        <div className="rise flex flex-col border-t-2 border-on-field pt-4" style={{ animationDelay: "400ms" }}>
+          <span className="meta">{COPY.host.engineSaid}</span>
+          <span className="display mt-3 text-[4rem] leading-none">
+            {COPY.freeze.options[engine.call]} · <span className="nums">{Math.round(engine.confidence * 100)}%</span>
+          </span>
+          {engine.reasons.length === 0 ? (
+            <span className="mt-3 font-mono text-base">{COPY.empty.noEngine}</span>
+          ) : mode === "simple" ? (
+            <span className="mt-3 line-clamp-2 font-mono text-base">{engine.reasons[0]}</span>
+          ) : (
+            <ol className="mt-3 flex list-decimal flex-col gap-0.5 pl-5 font-mono text-sm">
+              {engine.reasons.map((r) => (
+                <li key={r}>{r}</li>
+              ))}
+            </ol>
+          )}
+        </div>
+        {step >= 2 ? (
+          <div className="rise on-dark flex flex-col bg-ink px-6 pb-5 pt-0 text-white">
+            <span className="mt-4 border-t-2 border-white pt-4 font-mono text-xs font-bold uppercase">{COPY.host.outcome}</span>
+            <span className="display nums mt-3 text-[4rem] leading-none">+{decision.ground_truth.swing_s.toFixed(1)} s</span>
+            <span className="mt-3 font-mono text-base">{COPY.host.worth(correct)}</span>
+          </div>
+        ) : (
+          <div className="border-2 border-dashed border-on-field" aria-hidden />
+        )}
+      </div>
+      <section className="flex min-h-0 flex-col border-t-2 border-on-field pt-4">
+        <div className="flex items-baseline justify-between gap-6">
+          <span className="meta">{COPY.host.diffTitle}</span>
+          <span className="meta font-medium">
+            {COPY.replay.lap(lap, total)} · {COPY.host.diffNote}
+          </span>
+        </div>
+        <div className="mt-2 flex items-center gap-6 font-mono text-sm">
+          <span className="flex items-center gap-2">
+            <span className="size-3.5 bg-current" />
+            {COPY.host.boxAhead}
+          </span>
+          <span className="flex items-center gap-2">
+            <span className="size-3.5 border-[1.5px] border-current" />
+            {COPY.host.boxBehind}
+          </span>
+          {step >= 2 && end != null && <b className="ml-auto font-bold">{COPY.host.atLap(end, decision.reveal_to_lap)}</b>}
+        </div>
+        <div className="mt-3 grid min-h-0 grid-cols-[1fr_340px] gap-8">
+          <div className="min-w-0">
+          {diff ? (
+            <DiffBars laps={diff.laps} values={diff.values} upto={step >= 2 ? lap : decision.lap - 1} height={470} />
+          ) : (
+            <p className="text-xl font-bold">{COPY.reveal.outcome[decision.id] ?? ""}</p>
+          )}
+          </div>
+          {near && (
+            <div className="rise min-w-0">
+              <NeighbourList t={near.t} revealed={near.revealed} />
+            </div>
+          )}
+        </div>
+        <ol className="mt-auto flex flex-wrap gap-x-6 gap-y-2 pt-3">
           {players.map((p) => (
-            <li key={p.name} className="flex h-24 min-w-36 flex-col justify-center gap-1 bg-surface px-4">
-              <span className="text-40 font-bold uppercase stretch-75 leading-hero">{tla(p.name)}</span>
-              <CallWord call={p.sub?.call ?? null} className={`text-24 ${p.sub?.call ? "" : "text-ink-3"}`} />
+            <li key={p.name} className="flex items-baseline gap-2">
+              <span className="text-xl font-black tracking-tight">{tla(p.name)}</span>
+              <CallWord call={p.sub?.call ?? null} className="font-mono text-sm font-bold" />
+              {p.sub?.call === correct && step >= 2 && <span className="meta border border-on-field px-1">{COPY.reveal.right}</span>}
             </li>
           ))}
+          {step >= 2 && <li className="ml-auto text-base font-bold">{COPY.reveal.outcome[decision.id] ?? ""}</li>}
         </ol>
-        {step === 2 && <p className="text-24 text-ink-2">{COPY.reveal.outcome[decision.id] ?? ""}</p>}
       </section>
     </main>
-  );
-}
-
-// Advanced, after the reveal: the ground-truth comparison numbers behind the verdict.
-export function Measured({ decision, gt, size = "md" }: { decision: DecisionPoint; gt: GroundTruthFile | null; size?: "sm" | "md" }) {
-  const sec = gt?.seconds;
-  const pos = gt?.positions_reference;
-  const lines: string[] = [];
-  if (sec) lines.push(COPY.mode.pairs(sec.pairs.length, sec.start_lap_end, sec.end_lap, sec.mean_delta_s_player_call_vs_other, decision.ground_truth.correct));
-  if (pos?.field) lines.push(COPY.mode.places(COPY.mode.field, pos.field, pos.end_lap));
-  const same = (x?: { n_box: number; n_stay: number; box_mean_gain: number; stay_mean_gain: number }, y?: typeof x) =>
-    !!x && !!y && x.n_box === y.n_box && x.n_stay === y.n_stay && x.box_mean_gain === y.box_mean_gain && x.stay_mean_gain === y.stay_mean_gain;
-  if (pos?.cohort && !same(pos.cohort, pos.field)) lines.push(COPY.mode.places(COPY.mode.cohort, pos.cohort, pos.end_lap));
-  if (!lines.length) return null;
-  return (
-    <div className="flex flex-col gap-1">
-      <Label>{COPY.mode.measured}</Label>
-      {lines.map((l) => (
-        <p key={l} className={`nums ${size === "sm" ? "text-16" : "text-20"} text-ink-2`}>
-          {l}
-        </p>
-      ))}
-    </div>
-  );
-}
-
-function FactorDots({ named, factors, onDeep = false }: { named: string[]; factors: string[]; onDeep?: boolean }) {
-  return (
-    <>
-      {factors.map((f) => (
-        <span key={f} className="text-center text-24" aria-label={`${factorLabel(f)}: ${named.includes(f) ? "yes" : "no"}`}>
-          {named.includes(f) ? COPY.reveal.named : <span className={onDeep ? "text-ink" : "text-ink-3"}>{COPY.reveal.notNamed}</span>}
-        </span>
-      ))}
-    </>
   );
 }
 
@@ -278,14 +307,14 @@ function Verdict({
   const correct = decision.ground_truth.correct;
   const subs = [...lobby.submissions].sort((a, b) => b.total - a.total || a.seconds_to_call - b.seconds_to_call);
   const factors = decision.factors;
-  const rowH = subs.length > 5 ? "h-10" : "h-14";
-  const cols = `minmax(120px,1.2fr) 248px repeat(${factors.length}, minmax(64px,0.8fr)) 56px 104px`;
+  const rowH = subs.length > 6 ? "min-h-10" : "min-h-12";
+  const cols = `minmax(120px,1.3fr) 200px repeat(${factors.length}, minmax(64px,0.8fr)) 64px 112px`;
 
   const best = subs.filter((s) => s.factors_named.length > 0);
   const bestK = best.length ? Math.max(...best.map((s) => s.factors_named.length)) : 0;
   const bestRows = best.filter((s) => s.factors_named.length === bestK).slice(0, 2);
 
-  type Row = { key: string; label: React.ReactNode; call: Call | null; named: string[]; time: number | null; total: number; kind: "player" | "team" | "engine" };
+  type Row = { key: string; label: string; call: Call | null; named: string[]; time: number | null; total: number; kind: "player" | "team" | "engine" };
   const rows: Row[] = [
     ...subs.map((s) => ({ key: s.player_name, label: tla(s.player_name), call: s.call, named: s.factors_named, time: s.seconds_to_call, total: s.total, kind: "player" as const })),
     ...(lb?.team && lb.engine
@@ -297,114 +326,115 @@ function Verdict({
   ];
 
   return (
-    <main className="flex h-dvh flex-col gap-4 overflow-hidden p-12">
-      <div className="flex shrink-0 flex-col gap-4 bg-surface px-6 py-6">
-        <h1 className={`whitespace-nowrap text-96 font-extrabold uppercase tracking-hero leading-hero ${correct === "STAY" ? "stretch-75" : "stretch-112"}`}>
-          {COPY.reveal.verdict(correct)}
-        </h1>
-        <div className="flex items-center gap-6">
-          <span className="nums shrink-0 whitespace-nowrap text-72 font-extrabold stretch-100 leading-hero text-flag-green">
-            +{decision.ground_truth.swing_s.toFixed(1)} s
-          </span>
-          <p className="min-w-0 text-24 text-ink-2">
+    <main className="grid h-dvh grid-cols-12 grid-rows-[auto_auto_1fr_auto] gap-x-6 gap-y-6 overflow-hidden px-14 py-10">
+      <header className="col-span-12 flex items-center justify-between gap-6">
+        <span className="meta text-sm">
+          {decision.race} · {COPY.reveal.heading(decision.lap)}
+        </span>
+        <Steps step={3} onNext={() => {}} />
+      </header>
+      <div className="col-span-12 flex items-end justify-between gap-10 border-b-2 border-ink pb-6">
+        <h1 className="display whitespace-nowrap text-5xl">{COPY.reveal.verdict(correct)}</h1>
+        <div className="flex min-w-0 items-end gap-6">
+          <span className="nums shrink-0 bg-field px-4 py-2 text-4xl font-bold leading-none text-on-field">+{decision.ground_truth.swing_s.toFixed(1)} s</span>
+          <p className="max-w-[44ch] text-base">
             {COPY.reveal.swing(correct, decision.ground_truth.swing_s, decision.reveal_to_lap)} {COPY.reveal.outcome[decision.id] ?? ""}
           </p>
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-12 gap-8">
-        <section className="col-span-9 flex min-h-0 flex-col gap-4">
-          <div role="table" className="flex flex-col gap-0.5">
-            <div role="row" className="grid min-h-8 items-end gap-x-4 px-4 pb-1 text-14 font-semibold uppercase tracking-label text-ink-3" style={{ gridTemplateColumns: cols }}>
-              <span role="columnheader">{COPY.reveal.who}</span>
-              <span role="columnheader">{COPY.reveal.call}</span>
+      <section className="col-span-9 flex min-h-0 flex-col gap-5">
+        <div role="table" className="flex flex-col">
+          <div role="row" className="grid items-end gap-x-4 border-b-2 border-ink pb-2" style={{ gridTemplateColumns: cols }}>
+            <span role="columnheader" className="meta">{COPY.reveal.who}</span>
+            <span role="columnheader" className="meta">{COPY.reveal.call}</span>
+            {factors.map((f) => (
+              <span role="columnheader" key={f} className="text-center text-xs font-bold leading-tight">
+                {factorLabel(f)}
+              </span>
+            ))}
+            <span role="columnheader" className="meta text-right">{COPY.reveal.speed}</span>
+            <span role="columnheader" className="meta text-right">{COPY.reveal.score}</span>
+          </div>
+          {rows.map((r) => (
+            <div
+              role="row"
+              key={r.key}
+              className={`grid ${rowH} items-center gap-x-4 border-b ${r.kind === "player" ? "border-line" : "border-ink bg-soft"}`}
+              style={{ gridTemplateColumns: cols }}
+            >
+              <span role="cell" className="truncate pl-1 text-xl font-black tracking-tight">
+                {r.label}
+              </span>
+              <span role="cell" className="flex items-baseline gap-3 whitespace-nowrap">
+                <CallWord call={r.call} className="text-xl font-bold" />
+                {r.call === correct && <span className="meta bg-ink px-1.5 py-0.5 text-white">{COPY.reveal.right}</span>}
+              </span>
               {factors.map((f) => (
-                <span role="columnheader" key={f} className="text-center normal-case tracking-normal leading-row">
-                  {factorLabel(f)}
+                <span role="cell" key={f} className="flex justify-center" aria-label={`${factorLabel(f)}: ${r.named.includes(f) ? "yes" : "no"}`}>
+                  {r.named.includes(f) ? <Check /> : <span className="text-ink-3">{COPY.reveal.notNamed}</span>}
                 </span>
               ))}
-              <span role="columnheader" className="text-right">{COPY.reveal.speed}</span>
-              <span role="columnheader" className="text-right">{COPY.reveal.score}</span>
+              <span role="cell" className="nums text-right text-base">
+                {r.time != null ? fmtSeconds(r.time) : ""}
+              </span>
+              <span role="cell" className="nums pr-1 text-right text-lg font-bold">
+                {r.total} <span className="text-sm font-medium text-ink-2">{COPY.score.outOf(MAX_TOTAL)}</span>
+              </span>
             </div>
-            {rows.map((r) => (
-              <div
-                role="row"
-                key={r.key}
-                className={`grid ${rowH} items-center gap-x-4 px-4 ${r.kind === "engine" ? "bg-engine-deep" : "bg-surface"}`}
-                style={{ gridTemplateColumns: cols }}
-              >
-                <span role="cell" className="truncate text-24 font-bold uppercase stretch-75">
-                  {r.label}
-                </span>
-                <span role="cell" className="flex items-baseline gap-3 whitespace-nowrap">
-                  <CallWord call={r.call} className={`text-32 stretch-75! ${r.call === correct ? "text-ink" : "text-ink-2"}`} />
-                  {r.call === correct && (
-                    <span className={`text-32 font-extrabold uppercase stretch-75 leading-hero ${r.kind === "engine" ? "text-ink" : "text-flag-green"}`}>{COPY.reveal.right}</span>
-                  )}
-                </span>
-                <FactorDots named={r.named} factors={factors} onDeep={r.kind === "engine"} />
-                <span role="cell" className={`nums text-right text-20 ${r.kind === "engine" ? "text-ink" : "text-ink-2"}`}>
-                  {r.time != null ? fmtSeconds(r.time) : ""}
-                </span>
-                <span role="cell" className="nums text-right text-24 font-semibold">
-                  {r.total} <span className={`text-16 ${r.kind === "engine" ? "text-ink" : "text-ink-3"}`}>{COPY.score.outOf(MAX_TOTAL)}</span>
-                </span>
-              </div>
-            ))}
-          </div>
-          {bestRows.map((s) => (
-            <p key={s.player_name} className="line-clamp-2 text-24">
-              <span className="font-semibold">{COPY.reveal.bestReason(tla(s.player_name), bestK, factors.length)}</span>{" "}
-              <q className="text-ink">{s.transcript}</q>
-            </p>
           ))}
-          {mode === "advanced" && <Measured decision={decision} gt={gt} />}
-        </section>
+        </div>
+        {bestRows.map((s) => (
+          <p key={s.player_name} className="line-clamp-2 text-lg">
+            <span className="font-black">{COPY.reveal.bestReason(tla(s.player_name), bestK, factors.length)}</span> <q className="font-medium">{s.transcript}</q>
+          </p>
+        ))}
+        {mode === "advanced" && <Measured decision={decision} gt={gt} />}
+      </section>
 
-        <section className="col-span-3 flex min-h-0 flex-col gap-3 overflow-hidden">
-          <Label>{COPY.reveal.camps}</Label>
-          {camps?.labels_source === "muse" && camps.labels && camps.labels.length > 0 ? (
-            <>
-              <ol className="flex flex-col gap-0.5">
-                {camps.labels.slice(0, 4).map((c) => (
-                  <li key={c.label} className="flex flex-col gap-1 bg-surface px-4 py-3">
-                    <span className="text-20 font-bold">{c.label}</span>
-                    <span className="flex items-baseline justify-between gap-3">
-                      {c.call ? <CallWord call={c.call} className="text-16" /> : <span />}
-                      <span className="text-16 font-semibold uppercase stretch-75 text-ink-2">{c.players.map(tla).join(" ")}</span>
-                    </span>
-                  </li>
-                ))}
-              </ol>
-              <p className="text-16 text-ink-3">{COPY.reveal.campsByMuse}</p>
-            </>
-          ) : camps && camps.camps.length > 0 ? (
-            <ol className="flex flex-col gap-0.5">
-              {camps.camps.slice(0, 4).map((c) => (
-                <li key={c.factor} className="flex flex-col gap-1 bg-surface px-4 py-3">
+      <section className="col-span-3 flex min-h-0 flex-col gap-3 overflow-hidden">
+        <span className="meta border-b-2 border-ink pb-2">{COPY.reveal.camps}</span>
+        {camps?.labels_source === "muse" && camps.labels && camps.labels.length > 0 ? (
+          <>
+            <ol className="flex flex-col">
+              {camps.labels.slice(0, 4).map((c) => (
+                <li key={c.label} className="flex flex-col gap-1 border-b border-line py-3">
+                  <span className="text-lg font-black leading-tight tracking-tight">{c.label}</span>
                   <span className="flex items-baseline justify-between gap-3">
-                    <span className="nums text-20 font-bold">{COPY.reveal.camp(c.count, camps.submitted, factorLabel(c.factor))}</span>
-                    <span className="text-16 font-semibold uppercase stretch-75 text-ink-2">{c.players.map(tla).join(" ")}</span>
+                    {c.call ? <CallWord call={c.call} className="meta" /> : <span />}
+                    <span className="text-sm font-bold">{c.players.map(tla).join(" ")}</span>
                   </span>
-                  {c.quotes[0] && <q className="line-clamp-1 text-16 text-ink-2">{c.quotes[0]}</q>}
                 </li>
               ))}
             </ol>
-          ) : (
-            <p className="text-20 text-ink-3">{camps ? COPY.reveal.noFactor : COPY.reveal.grading}</p>
-          )}
-        </section>
-      </div>
+            <p className="text-sm text-ink-2">{COPY.reveal.campsByMuse}</p>
+          </>
+        ) : camps && camps.camps.length > 0 ? (
+          <ol className="flex flex-col">
+            {camps.camps.slice(0, 4).map((c) => (
+              <li key={c.factor} className="flex flex-col gap-1 border-b border-line py-3">
+                <span className="flex items-baseline justify-between gap-3">
+                  <span className="nums text-base font-bold">{COPY.reveal.camp(c.count, camps.submitted, factorLabel(c.factor))}</span>
+                  <span className="text-sm font-bold">{c.players.map(tla).join(" ")}</span>
+                </span>
+                {c.quotes[0] && <q className="line-clamp-1 text-sm text-ink-2">{c.quotes[0]}</q>}
+              </li>
+            ))}
+          </ol>
+        ) : (
+          <p className="text-base text-ink-2">{camps ? COPY.reveal.noFactor : COPY.reveal.grading}</p>
+        )}
+      </section>
 
-      <div className="flex shrink-0 items-end justify-between gap-6">
-        <span className="flex items-center gap-8">
-          <Button className="h-14 text-20" onClick={onNext}>
+      <footer className="col-span-12 flex items-end justify-between gap-6">
+        <span className="flex items-center gap-6">
+          <Button size="lg" onClick={onNext}>
             {COPY.reveal.showScores}
           </Button>
           {modeToggle}
         </span>
-        <p className="text-14 text-ink-3">{COPY.reveal.credit}</p>
-      </div>
+        <p className="max-w-[80ch] text-right text-xs text-ink-2">{COPY.reveal.credit}</p>
+      </footer>
     </main>
   );
 }
@@ -430,9 +460,7 @@ export function HostScoreboard({ code, decision, lobby }: { code: string; decisi
   ];
   const rows = unsorted.sort(
     (a, b) =>
-      b.total - a.total ||
-      (a.kind === "player" ? 0 : 1) - (b.kind === "player" ? 0 : 1) ||
-      (a.sub?.seconds_to_call ?? 0) - (b.sub?.seconds_to_call ?? 0),
+      b.total - a.total || (a.kind === "player" ? 0 : 1) - (b.kind === "player" ? 0 : 1) || (a.sub?.seconds_to_call ?? 0) - (b.sub?.seconds_to_call ?? 0),
   );
 
   const sel = rows.find((r) => r.key === selected) ?? rows.find((r) => r.kind === "player") ?? rows[0];
@@ -450,69 +478,111 @@ export function HostScoreboard({ code, decision, lobby }: { code: string; decisi
   const top = lobbyPlayers[0];
   if (top && engineTotal != null && top.total > engineTotal) facts.push(COPY.score.beatEngineBy(top.label, top.total - engineTotal));
   else if (top && teamTotal != null && top.total > teamTotal) facts.push(COPY.score.beatTeamBy(top.label, decision.player_role.team, top.total - teamTotal));
+  const pct = selPct != null ? COPY.score.percentile(selPct) : null;
+  const engineCall = lb?.engine?.call ?? decision.engine.call;
+  const perFactor = decision.factors.length ? 50 : 0;
+  const cols = "56px minmax(150px,1.2fr) 120px 110px 140px 130px 110px 90px minmax(90px,0.8fr)";
 
   return (
-    <main className="grid h-dvh grid-cols-12 gap-12 overflow-hidden p-12">
-      <section className="col-span-7 flex min-h-0 flex-col gap-4">
-        <p className="text-24 text-ink-2">{facts.join(" ")}</p>
-        <ol className="flex flex-col gap-0.5">
+    <main className="grid h-dvh grid-cols-12 grid-rows-[auto_auto_1fr_auto] gap-x-6 gap-y-6 overflow-hidden px-14 py-10">
+      <header className="col-span-12 flex items-center justify-between gap-6 font-mono text-lg font-bold uppercase">
+        <span>{COPY.host.scoreboardTag(decision.race, decision.lap)}</span>
+        <span>{COPY.host.room(code)}</span>
+      </header>
+      <div className="col-span-12 flex items-end justify-between gap-8">
+        <h1 className="display text-[5rem] leading-none">{top ? COPY.host.takesRound(top.label) : COPY.score.standings}</h1>
+        {facts.length > 0 && <p className="max-w-[40ch] pb-2 text-right text-lg font-bold">{facts.join(" ")}</p>}
+      </div>
+
+      <section className="col-span-8 flex min-h-0 flex-col overflow-hidden">
+        <div className="flex min-h-0 flex-col">
+          <div className="grid items-end gap-x-4 border-b-2 border-ink pb-2" style={{ gridTemplateColumns: cols }}>
+            {[COPY.host.cols.rank, COPY.host.cols.player, COPY.host.cols.call, COPY.host.cols.time, COPY.host.cols.vsEngine, COPY.host.cols.callPts, COPY.host.cols.reason, COPY.host.cols.pct, COPY.host.cols.total].map((h, i) => (
+              <span key={h} className={`meta text-ink-2 ${i >= 7 ? "text-right" : ""}`}>
+                {h}
+              </span>
+            ))}
+          </div>
           {rows.map((r, i) => {
-            const p1 = i === 0;
+            const p1 = i === 0 && r.kind === "player";
             const on = sel?.key === r.key;
-            const pct = r.kind === "player" ? pctOf(r.name) : null;
-            const b = r.sub ? badgesFor(r.sub, decision, teamTotal, engineTotal) : null;
+            const pctR = r.kind === "player" ? pctOf(r.name) : null;
+            const call = r.sub?.call ?? (r.kind === "team" ? lb?.team?.call : r.kind === "engine" ? lb?.engine?.call : null) ?? null;
             return (
-              <li key={r.key}>
-                <button
-                  onClick={() => setSelected(r.key)}
-                  className={`grid w-full grid-cols-[32px_minmax(96px,auto)_56px_56px_1fr] items-center gap-x-4 px-4 text-left transition-colors duration-[120ms] ${p1 ? "h-14" : "h-9"} ${
-                    on ? "bg-ink text-bg" : r.kind === "engine" ? "bg-engine-deep hover:bg-surface-2" : "bg-surface hover:bg-surface-2"
-                  }`}
-                  aria-pressed={on}
-                >
-                  <span className="nums text-right text-20 font-semibold">{i + 1}</span>
-                  <span className={`truncate font-bold uppercase stretch-75 ${p1 ? "text-40 leading-hero" : "text-20"}`}>{r.label}</span>
-                  <span className="nums text-right text-20 font-semibold">{r.total}</span>
-                  <span className="nums text-right text-16">{pct != null ? `${pct}%` : ""}</span>
-                  <span className="min-w-0">{b && <BadgeTags badges={b} size="sm" inverted={on} />}</span>
-                </button>
-              </li>
+              <button
+               
+                key={r.key}
+                onClick={() => setSelected(r.key)}
+                aria-pressed={on}
+                style={{ gridTemplateColumns: cols }}
+                className={`grid items-center gap-x-4 border-b text-left transition-colors duration-150 ${lobbyPlayers.length > 6 ? "min-h-[64px]" : "min-h-[96px]"} ${
+                  p1 ? "-mx-5 border-field bg-field px-5 text-on-field" : r.kind === "player" ? "border-line hover:bg-soft" : "border-line text-ink-2 hover:bg-soft"
+                } ${on && !p1 ? "outline outline-2 -outline-offset-2 outline-ink" : ""}`}
+              >
+                <span className="nums text-xl font-bold">
+                  {r.kind === "player" ? lobbyPlayers.indexOf(r) + 1 : ""}
+                </span>
+                <span className={`truncate font-black tracking-[-0.03em] ${r.kind === "player" ? "text-[2.75rem] leading-none" : "text-xl"}`}>
+                  {r.label}
+                </span>
+                <CallWord call={call} className="text-[1.625rem] font-bold" />
+                <span className="nums text-[1.625rem] font-bold">
+                  {r.sub ? clockText(r.sub.seconds_to_call) : ""}
+                </span>
+                <span className="text-[1.625rem] font-bold">
+                  {r.kind === "player" && call ? (call === engineCall ? COPY.host.agreed : COPY.host.against) : ""}
+                </span>
+                <span className="nums text-[1.625rem] font-bold">
+                  {r.c ? `+${r.c}` : "0"}
+                </span>
+                <span className="nums text-[1.625rem] font-bold">
+                  {r.r ? `+${r.r}` : "0"}
+                </span>
+                <span className="nums text-right text-base">
+                  {pctR != null ? `${pctR}%` : ""}
+                </span>
+                <span className={`nums text-right font-bold tracking-[-0.03em] ${r.kind === "player" ? "text-[3.25rem] leading-none" : "text-2xl"}`}>
+                  {r.total}
+                </span>
+              </button>
             );
           })}
-        </ol>
-        <Button variant="secondary" className="mt-auto h-14 self-start text-20" onClick={() => router.push("/")}>
-          {COPY.score.newLobby}
-        </Button>
+        </div>
       </section>
 
-      <section className="col-span-5 flex min-h-0 flex-col gap-8">
+      <section className="col-span-4 flex min-h-0 flex-col gap-4 border-t-2 border-ink pt-4">
         {sel && (
           <>
-            <h1 className="text-96 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{sel.label}</h1>
-            <p className="nums text-40 font-semibold stretch-75">
-              {COPY.score.equation(sel.c, sel.r, sel.total)} <span className="text-ink-3">{COPY.score.outOf(MAX_TOTAL)}</span>
+            <span className="meta">{sel.kind === "player" ? sel.name : sel.label}</span>
+            <p className="nums text-xl font-bold">
+              {COPY.score.equation(sel.c, sel.r, sel.total)} <span className="text-ink-2">{COPY.score.outOf(MAX_TOTAL)}</span>
             </p>
-            {selPct != null && (
-              <div className="flex flex-col gap-2">
-                <p className="flex items-baseline gap-4">
-                  <span className="text-24">{COPY.score.percentile(selPct).pre}</span>
-                  <span className="nums text-72 font-extrabold stretch-125 leading-hero">{COPY.score.percentile(selPct).num}</span>
-                  <span className="text-24">{COPY.score.percentile(selPct).post}</span>
-                </p>
-                <p className="text-20 text-ink-2">
-                  {lb && COPY.score.percentileHelp(lb.total_players - 1)} {selRank > 0 && COPY.score.lobbyRank(selRank, lobbyPlayers.length)}.
+            {pct && (
+              <div className="flex flex-col gap-1">
+                <span className="text-base">{pct.pre}</span>
+                <span className="nums text-[4rem] font-bold leading-none tracking-[-0.03em]">{pct.num}</span>
+                <span className="text-base">{pct.post}</span>
+                <p className="mt-1 text-sm text-ink-2">
+                  {lb && COPY.score.percentileHelp(lb.total_players - 1)} {selRank > 0 && `${COPY.score.lobbyRank(selRank, lobbyPlayers.length)}.`}
                 </p>
               </div>
             )}
             {sel.sub && (
               <>
-                <BadgeTags badges={badgesFor(sel.sub, decision, teamTotal, engineTotal)} />
-                {sel.sub.transcript && <q className="line-clamp-3 text-24 text-ink">{sel.sub.transcript}</q>}
+                <BadgeList badges={badgesFor(sel.sub, decision, teamTotal, engineTotal)} />
+                {sel.sub.transcript && <q className="line-clamp-3 text-lg font-medium leading-snug">{sel.sub.transcript}</q>}
               </>
             )}
           </>
         )}
       </section>
+
+      <footer className="col-span-12 flex items-center justify-between gap-6 border-t-2 border-ink pt-4">
+        <p className="text-xl font-bold">{perFactor ? COPY.host.scoringRule(50) : ""}</p>
+        <Button variant="primary" size="md" onClick={() => router.push("/")}>
+          {COPY.score.newLobby}
+        </Button>
+      </footer>
     </main>
   );
 }

@@ -1,12 +1,17 @@
 """Build replay frames, ground truth and engine calls for each decision point.
 
 Reads data/jolpica/, data/manual/ and (if present) data/openf1/.
-Writes two trees (docs/audits/security.md M2):
-- server-data/: full decisions (team, engine, ground truth), every lap of frames, ground_truth.json and
-  engine_calls.json. Not served; lib/data.ts reads it and GET /api/lobby/[code]/reveal hands it out after the reveal.
-- public/data/: what a player may see before the reveal. Blind decision.json (no team, engine, ground truth
-  or reveal lap) and frames.json cut at the decision: laps 1..L-1 plus a lap-L call-moment frame.
-Run: python3 engine/build.py
+Writes build/race-data/ (gitignored, never served):
+- load.json: the rows scripts/seed-db.mjs upserts into Postgres (db/schema.sql): races, race_laps (one row per
+  driver per lap) and decision_points (blind decision, full decision, ground truth, engine inputs).
+- full/<id>/{decision,frames,ground_truth}.json and full/index.json: the same full data as files, for the
+  engine tests and for diffing a rebuild.
+- blind/<id>/{decision,frames}.json and blind/index.json: what a player may see before the reveal (no team,
+  engine, ground truth or reveal lap; frames cut at the call). scripts/test-data.ts checks that lib/data.ts
+  derives the same blind frames from race_laps.
+The app reads only the database (lib/data.ts); docs/audits/security.md M2 and security-contract.md
+"Round 3 (DB data)" say which columns are served before the reveal.
+Run: python3 engine/build.py, then node --env-file=.env.local scripts/seed-db.mjs
 """
 import json
 import statistics
@@ -18,8 +23,9 @@ ROOT = Path(__file__).resolve().parent.parent
 JOL = ROOT / "data" / "jolpica"
 MAN = ROOT / "data" / "manual"
 OF1 = ROOT / "data" / "openf1"
-OUT = ROOT / "server-data"
-PUB = ROOT / "public" / "data"
+BUILD = ROOT / "build" / "race-data"
+OUT = BUILD / "full"
+PUB = BUILD / "blind"
 BLIND_KEYS = ("id", "race", "blind_title", "lap", "trigger", "player_role", "options", "replay_from_lap", "factors",
               "total_laps", "pit_loss")
 
@@ -144,7 +150,7 @@ def build_frames(race, results, comps, sc_laps, vsc_laps):
             last = done[-1] if done else 0
             rows.append({**info[d], "id": d, "position": race["pos"][d][lap], "_cum": cum[d],
                          "compound": comps.get((d, stint)), "stint": stint, "tyre_age": lap - last,
-                         "pitted_this_lap": lap in sl})
+                         "pitted_this_lap": lap in sl, "lap_time_s": round(t[lap], 3)})
         rows.sort(key=lambda r: r["position"])
         lead = rows[0]["_cum"]
         for r in rows:
@@ -278,6 +284,45 @@ def blind_title(frames, dp):
     return f"Lap {L}. {trig}. You're in P{prev['position']}, tyres {me['tyre_age']} laps old."
 
 
+def driver_answers(race, results, frames, dp, track, team_manual):
+    """Per-car answers for one decision point (Round 4: each player plays one car). For every car that started
+    lap L and was still running on it: the seconds ground truth with that car as the player (time_ground_truth
+    unchanged, so the decision's own player gets exactly the shipped answer), the engine's call for that car
+    from frames 1..L only, and what its team did inside the window. A car is scorable when its comparison set
+    (+/-3 positions at the end of lap L-1) has cars on both calls and at least one complete pair of lap times."""
+    L = dp["lap"]
+    w0, w1 = dp["window"]
+    trig = {"SC": "the safety car", "VSC": "the virtual safety car"}[dp["trigger"]]
+    names = {r["Driver"]["driverId"]: r["Driver"].get("familyName") or r["Driver"]["code"] for r in results}
+    running = {d["id"] for d in frames[L - 1]["drivers"]}
+    out = []
+    for d in frames[L - 2]["drivers"]:
+        if d["id"] not in running:
+            continue
+        tg = time_ground_truth(race, frames, {**dp, "player": {"id": d["id"]}})
+        scorable = bool(tg["group_player_call"]) and bool(tg["group_other_call"]) and bool(tg["pairs"])
+        e = eng.decide(frames[:L], L, d["code"], track)
+        stops = [p for p in race["stops"].get(d["id"], []) if w0 <= p <= w1]
+        call = "BOX" if stops else "STAY"
+        if d["id"] == dp["player"]["id"] and team_manual.get("call") == call:
+            reasons = team_manual.get("reasons", [])
+        elif stops:
+            reasons = [f"Pitted on lap {stops[0]} under {trig}."]
+        else:
+            reasons = [f"Stayed out on laps {w0}-{w1} under {trig}."]
+        colour = TEAM_COLOURS.get(d["team"])
+        blind = {"code": d["code"], "number": d["number"], "name": names[d["id"]], "team": d["team"],
+                 "team_colour": colour, "blind_title": blind_title(frames, {**dp, "player": {"id": d["id"]}})}
+        out.append({"code": d["code"], "number": d["number"], "name": names[d["id"]], "team": d["team"],
+                    "team_colour": colour, "position": d["position"], "scorable": scorable, "blind": blind,
+                    "full": {"team_call": {"call": call, "reasons": reasons},
+                             "engine": {"call": e["call"], "confidence": e["confidence"], "reasons": e["reasons"]},
+                             "ground_truth": {"correct": tg["correct"], "swing_s": tg["swing_s"]},
+                             "ground_truth_detail": tg},
+                    "engine_inputs": e["inputs"]})
+    return out
+
+
 def call_moment_frame(clean, dp):
     """What the pit wall sees when the call is due (same rule as lib/client/race.ts callMomentFrames):
     the order and gaps at the end of lap L-1, tyre ages +1, lap L's track status, and stops on lap L only by
@@ -292,10 +337,35 @@ def call_moment_frame(clean, dp):
                         for d in prev["drivers"]]}
 
 
+def race_row(key, dp, race, of1):
+    meta = json.loads((JOL / key / "laps.json").read_text())
+    return {"key": key, "name": dp["race"], "season": int(meta["season"]), "round": int(meta["round"]),
+            "race_name": meta.get("raceName"), "circuit": meta.get("Circuit", {}).get("circuitName"),
+            "race_date": meta.get("date"), "total_laps": race["n_laps"],
+            "source": {"laps": f"jolpica:data/jolpica/{key}", "pit_stops": f"jolpica:data/jolpica/{key}",
+                       "compounds": f"openf1:data/openf1/{of1.name}" if of1 else f"manual:data/manual/{key}.json",
+                       "track_status": f"manual:data/manual/{key}.json"}}
+
+
+def lap_rows(key, frames, clean):
+    """One row per driver per lap (table race_laps). clean[i] and frames[i] list the same drivers in the same order."""
+    rows = []
+    for f, c in zip(frames, clean):
+        for r, d in zip(f["drivers"], c["drivers"]):
+            rows.append({"race_key": key, "lap": c["lap"], "driver_id": r["id"], "driver_code": d["code"],
+                         "driver_number": d["number"], "team": d["team"], "team_colour": d["team_colour"],
+                         "position": d["position"], "lap_time_s": d["lap_time_s"],
+                         "gap_to_leader_s": d["gap_to_leader_s"], "compound": d["compound"], "stint": r["stint"],
+                         "tyre_age": d["tyre_age"], "pitted": d["pitted_this_lap"],
+                         "track_status": c["track_status"]})
+    return rows
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     PUB.mkdir(parents=True, exist_ok=True)
     index, engine_calls = [], {}
+    load = {"generated_by": "engine/build.py", "races": [], "race_laps": [], "decision_points": []}
     for dp in DECISIONS:
         key = dp["race_key"]
         if not (JOL / key / "laps.json").exists():
@@ -343,7 +413,7 @@ def main():
         (d / "decision.json").write_text(json.dumps(decision, indent=1))
         clean = [{"lap": f["lap"], "track_status": f["track_status"],
                   "drivers": [{**{k: r[k] for k in ("code", "number", "team", "position", "gap_to_leader_s",
-                                                    "compound", "tyre_age", "pitted_this_lap")},
+                                                    "compound", "tyre_age", "pitted_this_lap", "lap_time_s")},
                                "team_colour": TEAM_COLOURS.get(r["team"])} for r in f["drivers"]]}
                  for f in frames]
         (d / "frames.json").write_text(json.dumps(clean, separators=(",", ":")))
@@ -356,9 +426,28 @@ def main():
         (pd / "decision.json").write_text(json.dumps({k: public[k] for k in BLIND_KEYS}, indent=1))
         blind = clean[:dp["lap"] - 1] + [call_moment_frame(clean, dp)]
         (pd / "frames.json").write_text(json.dumps(blind, separators=(",", ":")))
-        (pd / "ground_truth.json").unlink(missing_ok=True)
         engine_calls[dp["id"]] = {**decision["engine"], "inputs": e["inputs"]}
+        drivers = driver_answers(race, results, frames, dp, track, team)
+        mine = next(x for x in drivers if x["code"] == pcode)
+        assert mine["scorable"] and mine["full"]["ground_truth_detail"] == tg, f"{dp['id']}: per-car answer drifted"
+        (d / "drivers.json").write_text(json.dumps(drivers, indent=1))
+        (pd / "drivers.json").write_text(json.dumps({"decision_id": dp["id"], "default_driver": pcode,
+                                                      "drivers": [x["blind"] for x in drivers if x["scorable"]]},
+                                                     indent=1))
         index.append({"id": dp["id"], "race": dp["race"], "lap": dp["lap"], "title": dp["title"]})
+        if not any(r["key"] == key for r in load["races"]):
+            load["races"].append(race_row(key, dp, race, of1))
+            load["race_laps"].extend(lap_rows(key, frames, clean))
+        load["decision_points"].append({
+            "id": dp["id"], "race_key": key, "lap": dp["lap"], "trigger": dp["trigger"], "title": dp["title"],
+            "player_team": dp["player"]["team"], "player_driver": dp["player"]["driver"],
+            "player_number": dp["player"]["number"], "player_code": pcode,
+            "blind": {k: public[k] for k in BLIND_KEYS}, "full": decision,
+            "ground_truth": {"seconds": tg, "positions_reference": gt, "pit_loss": pit_loss},
+            "engine_inputs": e["inputs"],
+            "drivers": [{"decision_id": dp["id"], **{k: x[k] for k in ("code", "number", "name", "team", "team_colour",
+                                                                       "position", "scorable", "blind", "full",
+                                                                       "engine_inputs")}} for x in drivers]})
 
         print(f"\n== {dp['id']}  [positions reference] baseline lap {gt['baseline_lap']} -> end lap {gt['end_lap']}  window {gt['window']}")
         for name in ("field", "cohort"):
@@ -376,13 +465,18 @@ def main():
         print(f"    -> correct {tg['correct']}, swing_s {tg['swing_s']}")
         print(f"  pit loss: {loss} s green (median of {n_loss} stops, {src_key})")
         print(f"  engine: {e['call']} conf {e['confidence']}  inputs {e['inputs']}")
+        print(f"  per-car: {sum(x['scorable'] for x in drivers)} of {len(drivers)} cars scorable: "
+              + ", ".join(f"{x['code']} {x['full']['ground_truth']['correct']} {x['full']['ground_truth']['swing_s']}s"
+                          for x in drivers if x["scorable"]))
         for r in e["reasons"]:
             print(f"    - {r}")
 
     (OUT / "index.json").write_text(json.dumps(index, indent=1))
     (PUB / "index.json").write_text(json.dumps(index, indent=1))
     (OUT / "engine_calls.json").write_text(json.dumps(engine_calls, indent=1))
-    (PUB / "engine_calls.json").unlink(missing_ok=True)
+    (BUILD / "load.json").write_text(json.dumps(load, separators=(",", ":")))
+    print(f"\nwrote {BUILD.relative_to(ROOT)}/load.json: {len(load['races'])} races, "
+          f"{len(load['race_laps'])} lap rows, {len(load['decision_points'])} decision points")
 
 
 if __name__ == "__main__":

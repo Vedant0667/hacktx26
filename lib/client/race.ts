@@ -199,3 +199,152 @@ export function raceStory(seen: LapFrame[], d: BlindDecision, totalLaps: number)
     nearStops,
   };
 }
+
+// Pit loss under the current flag: the same source and factors as projectRejoin
+// (blind decision pit_loss.normal_s × 0.5 under SC, × 0.75 under VSC, × 1 at green).
+export function pitLossUnder(normal: number | null | undefined, status: LapFrame["track_status"]): number | null {
+  if (normal == null) return null;
+  const factor = status === "SC" ? 0.5 : status === "VSC" ? 0.75 : 1;
+  return Math.round(normal * factor * 10) / 10;
+}
+
+// Undercut clock, from pre-call info only (callMomentFrames output: laps before L plus the call-moment frame).
+// A rival is a car within one pit loss (current flag) that stopped in the last UNDERCUT_WINDOW laps, or, when
+// none did, the nearest car each side that has not stopped (the lighter "if they stay out" version).
+export const UNDERCUT_WINDOW = 5;
+// Below this many seconds either way, a projected gap is "about level": no signed decimal is shown.
+export const TIGHT_S = 1.0;
+export const isTight = (v: number | null | undefined) => v != null && Math.abs(v) < TIGHT_S;
+// Rough fuel effect: later laps get this much faster per lap, removed from the new-tyre gain estimate.
+const FUEL_S_PER_LAP = 0.05;
+
+export interface Undercut {
+  code: string;
+  number: number;
+  compound: string | null;
+  age: number | null;
+  pitted: boolean;
+  // Seconds; positive = the rival is behind you on the road.
+  gapNow: number;
+  lapsSinceStop: number | null;
+  // The call came on the rival's out-lap or first lap after it: no clean new-tyre lap to read yet.
+  tooEarly: boolean;
+  // Rival lap time minus yours over its laps since the stop, out-lap excluded; negative = rival faster.
+  paceDelta: number | null;
+  paceLaps: number[];
+  // Gap after a stop now: positive = you rejoin ahead of the rival.
+  boxNow: number;
+  // Same if you wait one lap (null without a pace delta).
+  boxNextLap: number | null;
+  // Laps of staying out until boxing would drop you behind the rival (0: already; null: never at this pace).
+  lapsUntilUndercut: number | null;
+  loss: number;
+  // Lighter version only: estimated gain per lap from new tyres, from cars that already stopped.
+  newTyreGain: number | null;
+  gainFrom: number;
+}
+
+type TimedDriver = LapFrame["drivers"][number] & { lap_time_s?: number | null };
+
+export function undercutRivals(seen: LapFrame[], d: BlindDecision, max = 2): Undercut[] {
+  const moment = seen.find((f) => f.lap === d.lap);
+  const me = moment?.drivers.find((x) => x.number === d.player_role.number);
+  const loss = pitLossUnder(d.pit_loss?.normal_s, moment?.track_status ?? "GREEN");
+  if (!moment || !me || me.gap_to_leader_s == null || loss == null) return [];
+  const byLap = new Map(seen.map((f) => [f.lap, f]));
+  const row = (lap: number, n: number) => byLap.get(lap)?.drivers.find((x) => x.number === n) as TimedDriver | undefined;
+  const time = (lap: number, n: number) => {
+    const f = byLap.get(lap);
+    const t = row(lap, n)?.lap_time_s;
+    return f && f.track_status === "GREEN" && lap < d.lap && typeof t === "number" && t > 0 ? t : null;
+  };
+  const stopLap = (n: number) => {
+    let s: number | null = null;
+    for (const f of seen) if (f.lap <= d.lap && f.drivers.find((x) => x.number === n)?.pitted_this_lap) s = f.lap;
+    return s;
+  };
+  const r1 = (v: number) => Math.round(v * 10) / 10;
+  const r2 = (v: number) => Math.round(v * 100) / 100;
+
+  const base = (x: (typeof moment.drivers)[number]) => {
+    const gapNow = r1((x.gap_to_leader_s as number) - (me.gap_to_leader_s as number));
+    return { code: x.code, number: x.number, compound: x.compound, age: x.tyre_age, gapNow, loss };
+  };
+  const near = moment.drivers.filter((x) => x.number !== me.number && x.gap_to_leader_s != null && Math.abs(x.gap_to_leader_s - me.gap_to_leader_s!) <= loss);
+
+  const pitted: Undercut[] = [];
+  for (const x of near) {
+    const s = stopLap(x.number);
+    if (s == null || d.lap - s > UNDERCUT_WINDOW) continue;
+    // Laps after the stop, skipping the out-lap (s + 1).
+    const paceLaps: number[] = [];
+    const deltas: number[] = [];
+    for (let l = s + 2; l < d.lap; l++) {
+      const a = time(l, x.number);
+      const b = time(l, me.number);
+      if (a != null && b != null) {
+        paceLaps.push(l);
+        deltas.push(a - b);
+      }
+    }
+    const tooEarly = d.lap <= s + 2;
+    const paceDelta = !tooEarly && deltas.length ? r2(deltas.reduce((p, v) => p + v, 0) / deltas.length) : null;
+    const b = base(x);
+    const boxNow = r1(b.gapNow - loss);
+    let until: number | null = null;
+    if (tooEarly) until = null;
+    else if (boxNow < 0) until = 0;
+    else if (paceDelta != null && paceDelta < 0) until = Math.floor(boxNow / -paceDelta) + 1;
+    pitted.push({
+      ...b,
+      pitted: true,
+      tooEarly,
+      lapsSinceStop: d.lap - s,
+      paceDelta,
+      paceLaps,
+      boxNow,
+      boxNextLap: paceDelta != null ? r1(b.gapNow + paceDelta - loss) : null,
+      lapsUntilUndercut: until,
+      newTyreGain: null,
+      gainFrom: 0,
+    });
+  }
+  if (pitted.length) {
+    return pitted.sort((p, q) => (p.lapsSinceStop ?? 99) - (q.lapsSinceStop ?? 99) || Math.abs(p.gapNow) - Math.abs(q.gapNow)).slice(0, max);
+  }
+
+  // Lighter version: nobody near has stopped. New-tyre gain from cars that stopped earlier in the race.
+  const gains: number[] = [];
+  for (const x of moment.drivers) {
+    const s = stopLap(x.number);
+    if (s == null || s >= d.lap) continue;
+    const pre = [s - 3, s - 2, s - 1].map((l) => time(l, x.number)).filter((v): v is number => v != null);
+    const post = [s + 2, s + 3, s + 4].filter((l) => l < d.lap).map((l) => time(l, x.number)).filter((v): v is number => v != null);
+    if (pre.length < 2 || post.length < 1) continue;
+    const mean = (a: number[]) => a.reduce((p, v) => p + v, 0) / a.length;
+    gains.push(mean(pre) - mean(post) - FUEL_S_PER_LAP * 4);
+  }
+  const gain = gains.length ? r2(gains.reduce((p, v) => p + v, 0) / gains.length) : null;
+  const unstopped = near.filter((x) => stopLap(x.number) == null);
+  const behind = unstopped.filter((x) => x.gap_to_leader_s! > me.gap_to_leader_s!).sort((a, b) => a.gap_to_leader_s! - b.gap_to_leader_s!)[0];
+  const ahead = unstopped.filter((x) => x.gap_to_leader_s! < me.gap_to_leader_s!).sort((a, b) => b.gap_to_leader_s! - a.gap_to_leader_s!)[0];
+  return [behind, ahead]
+    .filter((x): x is NonNullable<typeof x> => !!x)
+    .slice(0, max)
+    .map((x) => {
+      const b = base(x);
+      return {
+        ...b,
+        pitted: false,
+        tooEarly: false,
+        lapsSinceStop: null,
+        paceDelta: null,
+        paceLaps: [],
+        boxNow: r1(b.gapNow - loss),
+        boxNextLap: null,
+        lapsUntilUndercut: null,
+        newTyreGain: gain,
+        gainFrom: gains.length,
+      };
+    });
+}

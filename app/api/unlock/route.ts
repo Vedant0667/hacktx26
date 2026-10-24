@@ -1,51 +1,60 @@
 import { NextResponse } from "next/server";
-import { hitRateLimit, undoRateLimit } from "@/lib/db";
+import { hitRateLimit } from "@/lib/db";
 import { GATE_COOKIE, GATE_MAX_AGE_S, gateMisconfigured, gatePassword, gateToken, safeEqual, safeNext } from "@/lib/gate";
 import { clientIp } from "../_lib/http";
 
-// 10 attempts per 10 minutes per IP. Each attempt reserves a slot first (so parallel guesses cannot
-// overshoot) and a correct password gives its slot back, so a room of testers on one NAT is not locked out.
-const UNLOCK_LIMIT = 10;
+// 50 failed attempts per 10 minutes per IP (IPv6: per /64). The password is checked first, so the right
+// password always works, even from a venue network where someone else used up the failures (re-audit R3);
+// only wrong passwords are counted, and past the limit they get the "too many tries" answer.
+// The passphrase strength is the real defence; this limit and the 600 ms delay slow down guessing.
+const UNLOCK_LIMIT = 50;
 const UNLOCK_WINDOW_S = 600;
 
-const back = (base: URL, error: string, next: string) =>
-  NextResponse.redirect(new URL(`/unlock?error=${error}&next=${encodeURIComponent(next)}`, base), 303);
+// Relative Location: the browser resolves it against the URL it actually used (a LAN IP in dev:lan,
+// the deployment host on Vercel), and safeNext guarantees a same-origin path ("/x", never "//x").
+function redirect(location: string): NextResponse {
+  return new NextResponse(null, { status: 303, headers: { Location: location, "Cache-Control": "no-store" } });
+}
+
+const back = (error: string, next: string) => redirect(`/unlock?error=${error}&next=${encodeURIComponent(next)}`);
 
 // Form POST from /unlock. A wrong password also waits 600 ms.
 export async function POST(request: Request) {
   if (gateMisconfigured()) {
     return NextResponse.json({ error: "Gate misconfigured: SITE_PASSWORD is not set" }, { status: 503 });
   }
-  const form = await request.formData();
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return back("1", "/");
+  }
   const given = String(form.get("password") ?? "");
   const next = safeNext(String(form.get("next") ?? "/"));
   const password = gatePassword();
-  const base = new URL(request.url);
 
-  if (!password) return NextResponse.redirect(new URL(next, base), 303); // local dev only
+  if (!password) return redirect(next); // local dev only
 
-  const ip = clientIp(request);
-  let attempts: number;
+  if (safeEqual(given, password)) {
+    const res = redirect(next);
+    res.cookies.set(GATE_COOKIE, gateToken(password), {
+      httpOnly: true,
+      // Secure everywhere except plain-http local dev (http://localhost): Safari drops Secure cookies there.
+      secure: Boolean(process.env.VERCEL_ENV) || new URL(request.url).protocol === "https:",
+      sameSite: "lax",
+      path: "/",
+      maxAge: GATE_MAX_AGE_S,
+    });
+    return res;
+  }
+
+  let failures: number;
   try {
-    attempts = (await hitRateLimit("unlock", ip, UNLOCK_WINDOW_S)).count;
+    failures = (await hitRateLimit("unlock_fail", clientIp(request), UNLOCK_WINDOW_S)).count;
   } catch (err) {
     console.error("unlock: rate limit check failed", err);
-    return back(base, "2", next); // fail closed
+    failures = UNLOCK_LIMIT + 1; // fail closed for wrong passwords
   }
-  if (attempts > UNLOCK_LIMIT) return back(base, "2", next);
-
-  if (!safeEqual(given, password)) {
-    await new Promise((r) => setTimeout(r, 600));
-    return back(base, "1", next);
-  }
-  await undoRateLimit("unlock", ip, UNLOCK_WINDOW_S).catch((err) => console.error("unlock: undo failed", err));
-  const res = NextResponse.redirect(new URL(next, base), 303);
-  res.cookies.set(GATE_COOKIE, gateToken(password), {
-    httpOnly: true,
-    secure: true,
-    sameSite: "lax",
-    path: "/",
-    maxAge: GATE_MAX_AGE_S,
-  });
-  return res;
+  await new Promise((r) => setTimeout(r, 600));
+  return back(failures > UNLOCK_LIMIT ? "2" : "1", next);
 }

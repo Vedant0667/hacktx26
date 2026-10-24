@@ -12,7 +12,8 @@ const RATE_LIMIT_DEFAULT_S = 5;
 
 export type Conn = "ok" | "lost" | "gave_up" | "not_found";
 
-export function useLobby(code: string) {
+// stop: true halts polling (a phone removed by the host stops asking about the lobby).
+export function useLobby(code: string, stop = false) {
   const [lobby, setLobby] = useState<LobbyStateResponse | null>(null);
   const [conn, setConn] = useState<Conn>("ok");
   const [phaseErr, setPhaseErr] = useState<"forbidden" | null>(null);
@@ -56,6 +57,7 @@ export function useLobby(code: string) {
   }, [code, apply]);
 
   useEffect(() => {
+    if (stop) return;
     let alive = true;
     let t: ReturnType<typeof setTimeout>;
     const loop = async () => {
@@ -67,21 +69,38 @@ export function useLobby(code: string) {
       alive = false;
       clearTimeout(t);
     };
-  }, [refresh]);
+  }, [refresh, stop]);
 
   const serverNow = useCallback(() => Date.now() + offset.current, []);
 
+  // The server enforces minimum phase times: an early POST answers 409 with the seconds left
+  // (Retry-After or a number in the message). Wait that long and retry, up to a few times, silently.
   const setPhase = useCallback(
     async (phase: string) => {
-      const sentAt = Date.now();
-      try {
-        apply(await api.phase(code, phase, recallHostToken(code)), sentAt);
-        setPhaseErr(null);
-      } catch (e) {
-        // 403: this device does not hold the host token for the lobby.
-        if (e instanceof ApiError && e.status === 403) setPhaseErr("forbidden");
-        await refresh();
+      for (let attempt = 0; attempt < 6; attempt++) {
+        const sentAt = Date.now();
+        try {
+          apply(await api.phase(code, phase, recallHostToken(code)), sentAt);
+          setPhaseErr(null);
+          return;
+        } catch (e) {
+          // 403: this device does not hold the host token for the lobby.
+          if (e instanceof ApiError && e.status === 403) {
+            setPhaseErr("forbidden");
+            break;
+          }
+          if (e instanceof ApiError && e.status === 409) {
+            const fromMsg = Number(/(\d+(?:\.\d+)?)\s*s/.exec(e.message)?.[1]);
+            const wait = e.retryAfter ?? (Number.isFinite(fromMsg) && fromMsg > 0 ? fromMsg : null);
+            // A 409 without a wait means the phase already moved on (another click won).
+            if (wait == null) break;
+            await new Promise((r) => setTimeout(r, Math.min(15, wait) * 1000 + 150));
+            continue;
+          }
+          break;
+        }
       }
+      await refresh();
     },
     [code, apply, refresh],
   );

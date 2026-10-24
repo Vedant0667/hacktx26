@@ -1,22 +1,31 @@
 "use client";
-// `/host/[code]`: the laptop shared screen. Driven by lobby phase; the host clicks advance it.
+// `/host/[code]`: the laptop shared screen, driven by lobby phase. Lobby on black, replay on white; at the
+// freeze the screen floods with the player's team colour. Before the reveal it renders from the blind decision
+// and frames only, with no race, team or driver name (decision.blind_title and driver codes instead).
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { COPY } from "@/lib/copy";
 import { data, type BlindDecision } from "@/lib/client/api";
 import { noopSubscribe, recallHostToken, rememberHost } from "@/lib/client/identity";
-import { CALL_WINDOW_S, callMomentFrames, frameAt, raceControl, replayDoneMs, replayLap, tla } from "@/lib/client/race";
+import { kickPlayer } from "@/lib/client/session";
+import { CALL_WINDOW_S, callMomentFrames, frameAt, replayDoneMs, replayLap, tla } from "@/lib/client/race";
+import { lapTimeText, telemetry, type Telemetry } from "@/lib/client/telemetry";
 import { useLobby, useReveal, useTicker } from "@/lib/client/useLobby";
 import { playFreezeTone } from "@/lib/client/cue";
 import { useDataMode, type DataMode } from "@/lib/client/mode";
-import { GapLine, RejoinCaveat, StoryFacts, TradeOff, getBrief } from "../DecisionBrief";
+import { fieldStyle, isDarkField, teamColourOf } from "@/lib/client/field";
 import type { LapFrame } from "@/lib/types";
-import { QrCode } from "../QrCode";
+import { RejoinCaveat, getBrief, type Brief } from "../DecisionBrief";
+import { FieldTyres, IntervalChart, LapChart, NeighbourList, Note, PitLoss, RejoinStrip, Sec, StintTable, UndercutClock, intervalNote, simpleChartLabel } from "../Telemetry";
 import { Tower } from "../Tower";
-import { Button, ConnNotice, Label, ModeToggle, StatusStrip } from "../ui";
+import { Button, ConnNotice, ModeToggle, ScChip, TrackStrip, TyreChip, clockText } from "../ui";
+import { LineChart } from "./HostCharts";
+import { HostQr } from "./HostQr";
 import { HostReveal, HostScoreboard } from "./HostReveal";
 
+const MAX_PLAYERS = 12;
+
 export function HostScreen({ code }: { code: string }) {
-  const { lobby, conn, serverNow, setPhase, phaseErr } = useLobby(code);
+  const { lobby, conn, serverNow, setPhase, phaseErr, refresh } = useLobby(code);
   // Blind decision and frames until the reveal; the full set arrives from the reveal route.
   const [decision, setDecision] = useState<BlindDecision | null>(null);
   const [frames, setFrames] = useState<LapFrame[] | null>(null);
@@ -54,7 +63,7 @@ export function HostScreen({ code }: { code: string }) {
   }, [lobby, muted]);
   const elapsed = lobby ? t - lobby.phase_started_at : 0;
 
-  // Auto-advance: replay freezes on the decision lap; the call window closes after CALL_WINDOW_S, 40 s (or when everyone is in).
+  // Auto-advance: replay freezes on the decision lap; the call window closes after CALL_WINDOW_S (or when everyone is in).
   const advanced = useRef<string>("");
   useEffect(() => {
     if (!lobby || !decision) return;
@@ -73,38 +82,83 @@ export function HostScreen({ code }: { code: string }) {
   }, [lobby, decision, elapsed, setPhase]);
 
   if (dataErr) return <Centered text={COPY.error.data} />;
-  if (!lobby || !decision || !frames) return <><ConnNotice conn={conn} code={code} /><Centered text="" /></>;
+  if (!lobby || !decision || !frames)
+    return (
+      <>
+        <ConnNotice conn={conn} code={code} />
+        <Centered text="" />
+      </>
+    );
 
   const joinUrl = origin ? `${origin.replace(/^https?:\/\//, "")}/play/${code}` : "";
   const joinHref = origin ? `${origin}/play/${code}` : "";
+  const team = teamColourOf(frames, decision.player_role.number);
+  const muteBtn = (variant: "secondary" | "inverse") => (
+    <Button variant={variant} size="sm" aria-pressed={muted} onClick={() => setMuted((m) => !m)}>
+      {muted ? COPY.cue.unmute : COPY.cue.mute}
+    </Button>
+  );
 
   return (
-    <>
+    <div style={fieldStyle(team)}>
       <ConnNotice conn={conn} code={code} />
       {(!hostToken || phaseErr === "forbidden") && (
-        <p role="alert" className="fixed inset-x-0 bottom-0 z-40 bg-flag-red px-4 py-2 text-center text-20 font-semibold text-bg">
+        <p role="alert" className="fixed inset-x-0 bottom-0 z-[var(--z-toast)] bg-white px-4 py-3 text-center text-base font-bold text-ink shadow-[0_-2px_0_var(--color-ink)]">
           {COPY.error.notHost(code)}
         </p>
       )}
       {phase === "waiting" && (
-        <Waiting code={code} joinUrl={joinUrl} joinHref={joinHref} decision={decision} players={lobby.players} onStart={() => setPhase("replay")} modeToggle={<ModeToggle mode={mode} onChange={setMode} />} />
+        <Lobby
+          code={code}
+          joinUrl={joinUrl}
+          joinHref={joinHref}
+          decision={decision}
+          frames={frames}
+          players={lobby.players}
+          onStart={() => setPhase("replay")}
+          onKick={async (name) => {
+            try {
+              await kickPlayer(code, name);
+            } finally {
+              await refresh();
+            }
+          }}
+          mode={mode}
+          setMode={setMode}
+        />
       )}
-      {(phase === "replay" || phase === "decision") && (
-        <RaceView
+      {phase === "replay" && (
+        <Replay
           code={code}
           decision={decision}
           frames={frames}
-          lap={phase === "replay" ? replayLap(decision, elapsed) : decision.lap}
-          frozen={phase === "decision"}
+          lap={replayLap(decision, elapsed)}
+          onAdvance={() => setPhase("decision")}
+          mode={mode}
+          controls={
+            <>
+              <ModeToggle mode={mode} onChange={setMode} size="sm" />
+              {muteBtn("secondary")}
+            </>
+          }
+        />
+      )}
+      {phase === "decision" && (
+        <Freeze
+          code={code}
+          decision={decision}
+          frames={frames}
+          team={team}
           elapsed={elapsed}
           players={lobby.players}
           submitted={new Set(lobby.submissions.map((s) => s.player_name))}
-          onAdvance={() => setPhase(phase === "replay" ? "decision" : "reveal")}
+          onAdvance={() => setPhase("reveal")}
           mode={mode}
-          modeToggle={<span className="flex items-center gap-4"><ModeToggle mode={mode} onChange={setMode} size="sm" /><Button variant="secondary" className="h-9 px-3 text-14" aria-pressed={muted} onClick={() => setMuted((m) => !m)}>{muted ? COPY.cue.unmute : COPY.cue.mute}</Button></span>}
+          setMode={setMode}
+          mute={muteBtn("inverse")}
         />
       )}
-      {(phase === "reveal" || phase === "done") && !reveal && <Centered text="" />}
+      {(phase === "reveal" || phase === "done") && !reveal && <Centered text={COPY.reveal.grading} />}
       {phase === "reveal" && reveal && (
         <HostReveal
           code={code}
@@ -119,51 +173,129 @@ export function HostScreen({ code }: { code: string }) {
         />
       )}
       {phase === "done" && reveal && <HostScoreboard code={code} decision={reveal.decision} lobby={lobby} />}
-    </>
+    </div>
   );
 }
 
 function Centered({ text }: { text: string }) {
-  return <main className="grid min-h-dvh place-items-center p-12 text-24 text-ink-2">{text}</main>;
+  return <main className="grid min-h-dvh place-items-center p-14 text-lg font-bold text-ink-2">{text}</main>;
 }
 
-function Waiting({
+function Top({ left, right, className = "" }: { left: React.ReactNode; right: React.ReactNode; className?: string }) {
+  return (
+    <header className={`flex items-center justify-between gap-6 font-mono text-lg font-bold uppercase ${className}`}>
+      <span className="flex items-center gap-3">{left}</span>
+      <span className="flex items-center gap-3">{right}</span>
+    </header>
+  );
+}
+
+const myCode = (frames: LapFrame[], n: number) => frames[frames.length - 1]?.drivers.find((d) => d.number === n)?.code ?? "";
+
+function Lobby({
   code,
   joinUrl,
   joinHref,
   decision,
+  frames,
   players,
   onStart,
-  modeToggle,
+  onKick,
+  mode,
+  setMode,
 }: {
   code: string;
   joinUrl: string;
   joinHref: string;
   decision: BlindDecision;
+  frames: LapFrame[];
   players: { name: string; joined_at: number }[];
   onStart: () => void;
-  modeToggle: React.ReactNode;
+  onKick: (name: string) => Promise<void>;
+  mode: DataMode;
+  setMode: (m: DataMode) => void;
 }) {
   const [busy, setBusy] = useState(false);
+  const [confirm, setConfirm] = useState<string | null>(null);
+  useEffect(() => {
+    if (!confirm) return;
+    const id = setTimeout(() => setConfirm(null), 3000);
+    return () => clearTimeout(id);
+  }, [confirm]);
   const r = decision.player_role;
   return (
-    <main className="grid h-dvh grid-cols-12 gap-12 overflow-hidden p-12">
-      <section className="col-span-7 flex min-h-0 flex-col gap-8">
-        <div className="flex items-start gap-8">
-          {joinHref ? <QrCode value={joinHref} size={264} label={COPY.room.scanAlt(joinUrl)} /> : <div className="size-[264px] bg-surface" />}
-          <div className="flex flex-col gap-4">
-            <Label>{COPY.home.joinLabel}</Label>
-            <h1 className="nums text-96 font-extrabold uppercase stretch-125 leading-hero tracking-code" aria-label={COPY.room.heading(code)}>
-              {code}
-            </h1>
+    <main className="on-dark grid h-dvh grid-rows-[auto_1fr_auto] overflow-hidden bg-ink px-14 py-10 text-white">
+      <Top left={COPY.host.room(code)} right={COPY.host.playersCount(players.length, MAX_PLAYERS)} />
+
+      <div className="grid min-h-0 grid-cols-12 items-center gap-x-6">
+        <section className="col-span-6 flex flex-col">
+          <span className="meta">{COPY.host.roomCode}</span>
+          <h1 className="nums mt-3 text-[9.375rem] font-bold leading-none tracking-[-0.03em]" aria-label={COPY.room.heading(code)}>
+            {code}
+          </h1>
+          <p className="mt-4 max-w-[30ch] text-[1.625rem] font-medium leading-snug text-[#cfcfcf]">
+            {COPY.host.scanOr(joinUrl.split("/")[0])} <b className="font-bold text-white">/play/{code}</b>.
+          </p>
+          <div className="mt-8 flex items-end gap-6">
+            {joinHref ? <HostQr value={joinHref} size={200} label={COPY.room.scanAlt(joinUrl)} /> : <div className="size-[200px] bg-[#222]" />}
+            <p className="font-mono text-[15px] leading-relaxed text-[#bdbdbd]">{joinUrl}</p>
           </div>
-        </div>
-        <p className="text-40 font-semibold leading-row stretch-75">{COPY.room.share(joinUrl)}</p>
-        <p className="text-24 text-ink-2">{COPY.waiting.race(decision.race, r.team, r.driver, r.number)}</p>
-        <div className="mt-auto flex items-center gap-8">
+        </section>
+
+        <section className="col-span-6 flex min-h-0 flex-col">
+          <span className="meta mb-2">{COPY.host.players}</span>
+          <ol className="grid grid-cols-3 border-t-2 border-white">
+            {Array.from({ length: MAX_PLAYERS }, (_, i) => {
+              const p = players[i];
+              return (
+                <li key={p?.name ?? `open-${i}`} className={`flex h-[78px] items-center gap-3 border-b border-[#444] px-3 ${i % 3 !== 2 ? "border-r" : ""} ${p ? "rise" : ""}`}>
+                  <span className="nums text-[15px] text-[#8c8c8c]">{String(i + 1).padStart(2, "0")}</span>
+                  {p ? (
+                    <span className="flex min-w-0 flex-1 flex-col items-start">
+                      <span className="flex items-center gap-2.5">
+                        <span className="text-[2rem] font-black leading-none tracking-[-0.02em]">{tla(p.name)}</span>
+                        <span aria-hidden className="size-2.5 shrink-0 bg-field" />
+                      </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (confirm !== p.name) return setConfirm(p.name);
+                          setConfirm(null);
+                          await onKick(p.name);
+                        }}
+                        aria-label={confirm === p.name ? COPY.host.confirmRemove : COPY.host.remove(p.name)}
+                        className={`mt-1 font-mono text-[11px] font-bold uppercase leading-none ${confirm === p.name ? "bg-white px-1 py-0.5 text-ink" : "text-[#9a9a9a] underline underline-offset-2 hover:text-white"}`}
+                      >
+                        {confirm === p.name ? COPY.host.confirmShort : COPY.host.removeShort}
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="text-[2rem] font-bold leading-none tracking-[-0.02em] text-[#5a5a5a]">{COPY.play.open.toLowerCase()}</span>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+          <div className="mt-7 flex items-center justify-between gap-6 bg-field px-7 py-5 text-on-field">
+            <b className="text-[2.125rem] font-black leading-none tracking-[-0.02em]">{COPY.host.carBand(myCode(frames, r.number), r.number)}</b>
+            <span className="meta text-[15px]">{COPY.host.yourCar}</span>
+          </div>
+          <p className="mt-4 text-xl font-bold">{decision.blind_title}</p>
+        </section>
+      </div>
+
+      <footer className="flex items-center justify-between gap-6 border-t-2 border-white pt-[18px]">
+        <span className="flex items-center gap-6">
+          <span className="font-mono text-[15px] text-[#bdbdbd]">{COPY.host.replayNote(decision.replay_from_lap, decision.lap)}</span>
+          <span className="[&_div]:border-white [&_button[aria-pressed=false]]:text-white [&_button[aria-pressed=true]]:bg-white [&_button[aria-pressed=true]]:text-ink">
+            <ModeToggle mode={mode} onChange={setMode} size="sm" />
+          </span>
+        </span>
         <Button
-          className="h-14 text-24"
+          variant="inverse"
+          size="md"
           busy={busy}
+          className="text-[1.375rem]! font-black"
           onClick={async () => {
             setBusy(true);
             await onStart();
@@ -172,179 +304,391 @@ function Waiting({
         >
           {COPY.waiting.hostButton}
         </Button>
-        {modeToggle}
-        </div>
-      </section>
-
-      <section className="col-span-5 flex min-h-0 flex-col gap-4">
-        <h2 className="nums text-40 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.waiting.count(players.length)}</h2>
-        {/* The lobby is a starting grid: each phone takes the next slot, staggered two by two. */}
-        <ol className="grid min-h-0 grid-cols-2 gap-x-6 overflow-hidden pb-16 pt-2">
-          {Array.from({ length: Math.min(10, Math.max(6, players.length + (players.length % 2 ? 1 : 2))) }, (_, i) => {
-            const p = players[i];
-            return (
-              <li key={p?.name ?? `open-${i}`} className={`h-[104px] ${i % 2 ? "translate-y-[52px]" : ""}`}>
-                <div className={`flex h-[88px] flex-col justify-between border-x-2 border-t-2 px-4 pt-2 ${p ? "grid-in border-ink" : "border-rule"}`}>
-                  <span className={`nums text-16 font-semibold uppercase tracking-label ${p ? "text-ink-2" : "text-ink-3"}`}>{COPY.play.gridSlot(i + 1)}</span>
-                  {p ? (
-                    <span className="flex items-baseline gap-3 pb-2">
-                      <span className="text-56 font-extrabold uppercase stretch-75 leading-hero">{tla(p.name)}</span>
-                      <span className="truncate text-20 text-ink-2">{p.name}</span>
-                    </span>
-                  ) : (
-                    <span className="pb-3 text-20 text-ink-3">{COPY.play.open}</span>
-                  )}
-                </div>
-              </li>
-            );
-          })}
-        </ol>
-        {players.length <= 1 && <p className="text-24 text-ink-2">{COPY.waiting.alone(code)}</p>}
-      </section>
+      </footer>
     </main>
   );
 }
 
-function RaceView({
+function Replay({
   code,
   decision,
   frames,
   lap,
-  frozen,
-  elapsed,
-  players,
-  submitted,
   onAdvance,
   mode,
-  modeToggle,
+  controls,
 }: {
   code: string;
   decision: BlindDecision;
   frames: LapFrame[];
   lap: number;
-  frozen: boolean;
-  elapsed: number;
-  players: { name: string }[];
-  submitted: Set<string>;
   onAdvance: () => void;
   mode: DataMode;
-  modeToggle: React.ReactNode;
+  controls: React.ReactNode;
 }) {
   const seen = callMomentFrames(frames, decision);
   const frame = frameAt(seen, lap);
   const total = decision.total_laps;
-  const msgs = raceControl(seen, lap, decision.replay_from_lap).slice(0, 8);
-  const brief = getBrief(decision, frames);
-  const left = Math.max(0, Math.ceil(CALL_WINDOW_S - elapsed / 1000));
   const r = decision.player_role;
+  // Telemetry as of the current replay lap: laps before it are complete.
+  const tele: Telemetry | null = telemetry(
+    seen.filter((f) => f.lap <= lap),
+    { ...decision, lap },
+    60,
+  );
+  const me = frame?.drivers.find((d) => d.number === r.number);
+  const span = Math.max(1, decision.lap - decision.replay_from_lap);
+  const progress = Math.min(1, (lap - decision.replay_from_lap) / span);
+  const lapsToCall = decision.lap - lap;
+  const xLabels = tele ? tele.laps.map((l) => `L${l}`) : [];
+  const watch = tele?.gapBehind ?? tele?.gapAhead ?? null;
+  const watchSide = tele?.gapBehind ? "behind" : "ahead";
 
   return (
-    <main className="grid h-dvh grid-cols-[minmax(420px,5fr)_7fr] gap-12 overflow-hidden p-12">
-      <section className="min-h-0">
-        {frame && <Tower drivers={frame.drivers} playerNumber={r.number} dim={frozen} mode={mode} />}
-      </section>
-      <section className={`flex min-h-0 flex-col ${frozen ? "gap-3" : "gap-6"}`}>
-        <div className="flex items-end justify-between gap-6">
-          <div className="flex min-w-0 flex-col gap-1">
-            <span className="text-24 font-semibold">{decision.race}</span>
-            <span className="truncate whitespace-nowrap text-20 text-ink-2">
-              {r.team}, {r.driver} #{r.number} · {COPY.room.heading(code)}
-            </span>
-          </div>
-          <span className="nums shrink-0 whitespace-nowrap text-72 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.replay.lap(lap, total)}</span>
-        </div>
-
-        {!frozen ? (
+    <main className="grid h-dvh grid-cols-[322px_1fr] grid-rows-[auto_auto_1fr] gap-x-6 gap-y-4 overflow-hidden px-14 pb-8 pt-0">
+      <div className="col-span-2 -mx-14 min-h-6">{frame && <TrackStrip status={frame.track_status} size="host" />}</div>
+      <Top
+        className="col-span-2"
+        left={
           <>
-            {frame && <StatusStrip status={frame.track_status} />}
-            <div className="flex min-h-0 flex-1 flex-col gap-2">
-              <Label>{COPY.replay.messages}</Label>
-              <ol className="flex flex-col gap-1">
-                {msgs.map((m, i) => (
-                  <li key={`${m.lap}-${m.kind}-${m.code ?? m.status}-${i}`} className="flex gap-6 text-20 font-semibold uppercase stretch-75 leading-row">
-                    <span className="nums w-24 text-ink-3">{COPY.replay.lap(m.lap, total).split("/")[0]}</span>
-                    <span className={m.kind === "status" ? (m.status === "GREEN" ? "text-flag-green" : "text-flag-yellow") : "text-ink"}>
-                      {m.kind === "status" ? COPY.replay.msgStatus[m.status!] : COPY.replay.msgPit(m.code!)}
-                    </span>
-                  </li>
-                ))}
-              </ol>
-            </div>
-            <div className="flex items-center gap-8">
-              <Button variant="secondary" className="h-14 text-20" onClick={onAdvance}>
+            {COPY.host.replayTag}
+            {frame && <ScChip status={frame.track_status} />}
+          </>
+        }
+        right={
+          <>
+            <span className="flex items-center gap-3 font-sans normal-case">
+              {controls}
+              <Button variant="secondary" size="sm" onClick={onAdvance}>
                 {COPY.replay.skip}
               </Button>
-              {modeToggle}
-            </div>
+            </span>
+            <span className="ml-4">{COPY.host.room(code)}</span>
           </>
-        ) : (
-          <>
-            {/* At 5 s and below the banner turns red; numerals stay bg (4.7:1), docs/06 flag-red rule. */}
-            <div
-              className={`wipe-in relative z-20 flex h-[120px] shrink-0 items-center gap-6 px-6 text-bg transition-colors duration-200 ${left <= 5 ? "bg-flag-red" : "on-yellow bg-flag-yellow"}`}
-            >
-              <span
-                className={`min-w-0 flex-1 whitespace-nowrap font-extrabold uppercase tracking-hero leading-hero ${decision.trigger === "VSC" ? "text-40 stretch-62" : "text-56 stretch-75"}`}
-              >
-                {COPY.freeze.bannerShort(decision.trigger, decision.lap)}
-              </span>
-              <span className="nums w-[168px] shrink-0 text-right text-96 font-extrabold stretch-125 leading-hero" aria-live="polite">
-                {left}
-              </span>
-              <span
-                className="countdown-bar absolute inset-x-0 bottom-0 h-2 bg-bg"
-                style={{ animationDuration: `${CALL_WINDOW_S}s`, animationDelay: `-${elapsed / 1000}s` }}
-              />
-            </div>
-            <h2 className="text-56 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.freeze.question}</h2>
-            {brief.frame && (
-              <div className="flex flex-col gap-1">
-                <span className="flex items-baseline justify-between gap-4 text-14 font-semibold uppercase tracking-label text-ink-3">
-                  <span>{COPY.rejoin.title}</span>
-                  <span className="normal-case tracking-normal">{COPY.rejoin.assumption}</span>
-                </span>
-                <GapLine frame={brief.frame} playerNumber={r.number} rejoin={brief.rejoin} />
-                {brief.rejoin && <RejoinCaveat frame={brief.frame} lap={decision.lap} className="text-16" />}
+        }
+      />
+      <section className="min-h-0 overflow-hidden border-t-2 border-ink [&_li[aria-current]]:border-field [&_li[aria-current]]:bg-field [&_li[aria-current]]:text-on-field">
+        {frame && <Tower drivers={frame.drivers} playerNumber={r.number} mode={mode} showPit={false} />}
+      </section>
+      <section className="flex min-h-0 flex-col border-t-2 border-ink">
+        <div className="flex items-end justify-between gap-6 pt-3">
+          <span className="font-black leading-[0.85] tracking-[-0.04em]">
+            <span className="text-[8.5rem]">L{lap}</span>
+            <span className="text-[3rem] text-ink-3">/{total}</span>
+          </span>
+          <p className="max-w-[26ch] pb-2 text-right text-[1.625rem] font-medium leading-snug">
+            {me && <b className="font-black">{COPY.host.youAre(me.code, me.position)}</b>} {COPY.host.callIn(lapsToCall)}
+          </p>
+        </div>
+        <div className="relative mt-5 h-2 bg-soft-2" aria-hidden>
+          <div className="h-full bg-ink transition-[width] duration-700 ease-out" style={{ width: `${progress * 100}%` }} />
+          <span className="absolute -top-1 right-0 h-4 w-[3px] bg-ink" />
+        </div>
+        <span className="meta mt-2 self-end">{COPY.host.callAt(decision.lap)}</span>
+
+        <div className="mt-3 grid min-h-0 flex-1 grid-cols-[1fr_314px] gap-12">
+          <div className="min-w-0">
+            <span className="meta">{COPY.host.lapTimeTitle}</span>
+            {tele && (
+              <div className="mt-2">
+                <LineChart
+                  invert
+                  width={600}
+                  height={300}
+                  xLabels={xLabels}
+                  lines={[
+                    { label: tele.me.code, values: tele.me.times, tier: 0 },
+                    ...(tele.ahead ? [{ label: tele.ahead.code, values: tele.ahead.times, tier: 1 }] : []),
+                    ...(tele.behind ? [{ label: tele.behind.code, values: tele.behind.times, tier: 2 }] : []),
+                  ]}
+                />
               </div>
             )}
-            <TradeOff brief={brief} mode={mode} />
-            <StoryFacts decision={decision} brief={brief} mode={mode} />
-            <div className="mt-auto flex items-end justify-between gap-6">
-              <div className="flex min-w-0 flex-col gap-2">
-                <p className="nums text-20 font-semibold">{left === 0 ? COPY.freeze.timeUp : COPY.freeze.waitingOn(Math.max(0, players.length - submitted.size))}</p>
-                <LobbyStrip players={players} submitted={submitted} />
+          </div>
+          <div className="flex min-w-0 flex-col gap-5">
+            {watch && (
+              <div className="border-t-2 border-ink pt-2">
+                <span className="meta">{COPY.host.gapTitle(watch.code, watchSide)}</span>
+                <p className="nums mt-1 text-[1.875rem] font-bold leading-none">
+                  {watchSide === "behind" ? "+" : "−"}
+                  {watch.now?.toFixed(1) ?? "–"}
+                </p>
+                <p className="nums mt-1 text-sm">{COPY.host.rate(watch.rate)}</p>
+                <div className="mt-2">
+                  <LineChart width={314} height={150} labelRight={48} xLabels={xLabels} decimals={1} lines={[{ label: watch.code, values: watch.series, tier: 0 }]} />
+                </div>
               </div>
-              <div className="flex shrink-0 flex-col items-end gap-3">
-                {modeToggle}
-                <Button variant="secondary" className="h-14 text-20" onClick={onAdvance}>
-                  {COPY.freeze.showCalls}
-                </Button>
+            )}
+            {tele && (
+              <div className="border-t-2 border-ink pt-2">
+                <span className="meta">{COPY.host.tyreTitle}</span>
+                <p className="nums mt-1 text-[1.875rem] font-bold leading-none">
+                  {COPY.host.tyreNow(tele.deg.compound ? (COPY.compounds[tele.deg.compound] ?? tele.deg.compound) : "–", tele.deg.age)}
+                </p>
+                <p className="nums mt-1 text-sm">{tele.deg.best != null ? COPY.host.bestSoFar(lapTimeText(tele.deg.best)) : COPY.host.noTimes}</p>
               </div>
-            </div>
-          </>
-        )}
+            )}
+          </div>
+        </div>
       </section>
     </main>
   );
 }
 
-function LobbyStrip({ players, submitted }: { players: { name: string }[]; submitted: Set<string> }) {
+function Freeze({
+  code,
+  decision,
+  frames,
+  team,
+  elapsed,
+  players,
+  submitted,
+  onAdvance,
+  mode,
+  setMode,
+  mute,
+}: {
+  code: string;
+  decision: BlindDecision;
+  frames: LapFrame[];
+  team: string | null;
+  elapsed: number;
+  players: { name: string }[];
+  submitted: Set<string>;
+  onAdvance: () => void;
+  mode: DataMode;
+  setMode: (m: DataMode) => void;
+  mute: React.ReactNode;
+}) {
+  const brief = getBrief(decision, frames);
+  const left = Math.max(0, Math.ceil(CALL_WINDOW_S - elapsed / 1000));
+  const urgent = left <= 5 && left > 0;
+  const r = decision.player_role;
+  const me = brief.frame?.drivers.find((d) => d.number === r.number);
+  const waiting = Math.max(0, players.length - submitted.size);
+  const allIn = players.length > 0 && waiting === 0;
+  // The server keeps the call window open for 40 s unless everyone has called; useLobby retries until then.
+  const [asked, setAsked] = useState(false);
+  const room = (compact: boolean) => (
+    <RoomStrip players={players} submitted={submitted} waiting={waiting} left={left} dark={isDarkField(team)} compact={compact}>
+      <ModeToggle mode={mode} onChange={setMode} size="sm" onField />
+      {mute}
+      <Button
+        variant="inverse"
+        size="sm"
+        onClick={() => {
+          setAsked(true);
+          onAdvance();
+        }}
+      >
+        {asked && !allIn && left > 0 ? COPY.host.callsIn(left) : COPY.freeze.showCalls}
+      </Button>
+    </RoomStrip>
+  );
+  const status = brief.frame?.track_status ?? decision.trigger;
+  const props = { brief, decision, left, urgent, meCode: me?.code ?? "", code, room, mode, status };
+  return mode === "advanced" ? <AdvancedFreeze {...props} /> : <SimpleFreeze {...props} />;
+}
+
+function RoomStrip({
+  players,
+  submitted,
+  waiting,
+  left,
+  dark,
+  compact,
+  children,
+}: {
+  players: { name: string }[];
+  submitted: Set<string>;
+  waiting: number;
+  left: number;
+  dark: boolean;
+  compact: boolean;
+  children: React.ReactNode;
+}) {
+  // With a full room only the codes show: filled means called, dashed underline means still thinking.
+  const words = !compact && players.length <= 5;
   return (
-    <ol className="flex flex-wrap gap-0.5">
-      {players.map((p) => {
-        const inn = submitted.has(p.name);
-        return (
-          <li key={p.name} className={`flex h-20 min-w-28 flex-col justify-center gap-1 px-4 transition-colors duration-200 ${inn ? "bg-ink text-bg" : "bg-surface"}`}>
-            <span className="text-40 font-bold uppercase stretch-75 leading-hero">{tla(p.name)}</span>
-            <span
-              className={`self-start px-1 text-20 font-semibold uppercase tracking-label ${inn ? "bg-flag-green text-bg" : "text-ink-3"}`}
+    <footer className={`flex border-t-2 border-on-field pt-3 ${compact ? "flex-col items-start gap-3" : "items-center justify-between gap-6"}`}>
+      <ol className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-2">
+        {players.map((p) => {
+          const inn = submitted.has(p.name);
+          return (
+            <li
+              key={p.name}
+              aria-label={COPY.host.playerState(tla(p.name), inn)}
+              className={`flex items-baseline gap-2 px-2 py-0.5 transition-colors duration-200 ${inn ? (dark ? "bg-white text-ink" : "on-dark bg-ink text-white") : "border-b-2 border-dashed border-on-field"}`}
             >
-              {inn ? COPY.freeze.called : COPY.freeze.notCalled}
-            </span>
-          </li>
-        );
-      })}
-    </ol>
+              <span className="text-lg font-black tracking-tight">{tla(p.name)}</span>
+              {words && <span className="font-mono text-sm font-medium">{inn ? COPY.host.called : COPY.host.thinking}</span>}
+            </li>
+          );
+        })}
+        <li className="nums ml-2 text-sm font-bold">{left === 0 ? COPY.freeze.timeUp : COPY.freeze.waitingOn(waiting)}</li>
+      </ol>
+      <span className="flex shrink-0 items-center gap-3">{children}</span>
+    </footer>
   );
 }
 
+type FreezeProps = {
+  brief: Brief;
+  decision: BlindDecision;
+  left: number;
+  urgent: boolean;
+  meCode: string;
+  code: string;
+  room: (compact: boolean) => React.ReactNode;
+  mode: DataMode;
+  status: "GREEN" | "SC" | "VSC";
+};
+
+function Clock({ left, urgent, className }: { left: number; urgent: boolean; className: string }) {
+  return (
+    <span key={urgent ? left : "n"} aria-live="polite" className={`nums self-start font-bold leading-none tracking-[-0.04em] ${className} ${urgent ? "tick bg-on-field px-3 text-field" : ""}`}>
+      {clockText(left)}
+    </span>
+  );
+}
+
+// "Box now and you come out P10, 0.2 s behind HUL. The stop costs 14.2 s under the safety car, 28.3 s at green. 50 laps left on 7-lap mediums."
+function Sentence({ brief, decision, className }: { brief: Brief; decision: BlindDecision; className: string }) {
+  const { rejoin, loss, story, ctx } = brief;
+  if (!ctx) return null;
+  const compound = ctx.compound ? (COPY.compounds[ctx.compound] ?? ctx.compound) : null;
+  return (
+    <p className={className}>
+      {rejoin && <b className="font-black">{COPY.host.boxNowSentence(rejoin.pos, rejoin.ahead)}</b>} {loss && COPY.host.stopCost(decision.trigger, loss.under, loss.normal)}{" "}
+      {story && COPY.host.lapsLeftOn(story.lapsLeft, ctx.age, compound)}
+    </p>
+  );
+}
+
+function Options({ brief, compact }: { brief: Brief; compact: boolean }) {
+  const { ctx, rejoin, story } = brief;
+  if (!ctx) return null;
+  const behind = ctx.behind !== "–" ? brief.frame?.drivers.find((d) => d.position === ctx.pos + 1) : null;
+  const h = compact ? "h-[104px] px-7" : "h-[124px] px-8";
+  const word = compact ? "text-[2.75rem]" : "text-[3.25rem]";
+  const sub = `mt-2.5 flex items-center gap-2 font-mono ${compact ? "text-sm" : "text-base"}`;
+  return (
+    <div className="flex flex-col">
+      <div className={`flex flex-col justify-center bg-white text-ink ${h}`}>
+        <b className={`${word} font-black leading-none tracking-[-0.03em]`}>{COPY.freeze.options.STAY}</b>
+        <span className={sub}>
+          <TyreChip compound={ctx.compound} age={ctx.age} size="sm" />
+          {COPY.host.stayLine(ctx.pos, behind ? { code: behind.code, gap: ctx.behind } : null)}
+        </span>
+      </div>
+      <div className={`on-dark flex flex-col justify-center bg-ink text-white ${h}`}>
+        <b className={`${word} font-black leading-none tracking-[-0.03em]`}>{COPY.freeze.options.BOX}</b>
+        <span className={sub}>{rejoin ? COPY.host.boxLine(rejoin.pos, story?.lapsLeft ?? 0) : COPY.story.boxTyres}</span>
+      </div>
+    </div>
+  );
+}
+
+function SimpleFreeze({ brief, decision, left, urgent, meCode, code, room, mode, status }: FreezeProps) {
+  const t = brief.tele;
+  return (
+    <main className="flood flex h-dvh flex-col overflow-hidden bg-field text-on-field">
+      <TrackStrip status={status} size="host" />
+      <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr_auto_auto] gap-y-4 px-14 pb-7 pt-5">
+        <Top left={COPY.host.statusLong(decision.trigger, decision.lap, decision.total_laps)} right={`${COPY.mode.simple} · ${COPY.host.room(code)}`} />
+        <div className="grid min-h-0 grid-cols-12 items-center gap-x-6">
+          <section className="col-span-7 flex flex-col">
+            <Clock left={left} urgent={urgent} className="text-[4.75rem]" />
+            <h1 className="display mt-3 text-[4.5rem] leading-[0.92]">
+              {brief.ctx ? COPY.host.lead(meCode, brief.ctx.pos) : ""} {COPY.freeze.question}
+            </h1>
+            <Sentence brief={brief} decision={decision} className="mt-4 max-w-[44ch] text-[1.375rem] font-medium leading-[1.3]" />
+            {brief.rejoin && <RejoinCaveat frame={brief.frame} lap={decision.lap} className="mt-2 font-mono text-sm" />}
+          </section>
+          <section className="col-span-5 col-start-8">
+            <Options brief={brief} compact={false} />
+          </section>
+        </div>
+        {t && (
+          <section className="grid grid-cols-12 gap-x-6 border-t-2 border-on-field pt-3">
+            <div className="col-span-4">
+              <span className="meta">{simpleChartLabel(t)}</span>
+              <div className="mt-1 max-h-[150px] overflow-hidden">
+                <LapChart laps={t.laps} cars={[t.me, t.ahead, t.behind]} height={120} />
+              </div>
+            </div>
+            <div className="col-span-4">
+              <NeighbourList t={t} big />
+            </div>
+            <div className="col-span-4 max-h-[200px] overflow-hidden [&>section]:border-t-0 [&>section]:pt-0">
+              <UndercutClock t={t} mode={mode} />
+            </div>
+          </section>
+        )}
+        {room(false)}
+      </div>
+    </main>
+  );
+}
+
+function AdvancedFreeze({ brief, decision, left, urgent, meCode, code, room, mode, status }: FreezeProps) {
+  const t = brief.tele;
+  const r = decision.player_role;
+  const pos = brief.ctx?.pos;
+  return (
+    <main className="flex h-dvh flex-col overflow-hidden">
+      <TrackStrip status={status} size="host" />
+      <div className="grid min-h-0 flex-1 grid-cols-[520px_1fr]">
+        <section className="flood flex min-h-0 flex-col bg-field pb-8 pl-14 pr-10 pt-6 text-on-field">
+          <Top className="text-[15px]" left={`${decision.trigger} · L${decision.lap}/${decision.total_laps}`} right={code} />
+          <Clock left={left} urgent={urgent} className="mt-5 text-[4.5rem]" />
+          <h1 className="display mt-3 text-[3.125rem] leading-[0.94]">
+            {brief.ctx ? COPY.host.lead(meCode, brief.ctx.pos) : ""} {COPY.freeze.question}
+          </h1>
+          {brief.rejoin && (
+            <p className="mt-3 text-lg font-medium leading-[1.35]">
+              {COPY.host.boxNowLead} <b className="font-black">{COPY.host.boxNowShort(brief.rejoin.pos, brief.rejoin.ahead, brief.rejoin.behind)}</b>{" "}
+              {brief.story && brief.ctx && COPY.host.lapsLeftOn(brief.story.lapsLeft, brief.ctx.age, brief.ctx.compound ? (COPY.compounds[brief.ctx.compound] ?? brief.ctx.compound) : null)}
+            </p>
+          )}
+          <div className="mt-auto pt-4">
+            <Options brief={brief} compact />
+          </div>
+          <div className="mt-4">{room(true)}</div>
+        </section>
+        <section className="grid min-h-0 grid-cols-2 grid-rows-[auto_auto_auto_1fr] gap-x-12 overflow-hidden bg-white pb-8 pl-12 pr-14 pt-6 text-ink">
+          <Top className="col-span-2 mb-2 text-[15px]" left={COPY.mode.advanced} right={`${meCode} #${r.number}${pos ? ` · P${pos}` : ""}`} />
+          {t ? (
+            <>
+              <Sec label={COPY.host.stintTimes} meta={t.stintLaps.length ? `L${t.stintLaps[0]}-${t.stintLaps[t.stintLaps.length - 1]} · s` : undefined}>
+                <LapChart laps={t.stintLaps} cars={[t.stint.me, t.stint.ahead, t.stint.behind]} height={130} axis />
+              </Sec>
+              <Sec label={COPY.host.intervalsTitle} meta="s">
+                <IntervalChart t={t} height={130} />
+              </Sec>
+              <Sec label={COPY.host.fieldTyres} meta={t.ages.length ? COPY.host.agesRange(Math.min(...t.ages), Math.max(...t.ages)) : undefined}>
+                <FieldTyres t={t} me={r.number} onField={false} />
+              </Sec>
+              <Sec label={COPY.host.pitLoss} meta="s">
+                {brief.loss && <PitLoss under={brief.loss.under} normal={brief.loss.normal} trigger={decision.trigger} />}
+              </Sec>
+              <div className="flex min-h-0 flex-col overflow-hidden">
+                <Sec label={COPY.host.stint} meta={`${meCode} #${r.number}`}>
+                  <StintTable t={t} normal={decision.pit_loss?.normal_s ?? null} />
+                </Sec>
+                <UndercutClock t={t} mode={mode} />
+              </div>
+              <div className="flex min-h-0 flex-col overflow-hidden">
+                <Sec label={COPY.host.rejoinTitle} meta={COPY.host.gapToLeader}>
+                  {brief.frame && <RejoinStrip t={t} frameCars={brief.frame.drivers.map((d) => ({ code: d.code, gap: d.gap_to_leader_s, number: d.number }))} />}
+                  <Note>{intervalNote(t)}</Note>
+                </Sec>
+                <NeighbourList t={t} />
+              </div>
+            </>
+          ) : null}
+        </section>
+      </div>
+    </main>
+  );
+}
