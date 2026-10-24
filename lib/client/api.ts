@@ -47,6 +47,9 @@ export interface CampsResponse {
   by_call: { BOX: number; STAY: number; none: number };
   camps: { factor: string; count: number; players: string[]; quotes: string[] }[];
   no_factor: { count: number; players: string[]; quotes: string[] };
+  // Camp names written by Muse Spark from the room's reasons; null when Muse was skipped.
+  labels: { label: string; call: Call | null; players: string[]; count: number }[] | null;
+  labels_source: "muse" | "factors";
 }
 
 export interface LeaderboardRow {

@@ -140,7 +140,8 @@ export const COPY = {
     camps: "Reasons in the room", // added
     camp: (n: number, total: number, factor: string) => `${n} of ${total}: ${factor}`, // added
     noFactor: "No factor named", // added
-    credit: "Speech to text runs in your browser. Engine: offline model on Jolpica lap data.",
+    campsByMuse: "Grouped by Muse Spark from what you said.", // added: source line under Muse camp labels
+    credit: "Reasons graded and grouped by Muse Spark. Speech to text runs in your browser. Engine: offline model on Jolpica and OpenF1 lap data.",
     showScores: "Show scores", // added: host button
     who: "Who", // added: column header
     call: "Call",

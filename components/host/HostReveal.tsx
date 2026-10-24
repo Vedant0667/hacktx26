@@ -326,7 +326,22 @@ function Verdict({
 
         <section className="col-span-3 flex min-h-0 flex-col gap-3 overflow-hidden">
           <Label>{COPY.reveal.camps}</Label>
-          {camps && camps.camps.length > 0 ? (
+          {camps?.labels_source === "muse" && camps.labels && camps.labels.length > 0 ? (
+            <>
+              <ol className="flex flex-col gap-0.5">
+                {camps.labels.slice(0, 4).map((c) => (
+                  <li key={c.label} className="flex flex-col gap-1 bg-surface px-4 py-3">
+                    <span className="text-20 font-bold">{c.label}</span>
+                    <span className="flex items-baseline justify-between gap-3">
+                      {c.call ? <CallWord call={c.call} className="text-16" /> : <span />}
+                      <span className="text-16 font-semibold uppercase stretch-75 text-ink-2">{c.players.map(tla).join(" ")}</span>
+                    </span>
+                  </li>
+                ))}
+              </ol>
+              <p className="text-16 text-ink-3">{COPY.reveal.campsByMuse}</p>
+            </>
+          ) : camps && camps.camps.length > 0 ? (
             <ol className="flex flex-col gap-0.5">
               {camps.camps.slice(0, 4).map((c) => (
                 <li key={c.factor} className="flex flex-col gap-1 bg-surface px-4 py-3">
