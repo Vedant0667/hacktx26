@@ -64,6 +64,9 @@ export function redactSubmissions(state: LobbyStateResponse, isHost = false): Lo
           score_call: 0,
           score_reasoning: 0,
           total: 0,
+          verdict: null, // Round 7: the grade gives the answer away too
+          credited: [],
+          graded: false,
         })),
     },
     isHost,

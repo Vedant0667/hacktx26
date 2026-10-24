@@ -54,6 +54,7 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
       reasons: local.reasons.slice(0, 4), factors_named: score.factors_named, transcript: text,
       seconds_to_call: null, status: score.status,
       score_call: score.score_call, score_reasoning: score.score_reasoning, total: score.total,
+      verdict: score.verdict, credited: score.factors_named,
     },
     AUDIBLE_GAP_LAPS,
   );

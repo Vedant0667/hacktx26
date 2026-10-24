@@ -105,7 +105,7 @@ export async function museTranscribe(pcm: Uint8Array, ctx: { decisionId: string 
     log.cost_usd = Math.floor(ms / 1000) * ASR_USD_PER_S; // billed in whole seconds, rounded down
     log.cost_usd = Math.round(log.cost_usd * 1e6) / 1e6;
     log.ok = true;
-    result = { ok: true, transcript: body.transcript.replace(/\s+/g, " ").trim().slice(0, 1000), duration_ms: Math.round(ms) };
+    result = { ok: true, transcript: body.transcript.replace(/\s+/g, " ").trim().replace(/(?<!\.)\.\.$/, ".").slice(0, 1000), duration_ms: Math.round(ms) };
   } catch (err) {
     // Failed or timed out: keep the worst-case cost so the cap stays conservative (the audio may have been processed).
     log.error = err instanceof Error ? err.message : String(err);

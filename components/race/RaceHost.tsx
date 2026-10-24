@@ -176,7 +176,7 @@ export function RaceHost({
           <Triggers freeze={f} />
           {others.map((c) => {
             const o = freeze.drivers[c];
-            return o ? <Triggers key={c} freeze={o} showCar /> : null;
+            return o ? <Triggers key={c} freeze={o} showCar compact /> : null;
           })}
           {idle.length > 0 && <p className="font-mono text-sm font-bold">{COPY.race.noCallHost(idle)}</p>}
         </div>
@@ -494,8 +494,14 @@ function FreezeRevealView({
               <div style={fieldStyle(colourOf(code))} className="rise col-span-5 flex min-h-0 flex-col bg-field px-7 py-5 text-on-field" >
                 <span className="meta">{COPY.host.outcome}</span>
                 <span className={`display mt-2 leading-none ${compact ? "text-[3rem]" : "text-[4.5rem]"}`}>{COPY.race.winning(d.correct)}</span>
-                <span className={`nums mt-3 font-bold ${compact ? "text-xl" : "text-[1.75rem]"}`}>
-                  {d.swing_s != null && !d.swing_deferred ? `${COPY.race.worthLabel}: ${COPY.race.worth(d.swing_s)}` : COPY.race.worthDeferred}
+                <span className={`mt-3 font-bold ${compact ? "text-xl" : "text-[1.75rem]"}`}>
+                  {d.swing_s != null && !d.swing_deferred ? (
+                    <>
+                      {COPY.race.worthLabel}: <span className="nums">{COPY.race.worth(d.swing_s)}</span>
+                    </>
+                  ) : (
+                    COPY.race.worthDeferred
+                  )}
                 </span>
                 {mode === "advanced" && (
                   <div className="mt-auto flex flex-col gap-1 pt-4 font-mono text-sm">

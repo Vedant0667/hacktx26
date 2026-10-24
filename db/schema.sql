@@ -272,3 +272,36 @@ create table if not exists race_calls (
 );
 
 create index if not exists race_calls_lobby on race_calls (lobby_code, kind, lap);
+
+-- Round 7 (simplified scoring). Calls are stored on submit with a provisional rubric grade (graded_at null)
+-- and graded once at the reveal: reasoning 0 to 50 with a one-line verdict. score_call holds the call's
+-- stakes (0 to 100, from its measured swing), score_reasoning the reasoning score, total the signed points.
+alter table submissions add column if not exists verdict text;
+alter table submissions add column if not exists credited jsonb not null default '[]';
+alter table submissions add column if not exists graded_at timestamptz;
+alter table race_calls add column if not exists verdict text;
+alter table race_calls add column if not exists credited jsonb not null default '[]';
+alter table race_calls add column if not exists graded_at timestamptz;
+
+-- One grader per lobby and scope (a moment decision id, or 'race'), so polling never grades twice.
+create table if not exists grading_claims (
+  lobby_code text not null references lobbies(code) on delete cascade,
+  scope text not null,
+  status text not null default 'pending',
+  updated_at timestamptz not null default now(),
+  primary key (lobby_code, scope)
+);
+
+-- Engine and real-team reasons graded once per decision, car and reasons text (no player text here).
+create table if not exists benchmark_grades (
+  decision_id text not null,
+  driver_code text not null,
+  kind text not null,
+  reasons_hash text not null,
+  reasoning_score int not null,
+  verdict text not null,
+  credited jsonb not null default '[]',
+  source text not null,
+  created_at timestamptz not null default now(),
+  primary key (decision_id, driver_code, kind, reasons_hash)
+);

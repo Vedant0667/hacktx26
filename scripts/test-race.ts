@@ -7,7 +7,6 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   AUDIBLE_GAP_LAPS,
-  AUDIBLE_WRONG_POINTS,
   audibleAllowed,
   buildFreezePlan,
   framesFor,
@@ -25,7 +24,7 @@ import {
 } from "../app/api/_lib/race";
 import { raceStateFor } from "../app/api/_lib/redact";
 import { rowsToFrames, type AudibleTruth, type RaceFreeze } from "../lib/data";
-import { CALL_WINDOW_S } from "../lib/scoring";
+import { CALL_WINDOW_S, pointsFor, stakesFor } from "../lib/scoring";
 
 const root = path.resolve(__dirname, "..");
 const loadPath = path.join(root, "build/race-data/load.json");
@@ -213,13 +212,19 @@ test("audible scoring: right BOX, wrong BOX, no split, cancelled near a freeze",
   const wrong = rows.find((a) => a.truth.scorable && a.truth.correct === "STAY")!;
   const none = rows.find((a) => !a.truth.scorable)!;
   assert.ok(right && wrong && none, "fixtures");
+  // Round 7: stakes from the audible's own swing; points = round(stakes × (0.40 × right + 0.75 × r/50 − 0.15)).
   const s1 = scoreAudible(right.lap, right.driver_code, [], right.truth, "box, the tyres are old and worn");
   assert.equal(s1.status, "scored");
-  assert.equal(s1.score_call, 100);
+  assert.equal(s1.score_call, stakesFor(right.truth.swing_s));
   assert.ok(s1.score_reasoning > 0 && s1.score_reasoning <= 50);
-  assert.equal(scoreAudible(right.lap, right.driver_code, [], right.truth, "").total, 100);
-  const s2 = scoreAudible(wrong.lap, wrong.driver_code, [], wrong.truth, "box the tyres are old");
-  assert.deepEqual([s2.status, s2.score_call, s2.score_reasoning, s2.total], ["scored", AUDIBLE_WRONG_POINTS, 0, AUDIBLE_WRONG_POINTS]);
+  assert.equal(s1.total, pointsFor("BOX", "BOX", s1.score_call, s1.score_reasoning));
+  assert.ok(s1.verdict && s1.verdict.length > 0);
+  const bare = scoreAudible(right.lap, right.driver_code, [], right.truth, "");
+  assert.deepEqual([bare.score_reasoning, bare.total, bare.verdict], [0, pointsFor("BOX", "BOX", bare.score_call, 0), "No reason given."]);
+  const s2 = scoreAudible(wrong.lap, wrong.driver_code, [], wrong.truth, "");
+  assert.equal(s2.status, "scored");
+  assert.ok(s2.total < 0, "a wrong box with no reason loses points");
+  assert.equal(s2.total, pointsFor("BOX", "STAY", stakesFor(wrong.truth.swing_s), 0));
   const s3 = scoreAudible(none.lap, none.driver_code, [], none.truth, "box");
   assert.deepEqual([s3.status, s3.total], ["unscored", 0]);
   assert.equal(scoreAudible(5, "LEC", [], null, "").status, "unscored");

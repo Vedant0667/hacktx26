@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { getLobbyDriverCodes } from "@/lib/db";
 import { getDriverAnswers, getFrames, getGroundTruth, type DriverReveal } from "@/lib/data";
 import { requireLobbyMember } from "../../../_lib/access";
+import { momentResults } from "../../../_lib/grading";
 import { handle, HttpError, normalizeCode, requireDecision } from "../../../_lib/http";
 import { isRevealed } from "../../../_lib/redact";
 
@@ -11,11 +12,17 @@ import { isRevealed } from "../../../_lib/redact";
 // have only the blind data from GET /api/decisions/**.
 // 403 for a missing or wrong token and for an unknown code (miss-limited); 409 before the reveal.
 // Response: { decision: DecisionPoint & { total_laps, pit_loss }, frames, ground_truth, drivers: { [code]: DriverReveal } }.
+// Round 7: ?part=results returns the end screen instead (ResultsResponse in app/api/_lib/grading.ts). The first
+// such read after the grace window grades every call (Muse, one call per reason) and the engine and team rows;
+// until that is done the answer is { grading: true } with empty lists, so poll about every 1.5 s.
 export const GET = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobby/[code]/reveal">) => {
   const code = normalizeCode((await ctx.params).code);
   const { meta } = await requireLobbyMember(req, code);
   if (meta.mode === "race") throw new HttpError(409, "Race lobbies use /race/reveal");
   if (!isRevealed(meta.phase)) throw new HttpError(409, "The answer opens at the reveal");
+  if (req.nextUrl.searchParams.get("part") === "results") {
+    return Response.json(await momentResults(code, meta), { headers: { "Cache-Control": "no-store" } });
+  }
 
   const decision = await requireDecision(meta.decision_id);
   const [frames, ground_truth, answers, played] = await Promise.all([

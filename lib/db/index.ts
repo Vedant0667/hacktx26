@@ -63,7 +63,9 @@ export interface RaceState {
 }
 
 // A submission and the car it was scored against (Round 4; null only for rows from before per-driver play).
-export type DriverSubmission = Submission & { driver_code: string | null };
+// Round 7: verdict and credited come from the reasoning grade; graded is false until the reveal grading ran
+// (until then the row holds the provisional rubric grade).
+export type DriverSubmission = Submission & { driver_code: string | null; verdict?: string | null; credited?: string[]; graded?: boolean };
 
 // LobbyState plus the server clock (ms), taken from the same now() that sets phase_started_at, and the
 // per-driver fields (docs/audits/security-contract.md Round 4, 4.3).
@@ -86,13 +88,14 @@ const SUBMISSION_JSON = `json_build_object(
   'lobby_code', s.lobby_code, 'player_name', s.player_name, 'decision_id', s.decision_id,
   'call', s.call, 'reasons', s.reasons, 'factors_named', s.factors_named, 'transcript', s.transcript,
   'seconds_to_call', s.seconds_to_call, 'score_call', s.score_call, 'score_reasoning', s.score_reasoning,
-  'total', s.total, 'driver_code', s.driver_code)`;
+  'total', s.total, 'driver_code', s.driver_code, 'verdict', s.verdict, 'credited', s.credited,
+  'graded', s.graded_at is not null)`;
 
 const SUBMISSION_COLS = `lobby_code, player_name, decision_id, call, reasons, factors_named, transcript,
-  seconds_to_call, score_call, score_reasoning, total, driver_code`;
+  seconds_to_call, score_call, score_reasoning, total, driver_code, verdict, credited`;
 
-// Players best first; ties go to the faster call, then the earlier row.
-const SUBMISSION_ORDER = "s.total desc, s.seconds_to_call asc, s.created_at asc";
+// Players best first; equal totals share a rank and are listed by name. Time to call never breaks a tie.
+const SUBMISSION_ORDER = "s.total desc, s.player_name asc";
 
 function isPgError(err: unknown, code: string): boolean {
   return err instanceof NeonDbError ? err.code === code : (err as { code?: string })?.code === code;
@@ -381,24 +384,28 @@ export interface RaceCallRow {
   transcript: string;
   seconds_to_call: number | null;
   status: "pending" | "scored" | "unscored" | "cancelled";
-  score_call: number;
-  score_reasoning: number;
-  total: number;
+  score_call: number; // Round 7: the call's stakes (0–100)
+  score_reasoning: number; // reasoning 0–50
+  total: number; // signed points
+  verdict?: string | null; // Round 7: one line on the reasoning score
+  credited?: string[];
+  graded?: boolean; // false until the reveal grading ran (provisional rubric grade until then)
 }
 
 const RACE_CALL_COLS = `kind, lap, player_name, driver_code, call, reasons, factors_named, transcript, seconds_to_call,
   status, score_call, score_reasoning, total`;
+const RACE_CALL_SELECT = `${RACE_CALL_COLS}, verdict, credited, graded_at is not null as graded`;
 
 export async function getRaceCalls(code: string): Promise<RaceCallRow[]> {
   return query<RaceCallRow>(
-    `select ${RACE_CALL_COLS} from race_calls where lobby_code = $1 order by lap, kind, created_at, player_name`,
+    `select ${RACE_CALL_SELECT} from race_calls where lobby_code = $1 order by lap, kind, created_at, player_name`,
     [code],
   );
 }
 
 export async function getRaceCall(code: string, player: string, kind: "freeze" | "audible", lap: number): Promise<RaceCallRow | null> {
   const rows = await query<RaceCallRow>(
-    `select ${RACE_CALL_COLS} from race_calls where lobby_code = $1 and player_name = $2 and kind = $3 and lap = $4`,
+    `select ${RACE_CALL_SELECT} from race_calls where lobby_code = $1 and player_name = $2 and kind = $3 and lap = $4`,
     [code, player, kind, lap],
   );
   return rows[0] ?? null;
@@ -407,11 +414,11 @@ export async function getRaceCall(code: string, player: string, kind: "freeze" |
 // First call per player and freeze wins; a repeat returns the stored row with duplicate = true.
 export async function insertRaceCall(code: string, c: RaceCallRow): Promise<{ call: RaceCallRow; duplicate: boolean }> {
   const rows = await query<RaceCallRow>(
-    `insert into race_calls (lobby_code, ${RACE_CALL_COLS})
-     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14)
-     on conflict (lobby_code, player_name, kind, lap) do nothing returning ${RACE_CALL_COLS}`,
+    `insert into race_calls (lobby_code, ${RACE_CALL_COLS}, verdict, credited)
+     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14, $15, $16::jsonb)
+     on conflict (lobby_code, player_name, kind, lap) do nothing returning ${RACE_CALL_SELECT}`,
     [code, c.kind, c.lap, c.player_name, c.driver_code, c.call, JSON.stringify(c.reasons), JSON.stringify(c.factors_named),
-      c.transcript, c.seconds_to_call, c.status, c.score_call, c.score_reasoning, c.total],
+      c.transcript, c.seconds_to_call, c.status, c.score_call, c.score_reasoning, c.total, c.verdict ?? null, JSON.stringify(c.credited ?? [])],
   );
   if (rows[0]) return { call: rows[0], duplicate: false };
   return { call: (await getRaceCall(code, c.player_name, c.kind, c.lap))!, duplicate: true };
@@ -424,13 +431,13 @@ export async function insertAudible(code: string, c: RaceCallRow, gap: number): 
   const results = (await sql().transaction([
     sql().query(`select pg_advisory_xact_lock(hashtext($1))`, [`audible:${code}:${c.player_name}`]),
     sql().query(
-      `insert into race_calls (lobby_code, ${RACE_CALL_COLS})
-       select $1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14
+      `insert into race_calls (lobby_code, ${RACE_CALL_COLS}, verdict, credited)
+       select $1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14, $16, $17::jsonb
        where not exists(select 1 from race_calls where lobby_code = $1 and player_name = $4 and kind = 'audible'
                         and abs(lap - $3::int) < $15::int)
-       on conflict (lobby_code, player_name, kind, lap) do nothing returning ${RACE_CALL_COLS}`,
+       on conflict (lobby_code, player_name, kind, lap) do nothing returning ${RACE_CALL_SELECT}`,
       [code, c.kind, c.lap, c.player_name, c.driver_code, c.call, JSON.stringify(c.reasons), JSON.stringify(c.factors_named),
-        c.transcript, c.seconds_to_call, c.status, c.score_call, c.score_reasoning, c.total, gap],
+        c.transcript, c.seconds_to_call, c.status, c.score_call, c.score_reasoning, c.total, gap, c.verdict ?? null, JSON.stringify(c.credited ?? [])],
     ),
     sql().query(
       `select coalesce(json_agg(lap order by lap), '[]'::json) as laps from race_calls
@@ -497,13 +504,14 @@ export async function claimSubmission(code: string, playerName: string, decision
 export async function insertSubmission(s: DriverSubmission): Promise<{ submission: DriverSubmission; duplicate: boolean }> {
   const inserted = await query<{ row: DriverSubmission }>(
     `insert into submissions as s (${SUBMISSION_COLS})
-     values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10, $11, $12)
+     values ($1, $2, $3, $4, $5::jsonb, $6::jsonb, $7, $8, $9, $10, $11, $12, $13, $14::jsonb)
      on conflict (lobby_code, player_name, decision_id) do nothing
      returning ${SUBMISSION_JSON} as row`,
     [
       s.lobby_code, s.player_name, s.decision_id, s.call,
       JSON.stringify(s.reasons), JSON.stringify(s.factors_named), s.transcript,
       s.seconds_to_call, s.score_call, s.score_reasoning, s.total, s.driver_code,
+      s.verdict ?? null, JSON.stringify(s.credited ?? []),
     ],
   );
   if (inserted.length === 1) return { submission: inserted[0].row, duplicate: false };
@@ -555,7 +563,7 @@ export async function getLobbyDriverCodes(code: string): Promise<string[]> {
   return rows.map((r) => r.driver_code);
 }
 
-// ---- Muse Spark spend log and camp cache (tables muse_calls, muse_camps) ----
+// ---- Muse Spark spend log (table muse_calls) ----
 
 export interface MuseCallLog {
   purpose: string;
@@ -624,132 +632,82 @@ export async function getMuseSpend(lobbyCode?: string | null): Promise<{ calls: 
   return rows[0];
 }
 
-export interface MuseCampsRow {
-  status: "pending" | "done" | "failed";
-  submitted: number;
-  camps: unknown;
+// ---- Round 7: reasoning grades (tables grading_claims, benchmark_grades) ----
+
+export interface StoredGrade {
+  reasoning_score: number;
+  verdict: string;
+  credited: string[];
+  source: string;
 }
 
-export async function getMuseCamps(code: string, decisionId: string): Promise<MuseCampsRow | null> {
-  const rows = await query<MuseCampsRow>(
-    `select status, submitted, camps from muse_camps where lobby_code = $1 and decision_id = $2`,
-    [code, decisionId],
-  );
-  return rows[0] ?? null;
-}
-
-// Claims the right to make the camps call. Only one caller wins: a new row, a finished row with
-// fewer submissions than now (a late call landed), or a pending row abandoned for over 30 s.
-export async function claimMuseCamps(code: string, decisionId: string, submitted: number): Promise<boolean> {
+// One grader per lobby and scope. Wins on a new row, on a finished row (more calls to grade), or on a pending
+// row abandoned for over 30 s.
+export async function claimGrading(code: string, scope: string): Promise<boolean> {
   const rows = await query(
-    `insert into muse_camps as m (lobby_code, decision_id, status, submitted) values ($1, $2, 'pending', $3)
-     on conflict (lobby_code, decision_id) do update set status = 'pending', submitted = $3, updated_at = now()
-       where (m.status <> 'pending' and m.submitted < $3)
-          or (m.status = 'pending' and m.updated_at < now() - interval '30 seconds')
+    `insert into grading_claims as g (lobby_code, scope) values ($1, $2)
+     on conflict (lobby_code, scope) do update set status = 'pending', updated_at = now()
+       where g.status <> 'pending' or g.updated_at < now() - interval '30 seconds'
      returning lobby_code`,
-    [code, decisionId, submitted],
+    [code, scope],
   );
   return rows.length === 1;
 }
 
-export async function saveMuseCamps(code: string, decisionId: string, camps: unknown | null): Promise<void> {
-  await query(
-    `update muse_camps set status = $3, camps = $4::jsonb, updated_at = now()
-     where lobby_code = $1 and decision_id = $2`,
-    [code, decisionId, camps ? "done" : "failed", camps ? JSON.stringify(camps) : null],
-  );
+export async function releaseGrading(code: string, scope: string): Promise<void> {
+  await query(`update grading_claims set status = 'done', updated_at = now() where lobby_code = $1 and scope = $2`, [code, scope]);
 }
 
-// ---- Round 5: "defend your call" duel (tables muse_duels, duel_votes) ----
-
-export interface DuelEntryRow {
-  name: string;
-  driver_code: string | null;
-  call: "BOX" | "STAY" | null;
-  reasons: string[];
-  transcript: string;
-}
-
-// This decision's calls in submission order (not score order), for the duel pick.
-export async function getDuelEntries(code: string, decisionId: string): Promise<DuelEntryRow[]> {
-  return query<DuelEntryRow>(
-    `select player_name as name, driver_code, call, reasons, transcript from submissions
-     where lobby_code = $1 and decision_id = $2 order by created_at, player_name`,
-    [code, decisionId],
-  );
-}
-
-export interface MuseDuelRow {
-  status: "pending" | "done";
-  submitted: number;
-  duel: unknown;
-}
-
-export async function getMuseDuel(code: string, decisionId: string): Promise<MuseDuelRow | null> {
-  const rows = await query<MuseDuelRow>(
-    `select status, submitted, duel from muse_duels where lobby_code = $1 and decision_id = $2`,
-    [code, decisionId],
-  );
-  return rows[0] ?? null;
-}
-
-// Claims the right to pick the duel. "new": first claim for this lobby and decision (the one Muse call);
-// "stale": a pending claim abandoned for over 30 s, taken over without a second Muse call; null: someone else holds it
-// or it is already done. A done row is never re-picked, so votes always refer to the same pair.
-export async function claimMuseDuel(code: string, decisionId: string, submitted: number): Promise<"new" | "stale" | null> {
-  const rows = await query<{ inserted: boolean }>(
-    `insert into muse_duels as m (lobby_code, decision_id, status, submitted) values ($1, $2, 'pending', $3)
-     on conflict (lobby_code, decision_id) do update set submitted = $3, updated_at = now()
-       where m.status = 'pending' and m.updated_at < now() - interval '30 seconds'
-     returning (xmax = 0) as inserted`,
-    [code, decisionId, submitted],
-  );
-  if (rows.length !== 1) return null;
-  return rows[0].inserted ? "new" : "stale";
-}
-
-export async function saveMuseDuel(code: string, decisionId: string, duel: unknown): Promise<void> {
-  await query(
-    // Only a pending pick is written, so a saved pair (and the votes cast on it) can never be replaced.
-    `update muse_duels set status = 'done', duel = $3::jsonb, updated_at = now()
-     where lobby_code = $1 and decision_id = $2 and status = 'pending'`,
-    [code, decisionId, JSON.stringify(duel)],
-  );
-}
-
-export interface DuelTally {
-  votes: [number, number];
-  my_vote: 0 | 1 | null;
-}
-
-export async function getDuelVotes(code: string, decisionId: string, playerName: string | null): Promise<DuelTally> {
-  const rows = await query<{ v0: number; v1: number; mine: number | null }>(
-    `select count(*) filter (where choice = 0)::int as v0, count(*) filter (where choice = 1)::int as v1,
-       (select choice from duel_votes where lobby_code = $1 and decision_id = $2 and player_name = $3) as mine
-     from duel_votes where lobby_code = $1 and decision_id = $2`,
-    [code, decisionId, playerName ?? ""],
-  );
-  const r = rows[0];
-  return { votes: [r?.v0 ?? 0, r?.v1 ?? 0], my_vote: r?.mine === 0 || r?.mine === 1 ? r.mine : null };
-}
-
-// One vote per player: the first one stands. Only counted once the duel has a pair.
-// null: there is no pair to vote on. duplicate: the player had already voted (their stored choice is in my_vote).
-export async function castDuelVote(
+// The graded row: reasoning, verdict, credited ideas (also in factors_named), points, and graded_at.
+export async function saveSubmissionGrade(
   code: string,
+  player: string,
   decisionId: string,
-  playerName: string,
-  choice: 0 | 1,
-): Promise<(DuelTally & { duplicate: boolean }) | null> {
-  const inserted = await query(
-    `insert into duel_votes (lobby_code, decision_id, player_name, choice)
-     select $1, $2, $3, $4 where exists(
-       select 1 from muse_duels where lobby_code = $1 and decision_id = $2 and status = 'done'
-         and jsonb_typeof(duel->'pair') = 'array')
-     on conflict (lobby_code, decision_id, player_name) do nothing returning choice`,
-    [code, decisionId, playerName, choice],
+  g: { score_reasoning: number; total: number; verdict: string; credited: string[] },
+): Promise<void> {
+  await query(
+    `update submissions set score_reasoning = $4, total = $5, verdict = $6, credited = $7::jsonb, factors_named = $7::jsonb,
+       graded_at = now()
+     where lobby_code = $1 and player_name = $2 and decision_id = $3`,
+    [code, player, decisionId, g.score_reasoning, g.total, g.verdict, JSON.stringify(g.credited)],
   );
-  const tally = await getDuelVotes(code, decisionId, playerName);
-  if (tally.my_vote === null) return null;
-  return { ...tally, duplicate: inserted.length === 0 };
+}
+
+export async function saveRaceCallGrade(
+  code: string,
+  player: string,
+  kind: "freeze" | "audible",
+  lap: number,
+  g: { score_reasoning: number; total: number; verdict: string; credited: string[] },
+): Promise<void> {
+  await query(
+    `update race_calls set score_reasoning = $5, total = $6, verdict = $7, credited = $8::jsonb, factors_named = $8::jsonb,
+       graded_at = now()
+     where lobby_code = $1 and player_name = $2 and kind = $3 and lap = $4`,
+    [code, player, kind, lap, g.score_reasoning, g.total, g.verdict, JSON.stringify(g.credited)],
+  );
+}
+
+export async function getBenchmarkGrades(keys: { decision_id: string; driver_code: string; kind: string; reasons_hash: string }[]): Promise<Map<string, StoredGrade>> {
+  const out = new Map<string, StoredGrade>();
+  if (!keys.length) return out;
+  const rows = await query<StoredGrade & { decision_id: string; driver_code: string; kind: string; reasons_hash: string }>(
+    `select b.decision_id, b.driver_code, b.kind, b.reasons_hash, b.reasoning_score, b.verdict, b.credited, b.source
+     from benchmark_grades b join json_to_recordset($1::json) as k(decision_id text, driver_code text, kind text, reasons_hash text)
+       using (decision_id, driver_code, kind, reasons_hash)`,
+    [JSON.stringify(keys)],
+  );
+  for (const r of rows) out.set(`${r.decision_id}|${r.driver_code}|${r.kind}|${r.reasons_hash}`, r);
+  return out;
+}
+
+export async function saveBenchmarkGrade(
+  k: { decision_id: string; driver_code: string; kind: string; reasons_hash: string },
+  g: StoredGrade,
+): Promise<void> {
+  await query(
+    `insert into benchmark_grades (decision_id, driver_code, kind, reasons_hash, reasoning_score, verdict, credited, source)
+     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8) on conflict do nothing`,
+    [k.decision_id, k.driver_code, k.kind, k.reasons_hash, g.reasoning_score, g.verdict, JSON.stringify(g.credited), g.source],
+  );
 }

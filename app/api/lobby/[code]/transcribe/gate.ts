@@ -4,7 +4,6 @@
 import type { LobbyMeta } from "@/lib/db";
 import { ASR_MAX_BYTES, ASR_MIN_BYTES } from "@/lib/muse/asr";
 import { HttpError, tokenMatches } from "../../../_lib/http";
-import { currentFreeze, type RacePhase } from "../../../_lib/race";
 
 export const ASR_PER_CALL = 4; // clips per player per call window (one decision, or one race freeze)
 export const ASR_PER_CALL_WINDOW_S = 3600;
@@ -40,7 +39,7 @@ export function callTarget(meta: LobbyMeta, token: string | null, denied: string
   if (!meta.is_player || !tokenMatches(token, meta.player_token_hash)) throw new HttpError(403, denied);
   if (meta.mode === "race") {
     if (meta.phase !== "freeze") throw new HttpError(409, "Voice notes are only taken during a call");
-    const f = currentFreeze({ phase: meta.phase as RacePhase, plan: meta.freeze_plan, freeze_index: meta.freeze_index });
+    const f = meta.freeze_plan?.[meta.freeze_index] ?? null; // _lib/race currentFreeze() during "freeze"
     const car = meta.player_driver_code;
     if (!f || !car || !f.drivers.includes(car)) throw new HttpError(409, "No call needed for your car at this lap");
     return { key: `L${f.lap}`, decisionId: meta.race_key ? `race:${meta.race_key}:L${f.lap}` : null, raceLap: f.lap };

@@ -2,11 +2,12 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { getSubmission, getTotals, insertSubmission, claimSubmission, getRaceCall, insertRaceCall, type DriverSubmission, type LobbyMeta, type RaceCallRow } from "@/lib/db";
 import { decisionForDriver, getRaceEntry, getRaceFreezes } from "@/lib/data";
-import { parseCall } from "@/lib/muse";
+import { parseCallLocal, rubricScore } from "@/lib/muse";
 import { CALL_WINDOW_S, percentile, scoreCall } from "@/lib/scoring";
+import { momentRubric } from "../../../_lib/grading";
 import { lobbyMetaGuarded } from "../../../_lib/access";
 import { driverFor, handle, HttpError, normalizeCode, readBody, requireDecision, tokenMatches } from "../../../_lib/http";
-import { currentFreeze, freezeDecision, type RacePhase } from "../../../_lib/race";
+import { currentFreeze, freezeDecision, freezeRubric, type RacePhase } from "../../../_lib/race";
 
 const REVEAL_GRACE_S = 2;
 
@@ -19,10 +20,11 @@ const Body = z.object({
   call: z.enum(["BOX", "STAY"]).nullable().optional(),
 });
 
-const hidden = (c: RaceCallRow): RaceCallRow => ({ ...c, score_call: 0, score_reasoning: 0, total: 0 });
+const hidden = (c: RaceCallRow): RaceCallRow => ({ ...c, score_call: 0, score_reasoning: 0, total: 0, verdict: null, credited: [], factors_named: [] });
 
-// Round 6: a call on the current freeze of a race lobby, for the player's own car. Graded like a moment call
-// (Muse with the same budget, lobby cap and grounding; keyword fallback). Scores stay hidden until reveal_freeze.
+// Round 6: a call on the current freeze of a race lobby, for the player's own car. Round 7: stored with the
+// provisional rubric grade and no Muse call; the reveal grading (app/api/_lib/grading.ts) replaces it.
+// Scores stay hidden until reveal_freeze.
 async function raceSubmit(code: string, player: string, meta: LobbyMeta, transcript: string, buttonCall: "BOX" | "STAY" | null): Promise<Response> {
   const lateRace = meta.phase === "reveal_freeze" && meta.phase_elapsed_s < REVEAL_GRACE_S;
   if (meta.phase !== "freeze" && !lateRace) throw new HttpError(409, "Calls are closed for this moment");
@@ -42,20 +44,24 @@ async function raceSubmit(code: string, player: string, meta: LobbyMeta, transcr
     return Response.json({ submission: hidden(stored), duplicate: true });
   }
   const decision = freezeDecision(raceKey, race.name, freeze);
-  const parsed = await parseCall(transcript, decision, { lobbyCode: code });
+  const parsed = parseCallLocal(transcript);
   const finalCall = buttonCall ?? parsed.call;
-  const score = scoreCall(decision, finalCall, parsed.factors_named);
+  const grade = rubricScore(freezeRubric(raceKey, freeze), parsed.transcript);
+  const score = scoreCall(decision, finalCall, grade.reasoning_score);
   const seconds_to_call = meta.phase === "freeze" ? Math.min(CALL_WINDOW_S, Math.round(meta.phase_elapsed_s * 10) / 10) : CALL_WINDOW_S;
   const { call: row, duplicate } = await insertRaceCall(code, {
     kind: "freeze", lap: f.lap, player_name: player, driver_code: car, call: finalCall,
-    reasons: parsed.reasons, factors_named: parsed.factors_named, transcript: parsed.transcript,
-    seconds_to_call, status: "scored", ...score,
+    reasons: parsed.reasons, factors_named: grade.credited, transcript: parsed.transcript,
+    seconds_to_call, status: "scored", ...score, verdict: grade.verdict, credited: grade.credited,
   });
   return Response.json(
     { submission: meta.phase === "freeze" ? hidden(row) : row, duplicate },
     { status: duplicate ? 200 : 201 },
   );
 }
+
+// Before the reveal nothing in the response may hint at the answer: no scores, verdict or credited ideas.
+const hideScores = (s: DriverSubmission): DriverSubmission => ({ ...s, score_call: 0, score_reasoning: 0, total: 0, verdict: null, credited: [], factors_named: [] });
 
 // Requires x-player-token (from join) for player_name. Scored against the player's own car (Round 4).
 // Response: { submission, percentile, lobby_rank, lobby_players_submitted, duplicate }.
@@ -90,23 +96,27 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
       // Another request for this player is already grading; that one returns the result.
       const stored = await getSubmission(code, player_name, decision.id);
       if (!stored) throw new HttpError(409, "Your call is already in and being graded");
-      return Response.json({ submission: { ...stored, score_call: 0, score_reasoning: 0, total: 0 }, percentile: null, lobby_rank: null, lobby_players_submitted: null, duplicate: true });
+      return Response.json({ submission: hideScores(stored), percentile: null, lobby_rank: null, lobby_players_submitted: null, duplicate: true });
     }
-    // Muse grades which factors were named; the phone's BOX / STAY button still wins for the call.
-    const parsed = await parseCall(transcript, decision, { lobbyCode: code });
+    // Round 7: store the call and words with a provisional rubric grade; no Muse call here. Reasoning is graded
+    // once at the reveal. The phone's BOX / STAY button wins over the parsed transcript for the call.
+    const parsed = parseCallLocal(transcript);
     const finalCall = call ?? parsed.call;
-    const score = scoreCall(decision, finalCall, parsed.factors_named);
+    const grade = rubricScore(momentRubric(decision), parsed.transcript);
+    const score = scoreCall(decision, finalCall, grade.reasoning_score);
     ({ submission, duplicate } = await insertSubmission({
       lobby_code: code,
       player_name,
       decision_id: decision.id,
       call: finalCall,
       reasons: parsed.reasons,
-      factors_named: parsed.factors_named,
+      factors_named: grade.credited,
       transcript: parsed.transcript,
-      seconds_to_call, // display and tie-break only; it does not affect the score
+      seconds_to_call, // stored for display only; it affects neither points nor rank
       ...score,
       driver_code: driver.code,
+      verdict: grade.verdict,
+      credited: grade.credited,
     } satisfies DriverSubmission));
   }
 
@@ -114,7 +124,7 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
   if (meta.phase === "decision") {
     return Response.json(
       {
-        submission: { ...submission, score_call: 0, score_reasoning: 0, total: 0 },
+        submission: hideScores(submission),
         percentile: null,
         lobby_rank: null,
         lobby_players_submitted: null,
@@ -128,7 +138,7 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
     {
       submission,
       percentile: percentile(submission.total, totals.global),
-      lobby_rank: 1 + totals.lobby.filter((t) => t > submission.total).length,
+      lobby_rank: 1 + totals.lobby.filter((t) => t > submission.total).length, // shared on equal totals
       lobby_players_submitted: totals.lobby.length,
       duplicate,
     },

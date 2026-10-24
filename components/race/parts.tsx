@@ -2,7 +2,11 @@
 // chips with the numbers behind them, and the running race score. All draw in currentColor where they can,
 // so they read on white, on black and on the team-colour field.
 import { COPY } from "@/lib/copy";
-import type { BlindFreeze, RaceLeaderboardResponse, RaceRow } from "@/lib/client/api";
+import type {
+  BlindFreeze,
+  RaceLeaderboardResponse,
+  RaceRow,
+} from "@/lib/client/api";
 import { tla } from "@/lib/client/race";
 
 // Lap 1 to the flag. Filled to the current lap; a tick per freeze already reached (blind: the replay reveals
@@ -20,13 +24,23 @@ export function RaceProgress({
   current?: number | null;
   size?: "host" | "phone";
 }) {
-  const x = (l: number) => `${(Math.max(0, Math.min(total, l)) / total) * 100}%`;
-  const marks = [...new Set([...past, ...(current != null ? [current] : [])])].sort((a, b) => a - b);
+  const x = (l: number) =>
+    `${(Math.max(0, Math.min(total, l)) / total) * 100}%`;
+  const marks = [
+    ...new Set([...past, ...(current != null ? [current] : [])]),
+  ].sort((a, b) => a - b);
   const h = size === "host" ? "h-3" : "h-2";
   return (
-    <div className="flex flex-col gap-1.5" role="img" aria-label={`${COPY.race.progress}: ${COPY.race.lapTag(lap, total)}`}>
+    <div
+      className="flex flex-col gap-1.5"
+      role="img"
+      aria-label={`${COPY.race.progress}: ${COPY.race.lapTag(lap, total)}`}
+    >
       <div className={`relative ${h} bg-current/15`}>
-        <div className="h-full bg-current transition-[width] duration-700 ease-out" style={{ width: x(lap) }} />
+        <div
+          className="h-full bg-current transition-[width] duration-700 ease-out"
+          style={{ width: x(lap) }}
+        />
         {marks.map((m) => (
           <span
             key={m}
@@ -34,12 +48,20 @@ export function RaceProgress({
             style={{ left: x(m) }}
           />
         ))}
-        <span className={`absolute -top-1.5 right-0 w-[3px] bg-current ${size === "host" ? "h-6" : "h-5"}`} />
+        <span
+          className={`absolute -top-1.5 right-0 w-[3px] bg-current ${size === "host" ? "h-6" : "h-5"}`}
+        />
       </div>
-      <div className={`relative ${size === "host" ? "h-4 text-xs" : "h-3.5 text-[11px]"} font-mono font-bold`}>
+      <div
+        className={`relative ${size === "host" ? "h-4 text-xs" : "h-3.5 text-[11px]"} font-mono font-bold`}
+      >
         <span className="absolute left-0">L1</span>
         {marks.map((m) => (
-          <span key={m} className="absolute -translate-x-1/2 whitespace-nowrap" style={{ left: x(m) }}>
+          <span
+            key={m}
+            className="absolute -translate-x-1/2 whitespace-nowrap"
+            style={{ left: x(m) }}
+          >
             {COPY.race.freezeMark(m)}
           </span>
         ))}
@@ -50,12 +72,29 @@ export function RaceProgress({
 }
 
 // Why the replay froze for one car: a square chip per trigger and the numbers behind it (end of lap - 1).
-export function Triggers({ freeze, size = "host", showCar = false }: { freeze: BlindFreeze; size?: "host" | "phone"; showCar?: boolean }) {
+// compact: chips only (a second car at the same freeze), no numbers.
+export function Triggers({
+  freeze,
+  size = "host",
+  showCar = false,
+  compact = false,
+}: {
+  freeze: BlindFreeze;
+  size?: "host" | "phone";
+  showCar?: boolean;
+  compact?: boolean;
+}) {
   const chip = size === "host" ? "h-9 px-3 text-base" : "h-7 px-2 text-sm";
   return (
     <div className="flex flex-col gap-2">
       <ul className="flex flex-wrap items-center gap-2">
-        {showCar && <li className={`flex items-center font-black tracking-tight ${size === "host" ? "text-2xl" : "text-lg"}`}>{freeze.driver_code}</li>}
+        {showCar && (
+          <li
+            className={`flex items-center font-black tracking-tight ${size === "host" ? "text-2xl" : "text-lg"}`}
+          >
+            {freeze.driver_code}
+          </li>
+        )}
         {freeze.triggers.map((t) => {
           const flag = t.type === "SC" || t.type === "VSC";
           return (
@@ -68,13 +107,17 @@ export function Triggers({ freeze, size = "host", showCar = false }: { freeze: B
           );
         })}
       </ul>
-      <ul className={`flex flex-col gap-0.5 font-mono ${size === "host" ? "text-sm" : "text-xs"} leading-snug`}>
-        {freeze.triggers.map((t) => (
-          <li key={t.type} className="line-clamp-2">
-            {t.info}
-          </li>
-        ))}
-      </ul>
+      {!compact && (
+        <ul
+          className={`flex flex-col gap-0.5 font-mono ${size === "host" ? "text-sm" : "text-xs"} leading-snug`}
+        >
+          {freeze.triggers.map((t) => (
+            <li key={t.type} className="line-clamp-2">
+              {t.info}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -93,7 +136,9 @@ export function RaceScores({
   size?: "host" | "phone";
   max?: number;
 }) {
-  const rows: RaceRow[] = (board?.rows ?? []).filter((r) => r.kind === "player").slice(0, max);
+  const rows: RaceRow[] = (board?.rows ?? [])
+    .filter((r) => r.kind === "player")
+    .slice(0, max);
   const n = board?.revealed_laps.length ?? 0;
   return (
     <div className="flex flex-col">
@@ -101,7 +146,9 @@ export function RaceScores({
         <span className="meta">{COPY.race.scoreTitle}</span>
         <span className="meta font-medium">{COPY.race.scoreAfter(n)}</span>
       </div>
-      <ol className={`grid ${size === "host" && rows.length > 6 ? "grid-cols-2 gap-x-6" : "grid-cols-1"}`}>
+      <ol
+        className={`grid ${size === "host" && rows.length > 6 ? "grid-cols-2 gap-x-6" : "grid-cols-1"}`}
+      >
         {rows.map((r, i) => {
           const mine = r.name === me;
           return (
@@ -114,7 +161,11 @@ export function RaceScores({
               <span className="nums text-xs">{i + 1}</span>
               <span className="flex min-w-0 items-baseline gap-2">
                 <b className="font-black tracking-tight">{tla(r.name)}</b>
-                {carOf?.(r.name) && <span className="font-mono text-[11px] font-bold">{carOf(r.name)}</span>}
+                {carOf?.(r.name) && (
+                  <span className="font-mono text-[11px] font-bold">
+                    {carOf(r.name)}
+                  </span>
+                )}
               </span>
               <span className="nums font-bold">{r.total}</span>
             </li>

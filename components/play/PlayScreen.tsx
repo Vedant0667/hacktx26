@@ -5,20 +5,18 @@
 import { useEffect, useState, useSyncExternalStore, type FormEvent } from "react";
 import { COPY } from "@/lib/copy";
 import { ApiError, data, type BlindDecision, type BlindDriver, type JoinResponse, type LobbyStateResponse } from "@/lib/client/api";
-import { asDriver, driverCodeOf, revealFor } from "@/lib/client/drivers";
+import { asDriver, driverCodeOf } from "@/lib/client/drivers";
 import { noopSubscribe, recallName, recallPlayerToken } from "@/lib/client/identity";
 import { callMomentFrames, fmtGap, replayLap, tla } from "@/lib/client/race";
 import { canRejoin, isLobbyFull, joinErrorText, joinLobby } from "@/lib/client/session";
 import { telemetry } from "@/lib/client/telemetry";
-import { useLobby, useReveal, useTicker } from "@/lib/client/useLobby";
+import { useLobby, useTicker } from "@/lib/client/useLobby";
 import { useDataMode, type DataMode } from "@/lib/client/mode";
 import { fieldStyle, teamColourOf } from "@/lib/client/field";
 import type { LapFrame } from "@/lib/types";
 import { LapChart, NeighbourList, simpleChartLabel } from "../Telemetry";
 import { Brand, Check, ConnNotice, ErrorText, ModeToggle, ScChip, TrackStrip, TyreChip } from "../ui";
 import { CallPad } from "./CallPad";
-import { DuelVote } from "./DuelVote";
-import { DUEL_SPEAK_MS, DUEL_START_MS, duelStage, speakLeft, useDuel } from "@/lib/client/duel";
 import { PlayerResult } from "./PlayerResult";
 import { RacePlay } from "../race/RacePlay";
 
@@ -40,13 +38,6 @@ export function PlayScreen({ code }: { code: string }) {
   const [drivers, setDrivers] = useState<BlindDriver[] | null>(null);
   const t = useTicker(serverNow, 200);
   const [mode, setMode] = useDataMode(code, "play");
-  // Race lobbies (Round 6) have their own reveal routes; the moment reveal and duel answer 409 for them.
-  const momentPhase = lobby?.mode === "race" ? undefined : lobby?.phase;
-  const reveal = useReveal(code, momentPhase);
-  const { duel, vote } = useDuel(code, momentPhase);
-  const [duelDone, setDuelDone] = useState(false);
-  // The tally screen shows right after this phone votes; a reload after voting goes straight to the result.
-  const [justVoted, setJustVoted] = useState(false);
 
   const decisionId = lobby?.decision_id;
   useEffect(() => {
@@ -76,8 +67,7 @@ export function PlayScreen({ code }: { code: string }) {
       ? { code: fromFrames.code, number: fromFrames.number, name: fromFrames.code, team: "", team_colour: fromFrames.team_colour, blind_title: decision.blind_title ?? "" }
       : null);
   const mine = decision ? asDriver(decision, myDriver) : null;
-  const team = mine ? (myDriver?.team_colour ?? teamColourOf(reveal?.frames ?? frames, mine.player_role.number)) : null;
-  const myReveal = reveal ? revealFor(reveal, myCode) : null;
+  const team = mine ? (myDriver?.team_colour ?? teamColourOf(frames, mine.player_role.number)) : null;
 
   if (removed)
     return (
@@ -147,10 +137,6 @@ export function PlayScreen({ code }: { code: string }) {
 
   const elapsed = t - lobby.phase_started_at;
   const phase = lobby.phase;
-  // The duel takes the phone once the room split is over (same schedule as the host), until this player
-  // votes and moves on. No pair: skipped.
-  const stage = duelStage(elapsed);
-  const showDuel = phase === "reveal" && !!duel?.pair && stage !== "before" && !duelDone && (duel.my_vote == null || justVoted);
 
   if (phase === "decision" && mine)
     return (
@@ -175,27 +161,8 @@ export function PlayScreen({ code }: { code: string }) {
       <ConnNotice conn={conn} code={code} />
       {phase === "waiting" && <Waiting lobby={lobby} decision={mine} me={me!} mode={mode} setMode={setMode} />}
       {phase === "replay" && mine && frames && <Replay decision={mine} frames={frames} elapsed={elapsed} mode={mode} setMode={setMode} me={me!} />}
-      {showDuel && duel && (
-        <DuelVote
-          duel={duel}
-          me={me!}
-          stage={stage}
-          left={speakLeft(elapsed)}
-          opensIn={Math.max(0, Math.ceil((DUEL_START_MS + 2 * DUEL_SPEAK_MS - elapsed) / 1000))}
-          vote={async (c) => {
-            await vote(c);
-            setJustVoted(true);
-          }}
-          onDone={() => setDuelDone(true)}
-        />
-      )}
-      {(phase === "reveal" || phase === "done") &&
-        !showDuel &&
-        (reveal && myReveal ? (
-          <PlayerResult code={code} me={me!} decision={myReveal.decision} frames={reveal.frames} lobby={lobby} mode={mode} setMode={setMode} gt={myReveal.gt} duel={duel} />
-        ) : (
-          <p className="px-5 pt-24 text-lg font-bold">{COPY.reveal.grading}</p>
-        ))}
+      {/* Round 7: one end screen for reveal and done (no duel, no vote, no camps). */}
+      {(phase === "reveal" || phase === "done") && <PlayerResult code={code} me={me!} lobby={lobby} elapsed={elapsed} />}
     </main>
   );
 }

@@ -355,7 +355,7 @@ function AudibleDock({ code, me, lap }: { code: string; me: string; lap: number 
             <span className="meta text-[11px] text-[#BDBDBD]">{COPY.race.audible.title}</span>
             <span className="text-[1.75rem] font-black tracking-[-0.02em]">{sending ? COPY.race.audible.sending : COPY.race.audible.button}</span>
           </span>
-          <span className="nums text-[13px] font-medium text-[#BDBDBD]">{cooling ? COPY.race.audible.lapsLeft(left) : COPY.race.audible.ready}</span>
+          <span className="nums text-[13px] font-medium text-[#BDBDBD]">{cooling ? COPY.race.freezeMark(next!) : COPY.race.audible.ready}</span>
         </button>
         <button
           type="button"
@@ -446,7 +446,7 @@ function FreezeResult({ race, me, car, rev, left }: { race: RaceLobby; me: strin
             <section key={c} className="rise flex flex-col gap-1 border-t-2 border-ink pt-3">
               <span className="meta">{c}</span>
               <span className="display text-[2.25rem] leading-none">{COPY.race.winning(d.correct)}</span>
-              <span className="nums text-lg font-bold">{d.swing_s != null && !d.swing_deferred ? `${COPY.race.worthLabel}: ${COPY.race.worth(d.swing_s)}` : COPY.race.worthDeferred}</span>
+              <span className="text-lg font-bold">{d.swing_s != null && !d.swing_deferred ? `${COPY.race.worthLabel}: ${COPY.race.worth(d.swing_s)}` : COPY.race.worthDeferred}</span>
             </section>
           ) : null,
         )}

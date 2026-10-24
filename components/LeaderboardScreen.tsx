@@ -58,7 +58,7 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
   const players = lb?.rows.filter((r) => r.kind === "player") ?? [];
   const bins = Array.from({ length: MAX_TOTAL / BIN + 1 }, () => 0);
   // Every player's total, not just the top rows, so the strip shows the whole field.
-  for (const t of lb?.totals ?? players.map((p) => p.total)) bins[Math.min(bins.length - 1, Math.floor(t / BIN))]++;
+  for (const t of lb?.totals ?? players.map((p) => p.total)) bins[Math.max(0, Math.min(bins.length - 1, Math.floor(t / BIN)))]++; // below 0 counts in the first bin
   const peak = Math.max(1, ...bins);
 
   const youIdx = you && lb ? lb.rows.findIndex((r) => r.kind === "player" && r.name === you.name && r.lobby_code === you.lobby) : -1;
@@ -142,7 +142,7 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
                   ))}
                 </div>
                 {markers.map((m, i) => {
-                  const frac = Math.min(MAX_TOTAL, m.total) / (MAX_TOTAL + BIN);
+                  const frac = Math.max(0, Math.min(MAX_TOTAL, m.total)) / (MAX_TOTAL + BIN);
                   return (
                     <div key={m.key} className="absolute bottom-0 top-0" style={{ left: `${frac * 100}%` }}>
                       <div className={`absolute bottom-0 bg-white ${m.strong ? "w-[3px]" : "w-0.5 opacity-70"}`} style={{ top: i * LABEL_ROW + 10 }} />

@@ -1,8 +1,8 @@
 "use client";
 // The call screen. The page becomes the player's team-colour field: countdown, question, the rejoin line and
-// telemetry scroll above three full-width bands in the thumb zone: Stay out, Box, hold to say why (+ Type, Send).
-import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
-import { COPY } from "@/lib/copy";
+// telemetry scroll above three full-width bands in the thumb zone: Stay out, Box, tap to say why (+ Type, Send).
+import { useEffect, useRef, useState, type FormEvent } from "react";
+import { COPY, VOICE_COPY } from "@/lib/copy";
 import { api, type BlindDecision } from "@/lib/client/api";
 import { recallResult } from "@/lib/client/identity";
 import { CALL_WINDOW_S, VOICE_NOTE_MAX_S, tla } from "@/lib/client/race";
@@ -10,13 +10,16 @@ import { submitCall, submitErrorText } from "@/lib/client/session";
 import { buzzFreeze } from "@/lib/client/cue";
 import { fieldStyle, teamColourOf } from "@/lib/client/field";
 import type { DataMode } from "@/lib/client/mode";
-import { METER_SEGMENTS, useSpeech } from "@/lib/client/useSpeech";
+import { METER_SEGMENTS, useVoiceNote } from "@/lib/client/recorder";
 import type { Call, LapFrame } from "@/lib/types";
 import { RejoinCaveat, RejoinSentence, getBrief } from "../DecisionBrief";
 import { FieldTyres, IntervalTable, LapChart, NeighbourList, Note, UndercutClock, PitLoss, RejoinStrip, Sec, StintTable, intervalNote, simpleChartLabel } from "../Telemetry";
 import { Check, ErrorText, MicGlyph, ModeToggle, TrackStrip, clockText } from "../ui";
 
 const SLOW_MS = 4000;
+// At 0 s a note still recording or transcribing gets this long before the call goes in (the server keeps
+// calls open 2 s into the reveal).
+const AUTO_SEND_WAIT_MS = 1700;
 
 export function CallPad({
   code,
@@ -42,6 +45,7 @@ export function CallPad({
   const [call, setCall] = useState<Call | null>(null);
   const [why, setWhy] = useState("");
   const [typing, setTyping] = useState(false);
+  const [noteShown, setNoteShown] = useState(false); // a transcript opened the field (no autofocus: no keyboard pop)
   const [note, setNote] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [locked, setLocked] = useState<{ call: Call | null; t: number } | null>(() => {
@@ -61,36 +65,57 @@ export function CallPad({
   }, []);
   const alreadyIn = submittedNames.includes(me);
 
-  const speech = useSpeech(async (text) => {
-    setWhy(text);
-    try {
-      const parsed = await api.parse(text);
-      if (parsed.call) {
-        setCall(parsed.call);
-        setNote(COPY.freeze.parsed(parsed.call, text));
-      } else setNote(COPY.freeze.unclear);
-    } catch {
-      setNote(null);
-    }
+  // Tap to start, tap to stop (30 s cap). The transcript lands in the typed field, open and editable before Send.
+  const voice = useVoiceNote({
+    code,
+    me,
+    onText: async (text) => {
+      setWhy(text);
+      setNoteShown(true);
+      try {
+        const parsed = await api.parse(text);
+        if (parsed.call) {
+          setCall(parsed.call);
+          setNote(COPY.freeze.parsed(parsed.call, text));
+        } else setNote(VOICE_COPY.unclear);
+      } catch {
+        setNote(VOICE_COPY.editHint);
+      }
+    },
   });
+  const busy = voice.status === "starting" || voice.status === "recording" || voice.status === "transcribing";
 
   useEffect(() => {
-    if (speech.status !== "recording" && speech.status !== "transcribing") return;
+    if (!busy) return;
     const id = setInterval(() => setNow(Date.now()), 250);
     return () => clearInterval(id);
-  }, [speech.status]);
+  }, [busy]);
 
   const micNote =
-    speech.status === "denied"
+    voice.issue === "denied"
       ? COPY.error.micDeniedShort
-      : speech.status === "no_mic"
+      : voice.issue === "no_mic"
         ? COPY.error.noMic
-        : speech.status === "unsupported" || speech.status === "error"
-          ? COPY.error.bothDown
-          : null;
-  const micDown = speech.status === "denied" || speech.status === "unsupported" || speech.status === "no_mic";
+        : voice.issue === "busy"
+          ? VOICE_COPY.busy
+          : voice.issue === "limit"
+            ? VOICE_COPY.limit
+            : voice.engine === "typed"
+              ? COPY.error.bothDown
+              : null;
+  const voiceNotice =
+    voice.notice === "short"
+      ? VOICE_COPY.short
+      : voice.notice === "empty"
+        ? VOICE_COPY.empty
+        : voice.notice === "failed"
+          ? VOICE_COPY.failed
+          : voice.notice === "switchedBrowser"
+            ? VOICE_COPY.switchedBrowser
+            : null;
+  const micDown = voice.issue === "denied" || voice.issue === "no_mic" || voice.issue === "limit" || voice.engine === "typed";
   // When the mic is out, open the typed field and focus it.
-  const showTyping = typing || micDown;
+  const showTyping = typing || noteShown || micDown;
   useEffect(() => {
     if (micNote) inputRef.current?.focus();
   }, [micNote]);
@@ -102,6 +127,7 @@ export function CallPad({
   });
 
   async function send(final = false) {
+    clearTimeout(autoTimer.current);
     if (locked || sending) return;
     if (!call && !final) {
       setErr(COPY.freeze.pickCall);
@@ -124,34 +150,32 @@ export function CallPad({
   }
 
   // At 0 s whatever is on the pad goes in; with no call the row records "No call". A voice note still being
-  // recorded is stopped first and gets ~1.2 s to transcribe (inside the host's 1.5 s grace) before sending.
+  // recorded is stopped (which uploads it) and the call goes in as soon as the transcript lands, or after
+  // AUTO_SEND_WAIT_MS, whichever comes first.
+  const awaitingNote = useRef(false);
   useEffect(() => {
     if (left === 0 && !locked && !alreadyIn && !autoSent.current) {
       autoSent.current = true;
-      const busy = speech.status === "recording" || speech.status === "transcribing";
-      if (busy) speech.stop();
-      // Not cleared on re-render (the countdown re-renders every 200 ms); only on unmount, below.
-      autoTimer.current = setTimeout(() => void sendRef.current(true), busy ? 1200 : 0);
+      if (voice.status === "recording" || voice.status === "starting") voice.stop();
+      const waiting = voice.status === "recording" || voice.status === "transcribing";
+      awaitingNote.current = waiting;
+      // Not cleared on re-render (the countdown re-renders every 200 ms); only on send or unmount.
+      autoTimer.current = setTimeout(() => void sendRef.current(true), waiting ? AUTO_SEND_WAIT_MS : 0);
+    }
+  });
+  useEffect(() => {
+    if (awaitingNote.current && voice.status !== "recording" && voice.status !== "transcribing") {
+      awaitingNote.current = false;
+      void sendRef.current(true);
     }
   });
   useEffect(() => () => clearTimeout(autoTimer.current), []);
 
-  const recording = speech.status === "recording";
-  const talkMs = speech.startedAt && recording ? now - speech.startedAt : 0;
-  useEffect(() => {
-    if (recording && (talkMs >= VOICE_NOTE_MAX_S * 1000 || left === 0)) speech.stop();
-  }, [recording, talkMs, left, speech]);
-
+  const recording = voice.status === "recording";
+  const talkMs = voice.startedAt && recording ? Math.max(0, now - voice.startedAt) : 0;
   const recSecs = Math.min(VOICE_NOTE_MAX_S, Math.floor(talkMs / 1000));
-  const hasNote = speech.status === "done" && !!why.trim();
-  const slow = speech.status === "transcribing" && speech.releasedAt != null && now - speech.releasedAt > SLOW_MS;
-
-  const onKey = (down: boolean) => (e: KeyboardEvent) => {
-    if (e.key !== " " && e.key !== "Enter") return;
-    e.preventDefault();
-    if (down && !e.repeat) speech.start();
-    if (!down) speech.stop();
-  };
+  const hasNote = voice.status === "done" && !!why.trim();
+  const slow = voice.status === "transcribing" && voice.stoppedAt != null && now - voice.stoppedAt > SLOW_MS;
 
   const brief = frames ? getBrief(decision, frames) : null;
   const team = teamColourOf(frames, decision.player_role.number);
@@ -183,15 +207,17 @@ export function CallPad({
   const helper =
     (sending
       ? COPY.freeze.sending
+      : voice.status === "starting"
+      ? VOICE_COPY.starting
       : recording
-      ? speech.interim
-        ? `"${speech.interim}"`
-        : COPY.freeze.recording
-      : speech.status === "transcribing"
+      ? voice.interim
+        ? `"${voice.interim}"`
+        : VOICE_COPY.recording
+      : voice.status === "transcribing"
         ? slow
           ? COPY.freeze.slow
-          : COPY.freeze.released
-        : (micNote ?? note)) ?? null;
+          : VOICE_COPY.transcribing
+        : (micNote ?? voiceNotice ?? note)) ?? null;
 
   if (locked || alreadyIn) {
     const waitingOn = Math.max(0, players.length - submittedNames.length);
@@ -326,7 +352,18 @@ export function CallPad({
       <form onSubmit={onSubmit} className="shrink-0" noValidate>
         {(helper || err) && (
           <div className="bg-field px-5 pb-2 pt-1 text-sm font-bold" aria-live="polite">
-            {err ? <ErrorText>{err}</ErrorText> : <p className="line-clamp-2">{helper}</p>}
+            {err ? (
+              <ErrorText>{err}</ErrorText>
+            ) : (
+              <div className="flex items-start justify-between gap-3">
+                <p className="line-clamp-2">{helper}</p>
+                {voice.canRetry && !busy && (
+                  <button type="button" onClick={voice.retry} className="shrink-0 border-b-2 border-current font-black">
+                    {VOICE_COPY.retry}
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
         {showTyping && (
@@ -353,38 +390,41 @@ export function CallPad({
         </div>
         <div className="on-dark relative flex h-24 items-stretch border-t border-white/15 bg-ink pb-[env(safe-area-inset-bottom)] text-white">
           {recording && <div className="absolute inset-x-0 top-0 h-1 bg-field transition-[width] duration-200" style={{ width: `${(talkMs / (VOICE_NOTE_MAX_S * 1000)) * 100}%` }} aria-hidden />}
+          {/* A plain click: iOS opens audio only inside a tap, so toggle() must run in this handler. */}
           <button
             type="button"
-            onPointerDown={(e) => {
-              e.currentTarget.setPointerCapture(e.pointerId);
-              speech.start();
-            }}
-            onPointerUp={() => speech.stop()}
-            onPointerCancel={() => speech.stop()}
-            onKeyDown={onKey(true)}
-            onKeyUp={onKey(false)}
+            onClick={voice.toggle}
             onContextMenu={(e) => e.preventDefault()}
-            disabled={left === 0 || micDown}
+            disabled={left === 0 || micDown || voice.status === "starting" || voice.status === "transcribing"}
             aria-pressed={recording}
-            className="flex min-w-0 flex-1 touch-none select-none items-center gap-3 pl-5 pr-2 text-left disabled:text-white/50"
+            aria-busy={voice.status === "transcribing" || undefined}
+            className="flex min-w-0 flex-1 select-none items-center gap-3 pl-5 pr-2 text-left [-webkit-touch-callout:none] disabled:text-white/50"
           >
             {recording ? <span className="rec-dot size-3 shrink-0 rounded-full bg-white" aria-hidden /> : <MicGlyph className="shrink-0" />}
             <span className="flex min-w-0 flex-col">
-              <span className="truncate text-[1.0625rem] font-bold">{recording ? COPY.phone.release : hasNote ? COPY.freeze.reRecord : COPY.phone.holdWhy}</span>
-              {recording ? (
-                <span className="mt-1 flex gap-0.5" aria-hidden>
-                  {Array.from({ length: METER_SEGMENTS }, (_, i) => (
-                    <span key={i} className={`h-2 w-2 ${i < speech.level ? "bg-white" : "bg-white/25"}`} />
-                  ))}
+              <span className="truncate text-[1.0625rem] font-bold">
+                {recording ? VOICE_COPY.stop : voice.status === "starting" ? VOICE_COPY.starting : voice.status === "transcribing" ? VOICE_COPY.transcribing : hasNote ? VOICE_COPY.again : VOICE_COPY.tap}
+              </span>
+              <span className="mt-1 flex items-center gap-2">
+                {recording && (
+                  <span className="flex gap-0.5" aria-hidden>
+                    {Array.from({ length: METER_SEGMENTS }, (_, i) => (
+                      <span key={i} className={`h-2 w-2 ${i < voice.level ? "bg-white" : "bg-white/25"}`} />
+                    ))}
+                  </span>
+                )}
+                <span className="nums text-xs text-white/75">
+                  {clockText(recSecs)} / {clockText(VOICE_NOTE_MAX_S)}
                 </span>
-              ) : (
-                <span className="nums text-xs text-white/75">{clockText(recSecs)} / {clockText(VOICE_NOTE_MAX_S)}</span>
-              )}
+              </span>
             </span>
           </button>
           <button
             type="button"
-            onClick={() => setTyping((v) => !v)}
+            onClick={() => {
+              setTyping(!showTyping);
+              setNoteShown(false);
+            }}
             aria-expanded={showTyping}
             aria-controls="why"
             className="w-[4.25rem] shrink-0 border-l border-white/15 text-sm font-bold hover:bg-white/10"

@@ -599,7 +599,7 @@ export const COPY = {
     allRooms: "All rooms",
     calls: (n: number) => `${n.toLocaleString("en-US")} ${n === 1 ? "call" : "calls"}`,
     yourMark: "Square = your room",
-    distribution: "Every score on this call, 0 to 150",
+    distribution: "Every score on this call",
     // Host builder (home redesign, race mode)
     joinSub: "Four letters, on the host's screen.",
     hostSub: "Runs on a laptop everyone can see. Phones join by QR code.",
@@ -640,24 +640,55 @@ export const COPY = {
     modeLabel: "Drivers",
     loading: "Loading drivers",
   },
-  // added: Round 5 duel after the reveal
-  duel: {
-    title: "Defend your call",
-    status: "Duel",
-    speaking: (name: string) => `${name} has the floor`,
-    secondsLeft: (s: number) => `${s} s`,
-    youreUp: "You're up: defend your call",
-    youreUpHint: "Say why out loud. 10 seconds.",
-    listen: "Listen to both, then vote.",
-    opensIn: (s: number) => `Vote opens in ${s} s`,
-    vote: "Vote for the better case",
-    voteFor: (name: string) => `Vote for ${name}`,
-    voteIn: "Vote in",
-    tally: (a: number, b: number) => `${a} to ${b}`,
-    votes: (n: number) => `${n} ${n === 1 ? "vote" : "votes"}`,
-    museCredit: "Pair picked by Muse Spark",
-    next: "See your result",
-    failed: "Vote didn't go through. Try again.",
+  // added: Round 7 reasoning verdicts written by the server when Muse is off (lib/muse/rubric.ts). At most 18 words.
+  grade: {
+    labels: {
+      tyre_age: "tyre age",
+      stops_owed: "stops owed",
+      cheap_stop_under_sc: "the cheap SC stop",
+      cheap_stop_under_vsc: "the cheap VSC stop",
+      similar_cars_pitted: "what rivals did",
+      track_position: "track position",
+    } as Record<string, string>,
+    empty: "No reason given.",
+    none: "Named none of the ideas that decided this call.",
+    all: "Named every idea that decided this call.",
+    some: (named: string, missed: string) => `Named ${named}; missed ${missed}.`,
+  },
+  // added: Round 7 end screen (one screen after the calls, host and phone)
+  end: {
+    scoring: "Scoring the calls",
+    scoringFor: (s: number) => `${s} s`,
+    happened: (c: Call, swing: number, lap: number) => `${callWord(c)} was right: ${callGerund(c).toLowerCase()} gained ${swing.toFixed(1)} s by lap ${lap}.`,
+    happenedCar: (code: string, c: Call, swing: number) => `${code}: ${callWord(c).toLowerCase()} was right, worth ${swing.toFixed(1)} s.`,
+    teamDid: (team: string, c: Call) => `${team} ${callPast(c).toLowerCase()}.`,
+    takes: "Everyone's call",
+    ranking: "Final ranking",
+    how: "Points scale with how much the call was worth in the real race, and with how good your reasoning was.",
+    right: "Right call",
+    wrong: "Wrong call",
+    noCall: "No call",
+    stakes: (n: number) => `${n}-point stakes`,
+    reasoning: (r: number) => `${r}/50`,
+    reasoningLabel: "Reasoning",
+    points: (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : "0"),
+    line: (right: boolean | null, stakes: number, r: number, pts: number) =>
+      right === null
+        ? `No call · ${stakes}-point stakes · 0`
+        : `${right ? "Right call" : "Wrong call"} · ${stakes}-point stakes · reasoning ${r}/50 → ${pts > 0 ? "+" : pts < 0 ? "−" : ""}${Math.abs(pts)}`,
+    noReason: "No reason given.",
+    rankOf: (label: string, n: number) => `${label} of ${n}`,
+    rankHead: "Rank",
+    you: "You",
+    yourCall: "Your call",
+    beatEngine: "You beat the engine.",
+    engine: "Engine",
+    teamRow: (team: string) => `${team} (real team)`,
+    carTag: (row: string, code: string) => `${row} · ${code}`,
+    cols: { rank: "#", who: "Who", call: "Call", stakes: "Stakes", reasoning: "Reason", points: "Points" },
+    newLobby: "Create new lobby",
+    credit: "Reasons graded by Muse Spark. Speech to text by your browser's recognizer (Chrome uses Google). Engine: offline model on Jolpica and OpenF1 lap data.",
+    retry: "Scores didn't load. Retrying.",
   },
   // added: race mode (Round 6). Freeze laps come from race state only; nothing here names the team's call before a reveal.
   race: {
@@ -757,3 +788,23 @@ export const COPY = {
 export function factorLabel(id: string): string {
   return COPY.factors[id] ?? id.replace(/_/g, " ");
 }
+
+// ---- Voice note (Round 8, tap to talk). Owned by the voice change; other COPY blocks are edited separately. ----
+// Same register as COPY.freeze (docs/07 section 4). Error lines reuse COPY.error where docs/07 already has one.
+export const VOICE_COPY = {
+  tap: "Tap to say why",
+  stop: "Tap to stop",
+  again: "Tap to record again",
+  starting: "Opening the mic",
+  recording: "Recording. Say box or stay out, and why. Tap to stop.",
+  transcribing: "Copy. Transcribing your note.",
+  unclear: "Didn't catch box or stay out. Tap the mic and say it again, or type it.",
+  empty: "No words picked up. Tap the mic and try again, or type it.",
+  short: "Too short. Tap once to start, talk, then tap to stop.",
+  failed: "Transcription failed. Retry, record again, or type it.",
+  retry: "Retry",
+  switchedBrowser: "Voice service didn't respond. Switched to browser speech.", // docs/07 "voice service down"
+  limit: "Voice note limit for this call. Type the rest.",
+  busy: "The mic is in use by another app. Close it, or type your call.",
+  editHint: "Edit the transcript before you send.",
+} as const;

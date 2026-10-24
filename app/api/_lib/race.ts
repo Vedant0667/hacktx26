@@ -1,10 +1,10 @@
 // Race mode (docs/09-race-mode.md, security-contract.md Round 6): pure rules, no I/O, unit-tested in
 // scripts/test-race.ts. Routes load the data and call these.
 import { callMomentFrame, type AudibleTruth, type BlindFreeze, type FullFreeze, type RaceFreeze } from "@/lib/data";
-import { parseCallLocal } from "@/lib/muse";
-import { CALL_POINTS, CALL_WINDOW_S, REASONING_MAX } from "@/lib/scoring";
+import { buildRubric, rubricScore, type Rubric } from "@/lib/muse/rubric";
+import { CALL_WINDOW_S, pointsFor, stakesFor } from "@/lib/scoring";
 import type { FreezePlanEntry } from "@/lib/db";
-import type { Call, DecisionPoint, LapFrame } from "@/lib/types";
+import type { DecisionPoint, LapFrame } from "@/lib/types";
 import { REVEAL_MIN_S } from "./phases";
 
 export type RacePhase = "waiting" | "replay" | "freeze" | "reveal_freeze" | "done";
@@ -15,7 +15,6 @@ export const RACE_PHASES: RacePhase[] = ["waiting", "replay", "freeze", "reveal_
 export const RACE_LAP_S = 1.2;
 export const AUDIBLE_GAP_LAPS = 5; // one audible per player per 5 laps
 export const AUDIBLE_CANCEL_LAPS = 2; // an audible this close to a freeze for the same car is cancelled
-export const AUDIBLE_WRONG_POINTS = -50; // a wrong "box now" costs points, so the button can't be spammed
 export const AUDIBLE_FACTORS = ["tyre_age", "similar_cars_pitted", "track_position"];
 
 export type { FreezePlanEntry } from "@/lib/db";
@@ -142,15 +141,24 @@ export function audibleAllowed(previousLaps: number[], lap: number): { ok: boole
 
 export interface AudibleScore {
   status: "scored" | "unscored" | "cancelled";
-  score_call: number;
+  score_call: number; // Round 7: the stakes, from the audible's own measured swing
   score_reasoning: number;
   total: number;
   factors_named: string[];
+  verdict: string | null;
+}
+
+// The rubric for a BOX audible: a green-flag call on tyre life, what nearby cars did and track position.
+export function audibleRubric(car: string, lap: number, truth: AudibleTruth): Rubric {
+  return buildRubric({
+    decision_id: `audible-L${lap}-${car}`, factors: AUDIBLE_FACTORS, correct: truth.correct ?? "BOX",
+    swing_s: truth.swing_s ?? 0, trigger: "GREEN", engine_reasons: truth.reason ? [truth.reason] : [],
+  });
 }
 
 // A BOX audible on `lap` for `car`: cancelled within 2 laps of one of that car's freezes in this lobby,
-// unscored without a comparison split (or a swing under 2 s), otherwise right (100 + keyword reasoning)
-// or wrong (-50). Never scored from the engine's model.
+// unscored without a comparison split (0), otherwise the Round 7 formula on its own swing, with the
+// deterministic rubric grade (the reveal grading may replace it with a Muse grade). Never from the engine's model.
 export function scoreAudible(
   lap: number,
   car: string,
@@ -158,17 +166,15 @@ export function scoreAudible(
   truth: AudibleTruth | null,
   transcript: string,
 ): AudibleScore {
-  const none = { score_call: 0, score_reasoning: 0, total: 0 };
-  const factors = parseCallLocal(transcript).factors_named.filter((f) => AUDIBLE_FACTORS.includes(f));
-  if (plan.some((p) => p.drivers.includes(car) && Math.abs(p.lap - lap) <= AUDIBLE_CANCEL_LAPS)) {
-    return { status: "cancelled", ...none, factors_named: factors };
-  }
-  if (!truth || !truth.scorable || !truth.correct) return { status: "unscored", ...none, factors_named: factors };
-  if (truth.correct !== "BOX") {
-    return { status: "scored", score_call: AUDIBLE_WRONG_POINTS, score_reasoning: 0, total: AUDIBLE_WRONG_POINTS, factors_named: factors };
-  }
-  const score_reasoning = Math.min(REASONING_MAX, Math.round(factors.length * (REASONING_MAX / AUDIBLE_FACTORS.length)));
-  return { status: "scored", score_call: CALL_POINTS, score_reasoning, total: CALL_POINTS + score_reasoning, factors_named: factors };
+  const none = { score_call: 0, score_reasoning: 0, total: 0, factors_named: [], verdict: null };
+  if (plan.some((p) => p.drivers.includes(car) && Math.abs(p.lap - lap) <= AUDIBLE_CANCEL_LAPS)) return { status: "cancelled", ...none };
+  if (!truth || !truth.scorable || !truth.correct) return { status: "unscored", ...none };
+  const g = rubricScore(audibleRubric(car, lap, truth), transcript);
+  const stakes = stakesFor(truth.swing_s);
+  return {
+    status: "scored", score_call: stakes, score_reasoning: g.reasoning_score,
+    total: pointsFor("BOX", truth.correct, stakes, g.reasoning_score), factors_named: g.credited, verdict: g.verdict,
+  };
 }
 
 // ---- Freezes as decisions (for Muse grading and scoreCall) ----
@@ -210,13 +216,20 @@ export function freezeReveal(f: { blind: BlindFreeze; full: FullFreeze }) {
 
 export type FreezeRevealView = ReturnType<typeof freezeReveal>;
 
-// The call a benchmark (team or engine) made at a freeze, scored like a player: call 100 + factors by keyword.
-export function benchmarkScore(decision: DecisionPoint, call: Call, reasons: string[]): { score_call: number; score_reasoning: number; total: number } {
-  const text = reasons.join(". ");
-  const named = new Set(parseCallLocal(text).factors_named.filter((f) => decision.factors.includes(f)));
-  const score_call = call === decision.ground_truth.correct ? CALL_POINTS : 0;
-  const score_reasoning = Math.min(REASONING_MAX, Math.round(named.size * (REASONING_MAX / Math.min(decision.factors.length, 4))));
-  return { score_call, score_reasoning, total: score_call + score_reasoning };
+// The rubric for one car's freeze: its factors, the engine's reasons and inputs, and the measured answer.
+export function freezeRubric(raceKey: string, f: { blind: BlindFreeze; full: FullFreeze }): Rubric {
+  const types = f.blind.triggers.map((t) => t.type);
+  const inputs = f.full.engine_inputs ?? {};
+  return buildRubric({
+    decision_id: `race-${raceKey}-L${f.blind.lap}-${f.blind.driver_code}`,
+    factors: f.blind.factors,
+    correct: f.full.correct,
+    swing_s: f.full.swing_s,
+    trigger: types.includes("SC") ? "SC" : types.includes("VSC") ? "VSC" : "GREEN",
+    engine_reasons: f.full.engine.reasons,
+    position: f.blind.position,
+    stops_owed: typeof inputs.stops_owed === "number" ? inputs.stops_owed : null,
+  });
 }
 
 // The race clock from a lobby's meta row.
@@ -238,5 +251,7 @@ export function presentCall<T extends { kind: "freeze" | "audible"; lap: number;
 ): T {
   const open = c.kind === "freeze" ? revealed.includes(c.lap) : done;
   if (open) return c;
-  return { ...c, status: c.kind === "audible" ? "pending" : c.status, score_call: 0, score_reasoning: 0, total: 0 };
+  // Round 7: the verdict and credited ideas are part of the grade and stay hidden with the scores.
+  const extra = "verdict" in c ? { verdict: null, credited: [], factors_named: [] } : {};
+  return { ...c, ...extra, status: c.kind === "audible" ? "pending" : c.status, score_call: 0, score_reasoning: 0, total: 0 };
 }

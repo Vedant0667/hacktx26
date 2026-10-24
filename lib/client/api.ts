@@ -76,17 +76,6 @@ export interface SubmitResponse {
   duplicate: boolean;
 }
 
-export interface CampsResponse {
-  submitted: number;
-  by_call: { BOX: number; STAY: number; none: number };
-  camps: { factor: string; count: number; players: string[]; quotes: string[] }[];
-  no_factor: { count: number; players: string[]; quotes: string[] };
-  // Camp names written by Muse Spark from the room's reasons; null when Muse was skipped.
-  // MIXED: the camp's members made different calls.
-  labels: { label: string; call: Call | "MIXED" | null; players: string[]; count: number }[] | null;
-  labels_source: "muse" | "factors";
-}
-
 export interface LeaderboardRow {
   kind: "player" | "team" | "engine";
   name: string;
@@ -94,12 +83,17 @@ export interface LeaderboardRow {
   call: Call | null;
   reasons: string[];
   factors_named: string[];
-  seconds_to_call: number | null;
+  seconds_to_call: number | null; // Round 7: always null (time to call is not part of scoring)
   // Null on every row until the viewer's lobby has revealed this decision.
+  // Round 7: score_call is the call's stakes (0–100), score_reasoning the reasoning score (0–50), total signed points.
   score_call: number | null;
   score_reasoning: number | null;
+  verdict?: string | null;
   total: number;
   percentile: number;
+  rank?: number; // shared on equal totals
+  tied?: boolean;
+  rank_label?: string; // "1", "=2"
 }
 
 export interface LeaderboardResponse {
@@ -139,20 +133,43 @@ export interface DriverReveal extends Omit<BlindDriver, "blind_title"> {
 }
 export type DriverMode = "same" | "choose";
 
-// Round 5: the post-reveal "defend your call" duel.
-export interface DuelSide {
+// Round 7: GET /api/lobby/[code]/reveal?part=results, the one end screen. { grading: true } with empty lists
+// until every call is graded; poll about every 1.5 s.
+export interface ResultCar {
+  code: string;
+  name: string;
+  team: string;
+  team_colour: string | null;
+  correct: Call;
+  swing_s: number;
+  stakes: number;
+  reveal_to_lap: number;
+  team_call: Call;
+}
+export interface ResultEntry {
+  kind: "player" | "team" | "engine";
   name: string;
   driver_code: string | null;
   call: Call | null;
-  summary: string;
+  said: string;
+  right: boolean | null;
+  stakes: number;
+  reasoning: number;
+  verdict: string | null;
+  credited: string[];
+  points: number;
+  rank: number;
+  tied: boolean;
+  rank_label: string;
 }
-export interface DuelResponse {
-  source: "muse" | "fallback";
-  pair: [DuelSide, DuelSide] | null;
-  prompt: string | null;
-  pending: boolean;
-  votes: [number, number];
-  my_vote: 0 | 1 | null;
+export interface ResultsResponse {
+  grading: boolean;
+  decision_id: string;
+  race: string;
+  lap: number;
+  cars: ResultCar[];
+  takes: ResultEntry[];
+  ranking: ResultEntry[];
 }
 
 export type JoinResponse = LobbyStateResponse & { player_token: string | null; rejoined: boolean };
@@ -260,7 +277,7 @@ export interface AudibleResponse {
 
 const enc = encodeURIComponent;
 
-// Player-only routes (the duel vote): the player token even when this browser also hosts.
+// Player-only routes (audibles): the player token even when this browser also hosts.
 function playerAuth(code: string): Record<string, string> | undefined {
   const name = recallName(code);
   const player = name ? recallPlayerToken(code, name) : null;
@@ -297,10 +314,7 @@ export const api = {
     playerToken: string | null,
   ) => post<SubmitResponse>(`/api/lobby/${enc(code)}/submit`, body, tokenHeader("x-player-token", playerToken)),
   reveal: (code: string) => request<RevealResponse>(`/api/lobby/${enc(code)}/reveal`, { headers: lobbyAuth(code) }),
-  duel: (code: string) => request<DuelResponse>(`/api/lobby/${enc(code)}/duel`, { headers: lobbyAuth(code) }),
-  // Players only (x-player-token); the first vote counts.
-  duelVote: (code: string, choice: 0 | 1) =>
-    post<{ votes: [number, number]; my_vote: 0 | 1; duplicate: boolean }>(`/api/lobby/${enc(code)}/duel/vote`, { choice }, playerAuth(code)),
+  results: (code: string) => request<ResultsResponse>(`/api/lobby/${enc(code)}/reveal?part=results`, { headers: lobbyAuth(code) }),
   // Host only: removes a player from the lobby (x-host-token).
   kick: (code: string, name: string, hostToken: string | null) =>
     post<LobbyStateResponse>(`/api/lobby/${enc(code)}/kick`, { name }, tokenHeader("x-host-token", hostToken)),
@@ -318,7 +332,6 @@ export const api = {
   raceLeaderboard: (raceKey: string, lobby?: string | null) =>
     request<RaceLeaderboardResponse>(`/api/leaderboard?race_key=${enc(raceKey)}${lobby ? `&lobby=${enc(lobby)}` : ""}`, { headers: lobbyAuth(lobby) }),
   parse: (transcript: string) => post<{ call: Call | null; factors_named: string[] }>("/api/parse", { transcript }),
-  camps: (code: string) => request<CampsResponse>(`/api/lobby/${enc(code)}/camps`, { headers: lobbyAuth(code) }),
   // Pass the viewer's lobby: team, engine and calls come back only once that lobby has revealed.
   leaderboard: (decisionId: string, lobby?: string | null) =>
     request<LeaderboardResponse>(`/api/leaderboard?decision_id=${enc(decisionId)}${lobby ? `&lobby=${enc(lobby)}` : ""}`, {

@@ -10,7 +10,7 @@ import { noopSubscribe, recallHostToken, rememberHost } from "@/lib/client/ident
 import { kickPlayer } from "@/lib/client/session";
 import { CALL_WINDOW_S, callMomentFrames, frameAt, replayDoneMs, replayLap, tla } from "@/lib/client/race";
 import { lapTimeText, telemetry, type Telemetry } from "@/lib/client/telemetry";
-import { useLobby, useReveal, useTicker } from "@/lib/client/useLobby";
+import { useLobby, useTicker } from "@/lib/client/useLobby";
 import { playFreezeTone } from "@/lib/client/cue";
 import { useDataMode, type DataMode } from "@/lib/client/mode";
 import { fieldStyle, isDarkField, teamColourOf } from "@/lib/client/field";
@@ -21,7 +21,7 @@ import { Tower } from "../Tower";
 import { Brand, Button, ConnNotice, ModeToggle, ScChip, TrackStrip, TyreChip, clockText } from "../ui";
 import { LineChart } from "./HostCharts";
 import { HostQr } from "./HostQr";
-import { HostReveal, HostScoreboard } from "./HostReveal";
+import { HostReveal } from "./HostReveal";
 import { carOf, carsInPlay, driverBy, lobbyCarCode } from "./cars";
 import { RaceHost } from "../race/RaceHost";
 
@@ -37,7 +37,6 @@ export function HostScreen({ code }: { code: string }) {
   const [drivers, setDrivers] = useState<DriversResponse | null>(null);
   // Race lobbies (Round 6) reveal through /race/reveal; the moment reveal route answers 409 for them.
   const isRace = lobby?.mode === "race";
-  const reveal = useReveal(code, isRace ? undefined : lobby?.phase);
   const hostToken = useSyncExternalStore(noopSubscribe, () => recallHostToken(code), () => null);
   const [mode, setMode] = useDataMode(code, "host");
   const t = useTicker(serverNow, 100);
@@ -178,21 +177,8 @@ export function HostScreen({ code }: { code: string }) {
           mute={muteBtn("inverse")}
         />
       )}
-      {(phase === "reveal" || phase === "done") && !reveal && <Centered text={COPY.reveal.grading} />}
-      {phase === "reveal" && reveal && (
-        <HostReveal
-          code={code}
-          reveal={reveal}
-          carCode={carCode}
-          frames={reveal.frames}
-          lobby={lobby}
-          elapsed={elapsed}
-          onNext={() => setPhase("done")}
-          mode={mode}
-          setMode={setMode}
-        />
-      )}
-      {phase === "done" && reveal && <HostScoreboard code={code} reveal={reveal} carCode={carCode} lobby={lobby} />}
+      {/* Round 7: one end screen for reveal and done (no steps, no duel, no camps). */}
+      {(phase === "reveal" || phase === "done") && <HostReveal code={code} carCode={carCode} lobby={lobby} elapsed={elapsed} />}
     </div>
   );
 }
@@ -717,7 +703,7 @@ function SimpleFreeze({ brief, decision, left, urgent, meCode, code, room, mode,
             </h1>
             {why && <div className="mt-4">{why}</div>}
             <Sentence brief={brief} decision={decision} className="mt-4 max-w-[44ch] text-[1.375rem] font-medium leading-[1.3]" />
-            {brief.rejoin && <RejoinCaveat frame={brief.frame} lap={decision.lap} className="mt-2 font-mono text-sm" />}
+            {brief.rejoin && !why && <RejoinCaveat frame={brief.frame} lap={decision.lap} className="mt-2 font-mono text-sm" />}
           </section>
           <section className="col-span-5 col-start-8">
             <Options brief={brief} compact={false} />
