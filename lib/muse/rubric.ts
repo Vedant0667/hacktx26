@@ -117,6 +117,7 @@ export function isEmptyReason(transcript: string): boolean {
 }
 
 // Ideas as players say them (fallback scorer). Each idea is credited at most once.
+const PIT_COST = /\b((sc|vsc|safety car|neutrali[sz]ed) stop|stop costs?\b[^.;]*\bgreen|green[- ]flag stop|stop is (shorter|quicker))\b/i;
 const CHEAP =
   /\b(cheap\w*|free (stop|pit\w*)|stop is free|it'?s free|for free|discount\w*|half[- ]price|bargain|costs? (less|nothing|half)|less time|lose less|losing less|pit ?loss|time loss|sav(e|es|ing|ed) (time|seconds)|only lose|smaller loss)\b/i;
 export const IDEAS: Record<FactorId, RegExp[]> = {
@@ -134,8 +135,8 @@ export const IDEAS: Record<FactorId, RegExp[]> = {
     /\bstint (cap|limit|length)\b/i,
     /\b(fresh|new) (tyres?|tires?|rubber|set)\b/i,
   ],
-  cheap_stop_under_sc: [CHEAP],
-  cheap_stop_under_vsc: [CHEAP],
+  cheap_stop_under_sc: [CHEAP, PIT_COST],
+  cheap_stop_under_vsc: [CHEAP, PIT_COST],
   similar_cars_pitted: [
     /\b(every(one|body)|the field|others?|rivals?|they|the pack|(other|rival|nearby) cars|cars? (around|behind|ahead|in front)|competitors?|verstappen|max|norris|lando|leclerc|russell|hamilton|antonelli|piastri|oscar|sainz|alonso)\b[^.;]*\b(pit\w*|box\w*|stop\w*|coming in|came in)\b/i,
     /\b(cover|covering|follow|match|copy)\w* (them|the|him|rivals?|everyone|the field)\b/i,
@@ -209,7 +210,15 @@ const VERDICT_TERMS: Record<FactorId, RegExp> = {
   similar_cars_pitted: /\b(rivals?|the field|others|everyone|similar cars|nearby cars|cars (around|ahead|behind)|pitted)\b/i,
   track_position: /\b(track position|traffic|rejoin|the lead|positions?|places)\b/i,
 };
-const NEGATION = /\b(miss\w*|no|not|never|without|didn'?t|did not|ignor\w*|left out|skip\w*|lack\w*|overlook\w*|nothing|none|but)\b/i;
+const NEGATION = /\b(miss\w*|no|not|never|without|didn'?t|did not|ignor\w*|left out|skip\w*|lack\w*|overlook\w*|nothing|none)\b/gi;
+const POSITIVE = /\b(named|names|stated|states|said|cited|mentioned|noted|gave|credited|used)\b/gi;
+const lastIndex = (re: RegExp, text: string, before: number) => {
+  let at = -1;
+  for (const m of text.matchAll(re)) if ((m.index ?? 0) < before) at = m.index ?? 0;
+  return at;
+};
+// True when the mention at `at` sits in a "missed ..." stretch: the nearest cue before it is a negation.
+const negatedAt = (clause: string, at: number) => lastIndex(NEGATION, clause, at) > lastIndex(POSITIVE, clause, at);
 export const VERDICT_WORDS = 18;
 
 // Problems with a Muse grade, or [] when it may stand. A credited idea must be grounded in the transcript; the
@@ -228,9 +237,12 @@ export function gradeProblems(rubric: Rubric, transcript: string, g: { credited:
   if (/[!—]|--/.test(v)) out.push("verdict punctuation");
   const known = new Set(`${transcript} ${rubric.points.map((p) => p.here).join(" ")} 50`.match(/\d+(\.\d+)?/g) ?? []);
   for (const n of v.match(/\d+(\.\d+)?/g) ?? []) if (!known.has(n)) out.push(`verdict number ${n}`);
-  for (const clause of v.split(/[;,.]|\bbut\b|\band\b/i)) {
+  // Clauses split on ";", "." and "but"; a list after "missed" stays negated ("missed the cheap stop and rivals").
+  for (const clause of v.split(/[;.]|\bbut\b/i)) {
     for (const p of rubric.points) {
-      if (VERDICT_TERMS[p.id].test(clause) && !groundedIn(p.id, transcript) && !NEGATION.test(clause)) out.push(`verdict credits ${p.id}`);
+      if (groundedIn(p.id, transcript)) continue;
+      const m = VERDICT_TERMS[p.id].exec(clause);
+      if (m && !negatedAt(clause, m.index)) out.push(`verdict credits ${p.id}`);
     }
   }
   return out;

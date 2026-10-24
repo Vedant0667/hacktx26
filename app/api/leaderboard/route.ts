@@ -7,7 +7,7 @@ import { requireLobbyMember } from "../_lib/access";
 import { ensureRaceGraded, momentBenchmarks, raceBenchmarkGrades } from "../_lib/grading";
 import { handle, HttpError, normalizeCode, requireDecision } from "../_lib/http";
 import { isRevealed } from "../_lib/redact";
-import { clockOf, revealedLaps } from "../_lib/race";
+import { answerLaps, clockOf } from "../_lib/race";
 
 // Round 7: score_call is the call's stakes, score_reasoning the reasoning score (0–50), total the signed points.
 // Equal totals share a rank (rank + tied); time to call is never sent and never breaks a tie.
@@ -92,7 +92,7 @@ async function raceLeaderboard(req: NextRequest, race: RaceEntry): Promise<Respo
   if (meta.mode !== "race" || meta.race_key !== race.race_key) throw new HttpError(409, "That lobby is not on this race");
   const { grading } = await ensureRaceGraded(code, meta, race);
   const clock = clockOf(meta);
-  const revealed = revealedLaps(clock);
+  const revealed = answerLaps(clock); // Round 7: scores count only at the flag
   const done = meta.phase === "done";
   const [calls, state, cars, freezes] = await Promise.all([getRaceCalls(code), getLobbyState(code), getLobbyDriverCodes(code), getRaceFreezes(race.race_key)]);
   const byName = new Map<string, RaceRow>();

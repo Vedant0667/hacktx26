@@ -128,6 +128,12 @@ async function main() {
     assert.ok(gradeProblems(qatar, said, { credited: ["tyre_age"], verdict: "Named stops owed and the cheap stop." }).some((p) => p.includes("verdict credits")));
     assert.ok(gradeProblems(qatar, said, { credited: ["tyre_age"], verdict: "Named stops owed, 9 cars pitted." }).length > 0, "invented number or idea");
     assert.ok(gradeProblems(qatar, said, { credited: ["tyre_age"], verdict: "word ".repeat(19).trim() }).includes("verdict too long"));
+    // A list of missed ideas stays negated; a later "named" re-opens credit.
+    assert.deepEqual(gradeProblems(qatar, said, { credited: ["tyre_age"], verdict: "Named the need for another stop; missed the cheap SC stop and rivals pitting." }), []);
+    assert.ok(gradeProblems(qatar, said, { credited: ["tyre_age"], verdict: "Missed track position, named the cheap stop." }).some((p) => p.includes("cheap_stop")));
+    // The engine's pit-loss line states the cheaper stop.
+    assert.ok(groundedIn("cheap_stop_under_sc", "SC stop costs 14.2 s, green-flag stop 28.3 s."));
+    assert.ok(rubricScore(qatar, "SC stop costs 14.2 s, green-flag stop 28.3 s.").credited.includes("cheap_stop_under_sc"));
   });
 
   await test("Muse grade: kept when grounded, capped by credited maxima", async () => {

@@ -565,7 +565,7 @@ function ScoreboardView({
   const cols = `48px minmax(180px,1.4fr) 72px repeat(${laps.length}, minmax(0,1fr)) 110px 96px`;
   let rank = 0;
   return (
-    <main className="grid h-dvh grid-rows-[auto_auto_1fr_auto] gap-y-5 overflow-hidden px-14 py-10">
+    <main className="grid h-dvh grid-rows-[auto_auto_1fr] gap-y-5 overflow-hidden px-14 py-10">
       <header className="flex items-center justify-between gap-6 font-mono text-lg font-bold uppercase">
         <span>{COPY.race.scoreboardTag(race.race.name)}</span>
         <Button variant="secondary" size="sm" className="font-sans normal-case" onClick={() => router.push("/")}>
@@ -599,7 +599,7 @@ function ScoreboardView({
                 style={{ gridTemplateColumns: cols, animationDelay: `${i * 60}ms` }}
               >
                 <span className="nums text-sm">{player ? String(rank).padStart(2, "0") : ""}</span>
-                <span className={`truncate font-black tracking-tight ${many ? "text-xl" : "text-[1.75rem]"}`}>{player ? tla(row.name) : row.name}</span>
+                <span className={`truncate font-black tracking-tight ${many ? "text-xl" : "text-[1.75rem]"}`}>{player ? tla(row.name) : row.name.replace(/\s*\([A-Z]{3}\)$/, "")}</span>
                 <span className="flex items-center gap-1.5 font-mono text-sm font-bold">
                   <span aria-hidden className="h-4 w-1" style={{ backgroundColor: colourOf(row.driver_code) ?? "currentColor" }} />
                   {row.driver_code}
@@ -644,7 +644,6 @@ function ScoreboardView({
           )}
         </section>
       </div>
-      <p className="text-sm text-ink-2">{COPY.host.scoringRule(50)}</p>
     </main>
   );
 }

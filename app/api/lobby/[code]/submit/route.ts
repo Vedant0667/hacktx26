@@ -33,7 +33,7 @@ async function raceSubmit(code: string, player: string, meta: LobbyMeta, transcr
   if (!f || !car || !f.drivers.includes(car)) throw new HttpError(409, "No call needed for your car at this lap");
   const raceKey = meta.race_key!;
   const existing = await getRaceCall(code, player, "freeze", f.lap);
-  if (existing) return Response.json({ submission: meta.phase === "freeze" ? hidden(existing) : existing, duplicate: true });
+  if (existing) return Response.json({ submission: hidden(existing), duplicate: true });
   // Look the freeze up before claiming, so a missing row can't leave the player stuck on "being graded".
   const [race, freezes] = await Promise.all([getRaceEntry(raceKey), getRaceFreezes(raceKey)]);
   const freeze = freezes.find((x) => x.lap === f.lap && x.driver_code === car);
@@ -55,7 +55,7 @@ async function raceSubmit(code: string, player: string, meta: LobbyMeta, transcr
     seconds_to_call, status: "scored", ...score, verdict: grade.verdict, credited: grade.credited,
   });
   return Response.json(
-    { submission: meta.phase === "freeze" ? hidden(row) : row, duplicate },
+    { submission: hidden(row), duplicate }, // Round 7: no score until the flag
     { status: duplicate ? 200 : 201 },
   );
 }

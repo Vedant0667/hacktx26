@@ -107,6 +107,9 @@ class Capture {
     }
     this.stream = stream;
     if (this.ctx.state === "suspended") await this.ctx.resume().catch(() => {});
+    if (this.closed) return; // stopped while the context resumed
+    // iOS can leave the context suspended after the permission prompt; capturing would record silence.
+    if (this.ctx.state !== "running") throw new Error("suspended");
     const down = new Downsampler(this.ctx.sampleRate, (v) => {
       if (this.n < this.buf.length) this.buf[this.n++] = v;
     });
@@ -123,6 +126,7 @@ class Capture {
     if (this.ctx.audioWorklet && typeof AudioWorkletNode !== "undefined") {
       try {
         await this.ctx.audioWorklet.addModule("/worklets/pcm.js");
+        if (this.closed) return; // stopped while the worklet loaded
         const w = new AudioWorkletNode(this.ctx, "pcm-capture", { numberOfInputs: 1, numberOfOutputs: 1, channelCount: 1, channelCountMode: "explicit" });
         w.port.onmessage = (e: MessageEvent<Float32Array>) => onChunk(e.data);
         node = w;

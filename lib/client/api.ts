@@ -133,20 +133,28 @@ export interface DriverReveal extends Omit<BlindDriver, "blind_title"> {
 }
 export type DriverMode = "same" | "choose";
 
-// Round 7: GET /api/lobby/[code]/reveal?part=results, the one end screen. { grading: true } with empty lists
-// until every call is graded; poll about every 1.5 s.
-export interface ResultCar {
+// Round 7: GET /api/lobby/[code]/reveal?part=results, the end-of-game summary for both modes (race lobbies
+// at done only). { grading: true } with empty lists until every call is graded; poll about every 1.5 s.
+// Optional luck fields (Round 9) arrive on a moment's cars when a later event changed the result.
+export interface SummaryCar {
   code: string;
   name: string;
   team: string;
   team_colour: string | null;
+}
+export interface MomentCar {
+  code: string;
+  team: string;
   correct: Call;
   swing_s: number;
   stakes: number;
-  reveal_to_lap: number;
   team_call: Call;
+  final_right_call?: Call;
+  luck?: boolean;
+  luck_events?: unknown[];
+  explanation?: string;
 }
-export interface ResultEntry {
+export interface MomentEntry {
   kind: "player" | "team" | "engine";
   name: string;
   driver_code: string | null;
@@ -158,18 +166,45 @@ export interface ResultEntry {
   verdict: string | null;
   credited: string[];
   points: number;
+}
+export interface SummaryMoment {
+  lap: number;
+  triggers: string[];
+  cars: MomentCar[];
+  entries: MomentEntry[];
+}
+export interface SummaryAudible {
+  name: string;
+  driver_code: string;
+  lap: number;
+  status: "scored" | "unscored" | "cancelled" | "pending";
+  right: boolean | null;
+  stakes: number;
+  reasoning: number;
+  verdict: string | null;
+  said: string;
+  points: number;
+}
+export interface RankRow {
+  kind: "player" | "team" | "engine";
+  name: string;
+  driver_code: string | null;
+  points: number;
+  calls: number;
+  right: number;
   rank: number;
   tied: boolean;
   rank_label: string;
 }
-export interface ResultsResponse {
+export interface GameSummary {
   grading: boolean;
-  decision_id: string;
+  mode: "moment" | "race";
   race: string;
-  lap: number;
-  cars: ResultCar[];
-  takes: ResultEntry[];
-  ranking: ResultEntry[];
+  cars: SummaryCar[];
+  winners: { names: string[]; points: number } | null;
+  ranking: RankRow[];
+  moments: SummaryMoment[];
+  audibles: SummaryAudible[];
 }
 
 export type JoinResponse = LobbyStateResponse & { player_token: string | null; rejoined: boolean };
@@ -314,7 +349,7 @@ export const api = {
     playerToken: string | null,
   ) => post<SubmitResponse>(`/api/lobby/${enc(code)}/submit`, body, tokenHeader("x-player-token", playerToken)),
   reveal: (code: string) => request<RevealResponse>(`/api/lobby/${enc(code)}/reveal`, { headers: lobbyAuth(code) }),
-  results: (code: string) => request<ResultsResponse>(`/api/lobby/${enc(code)}/reveal?part=results`, { headers: lobbyAuth(code) }),
+  results: (code: string) => request<GameSummary>(`/api/lobby/${enc(code)}/reveal?part=results`, { headers: lobbyAuth(code) }),
   // Host only: removes a player from the lobby (x-host-token).
   kick: (code: string, name: string, hostToken: string | null) =>
     post<LobbyStateResponse>(`/api/lobby/${enc(code)}/kick`, { name }, tokenHeader("x-host-token", hostToken)),

@@ -76,6 +76,11 @@ export function revealedLaps(c: Pick<RaceClock, "phase" | "plan" | "freeze_index
   return plan.slice(0, n).map((p) => p.lap);
 }
 
+// Round 7: freezes whose answer (right call, swing, scores) may be shown: none until the flag, all at done.
+export function answerLaps(c: Pick<RaceClock, "phase" | "plan">): number[] {
+  return c.phase === "done" ? (c.plan ?? []).map((p) => p.lap) : [];
+}
+
 export function pastFreezeLaps(c: Pick<RaceClock, "phase" | "plan" | "freeze_index">): number[] {
   return revealedLaps(c);
 }

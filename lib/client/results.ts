@@ -1,14 +1,13 @@
 "use client";
-// Round 7: the end screen's data. Polls GET /reveal?part=results from the reveal until grading is done, then stops.
+// Round 7: the end-of-game summary. Polls GET /reveal?part=results once `open` (moment: reveal or done;
+// race: done) until grading is done, then stops.
 import { useEffect, useState } from "react";
-import type { LobbyPhase } from "@/lib/types";
-import { ApiError, api, type ResultsResponse } from "./api";
+import { ApiError, api, type GameSummary } from "./api";
 
-export function useResults(code: string, phase: LobbyPhase | undefined): { results: ResultsResponse | null; failed: boolean } {
-  const [results, setResults] = useState<ResultsResponse | null>(null);
+export function useSummary(code: string, open: boolean): { summary: GameSummary | null; failed: boolean } {
+  const [summary, setSummary] = useState<GameSummary | null>(null);
   const [failed, setFailed] = useState(false);
-  const open = phase === "reveal" || phase === "done";
-  const finished = !!results && !results.grading;
+  const finished = !!summary && !summary.grading;
   useEffect(() => {
     if (!open || finished) return;
     let alive = true;
@@ -18,7 +17,7 @@ export function useResults(code: string, phase: LobbyPhase | undefined): { resul
         .results(code)
         .then((r) => {
           if (!alive) return;
-          setResults(r);
+          setSummary(r);
           setFailed(false);
           if (r.grading) t = setTimeout(load, 1500);
         })
@@ -33,5 +32,5 @@ export function useResults(code: string, phase: LobbyPhase | undefined): { resul
       clearTimeout(t);
     };
   }, [code, open, finished]);
-  return { results: results && !results.grading ? results : null, failed };
+  return { summary: summary && !summary.grading ? summary : null, failed };
 }

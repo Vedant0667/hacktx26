@@ -136,18 +136,11 @@ export const COPY = {
     } as Record<string, string>,
     teamRadio: (lap: number, quote: string) => `Team radio, lap ${lap}: "${quote}"`,
     engineReasons: "Engine reasons",
-    factorRuleFor: (n: number, max: number, list: string) =>
-      `Reasoning: up to ${max}, split evenly across ${n} factors: ${list}.`, // filled from decision.json and scoring
     playerFactors: (k: number, n: number, list: string) => `You named ${k} of ${n}${list ? `: ${list}` : ""}.`,
     bestReason: (tla: string, k: number, n: number) => `Best reason: ${tla}, ${k} of ${n} factors`,
     resume: (s: number) => `Replay resumes in ${s} s`,
     noCall: "No call",
     mixed: "Mixed", // added: a camp whose members made different calls
-    camps: "Reasons in the room", // added
-    camp: (n: number, total: number, factor: string) => `${n} of ${total}: ${factor}`, // added
-    noFactor: "No factor named", // added
-    campsByMuse: "Grouped by Muse Spark from what you said.", // added: source line under Muse camp labels
-    credit: "Reasons graded and grouped by Muse Spark. Speech to text by your browser's recognizer (Chrome uses Google). Engine: offline model on Jolpica and OpenF1 lap data.",
     showScores: "Show scores", // added: host button
     who: "Who", // added: column header
     call: "Call",
@@ -159,7 +152,7 @@ export const COPY = {
   },
   score: {
     line: (total: number, max: number, c: number, r: number) => `${total}/${max}. Call ${c}, reasoning ${r}.`,
-    equation: (c: number, r: number, total: number) => `Call ${c} + reasoning ${r} = ${total}`,
+    equation: (c: number, r: number, total: number) => `${c}-point stakes, reasoning ${r}/50: ${total} points`,
     outOf: (max: number) => `/ ${max}`,
     percentile: (p: number) => ({ pre: "At or above", num: `${p}%`, post: "of other players on this call." }),
     percentileHelp: (others: number) => `Share of the other ${others} players on this decision who scored at or below you.`,
@@ -167,7 +160,6 @@ export const COPY = {
     standings: "Standings", // added
     newLobby: "Create new lobby", // added: host button
     bothCalled: (names: string, c: Call) => `${names} called ${callWord(c).toLowerCase()}.`, // added: lobby facts
-    beatEngineBy: (who: string, n: number) => `${who} beat the engine by ${n} points.`, // added
     beatTeamBy: (who: string, team: string, n: number) => `${who} scored ${n} more than the ${team} call.`, // added
     pct: "Pct", // added: column header
     total: "Total", // added
@@ -465,9 +457,6 @@ export const COPY = {
     engineSaid: "Engine said",
     engineValue: (c: Call, conf: number) => `${callWord(c)} ${conf}%`,
     score: "Score",
-    badges: "Badges",
-    yourCamp: (call: string, others: string[]) => `Your camp · ${call}${others.length ? ` · with ${others.join(", ")}` : ""}`,
-    campCount: (n: number, total: number) => `${n} of ${total} in the room`,
     scoreFoot: (n: number) => `score ${n}`,
     teamEngine: "Team and engine",
     yourCall: "Your call",
@@ -563,7 +552,8 @@ export const COPY = {
     cols: { rank: "#", player: "Player", call: "Call", time: "Time", vsEngine: "Vs engine", callPts: "Right call", reason: "Reason", pct: "Pct", total: "Total" },
     agreed: "agreed",
     against: "against",
-    scoringRule: (max: number) => `Right call +100 · reasoning up to +${max}, split across the factors`,
+    // Round 7 (the max argument is kept for callers; reasoning is out of 50).
+    scoringRule: (max: number) => `Points scale with how much the call was worth and how good your reasoning was, out of ${max}.`,
     you: "You",
     ahead: "Ahead",
     behind: "Behind",
@@ -655,40 +645,58 @@ export const COPY = {
     all: "Named every idea that decided this call.",
     some: (named: string, missed: string) => `Named ${named}; missed ${missed}.`,
   },
-  // added: Round 7 end screen (one screen after the calls, host and phone)
+  // added: Round 7 end-of-game summary (host and phone, moment and race)
   end: {
     scoring: "Scoring the calls",
     scoringFor: (s: number) => `${s} s`,
-    happened: (c: Call, swing: number, lap: number) => `${callWord(c)} was right: ${callGerund(c).toLowerCase()} gained ${swing.toFixed(1)} s by lap ${lap}.`,
-    happenedCar: (code: string, c: Call, swing: number) => `${code}: ${callWord(c).toLowerCase()} was right, worth ${swing.toFixed(1)} s.`,
+    final: "Final",
+    status: (race: string) => `${race} · Final`,
+    wins: (who: string, pts: number) => `${who} wins with ${pts > 0 ? "+" : pts < 0 ? "−" : ""}${Math.abs(pts)}.`,
+    tie: (who: string[], pts: number) => `${who.slice(0, -1).join(", ")} and ${who[who.length - 1]} tie on ${pts > 0 ? "+" : pts < 0 ? "−" : ""}${Math.abs(pts)}.`,
+    noWinner: "No calls this game.",
+    wasRight: (c: Call, swing: number) => `${callWord(c)} was right: +${swing.toFixed(1)} s.`,
     teamDid: (team: string, c: Call) => `${team} ${callPast(c).toLowerCase()}.`,
-    takes: "Everyone's call",
+    stakes: (n: number) => `${n}-point stakes`,
+    gameLine: (moments: number, audibles: number) =>
+      `${moments} ${moments === 1 ? "freeze" : "freezes"}${audibles ? `, ${audibles} ${audibles === 1 ? "audible" : "audibles"}` : ""}.`,
+    momentHead: (lap: number) => `Lap ${lap}`,
+    carRight: (code: string, c: Call, swing: number) => `${code}: ${callWord(c).toLowerCase()} was right, +${swing.toFixed(1)} s`,
+    // Round 9 luck: a later red flag, SC/VSC or rain changed the result.
+    unlucky: "Right call, unlucky:",
+    lucky: "Lucky:",
+    moments: "Freeze by freeze",
+    audibles: "Audibles",
+    audibleRow: (lap: number) => `Box now, lap ${lap}`,
     ranking: "Final ranking",
-    how: "Points scale with how much the call was worth in the real race, and with how good your reasoning was.",
+    how: "Points scale with how much the call was worth and how good your reasoning was; great reasoning counts even when the call was wrong.",
     right: "Right call",
     wrong: "Wrong call",
     noCall: "No call",
-    stakes: (n: number) => `${n}-point stakes`,
     reasoning: (r: number) => `${r}/50`,
     reasoningLabel: "Reasoning",
     points: (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : "0"),
-    line: (right: boolean | null, stakes: number, r: number, pts: number) =>
-      right === null
-        ? `No call · ${stakes}-point stakes · 0`
-        : `${right ? "Right call" : "Wrong call"} · ${stakes}-point stakes · reasoning ${r}/50 → ${pts > 0 ? "+" : pts < 0 ? "−" : ""}${Math.abs(pts)}`,
     noReason: "No reason given.",
     rankOf: (label: string, n: number) => `${label} of ${n}`,
+    rankLine: (label: string, n: number) => `Rank ${label} of ${n}`,
     rankHead: "Rank",
-    you: "You",
+    callsRight: (right: number, calls: number) => `${right} of ${calls} ${calls === 1 ? "call" : "calls"} right`,
     yourCall: "Your call",
+    yourTotal: "Your total",
+    yourCalls: "Your calls",
     beatEngine: "You beat the engine.",
     engine: "Engine",
     teamRow: (team: string) => `${team} (real team)`,
     carTag: (row: string, code: string) => `${row} · ${code}`,
-    cols: { rank: "#", who: "Who", call: "Call", stakes: "Stakes", reasoning: "Reason", points: "Points" },
+    showWhy: "Reasons",
+    cols: { rank: "#", who: "Who", call: "Call", reasoning: "Reason", points: "Points" },
     newLobby: "Create new lobby",
+    leaderboard: "Open leaderboard",
     credit: "Reasons graded by Muse Spark. Speech to text by your browser's recognizer (Chrome uses Google). Engine: offline model on Jolpica and OpenF1 lap data.",
     retry: "Scores didn't load. Retrying.",
+    // Race mode: after a freeze the race goes on; who was right shows at the flag.
+    lockedTitle: "Calls locked.",
+    lockedSub: "The race goes on. Who was right shows at the flag.",
+    lockedIn: (s: number) => `Replay resumes in ${s} s`,
   },
   // added: race mode (Round 6). Freeze laps come from race state only; nothing here names the team's call before a reveal.
   race: {
@@ -758,7 +766,8 @@ export const COPY = {
     resumeNow: "Resume the race",
     yourCall: "Your call",
     noCall: "No call",
-    scoreLine: (c: number, r: number, t: number) => `Call ${c} + reasoning ${r} = ${t}`,
+    // Round 7: c is the call's stakes, r the reasoning score, t the signed points.
+    scoreLine: (c: number, r: number, t: number) => `${c}-point stakes, reasoning ${r}/50: ${t > 0 ? "+" : t < 0 ? "−" : ""}${Math.abs(t)} points`,
     runningTotal: (n: number) => `Race score ${n}`,
     noCallHere: (code: string) => `No call for ${code} at this freeze.`,
     // Race end.
@@ -798,6 +807,7 @@ export const VOICE_COPY = {
   starting: "Opening the mic",
   recording: "Recording. Say box or stay out, and why. Tap to stop.",
   transcribing: "Copy. Transcribing your note.",
+  transcribingShort: "Transcribing",
   unclear: "Didn't catch box or stay out. Tap the mic and say it again, or type it.",
   empty: "No words picked up. Tap the mic and try again, or type it.",
   short: "Too short. Tap once to start, talk, then tap to stop.",

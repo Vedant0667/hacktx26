@@ -19,7 +19,10 @@ import { Check, ErrorText, MicGlyph, ModeToggle, TrackStrip, clockText } from ".
 const SLOW_MS = 4000;
 // At 0 s a note still recording or transcribing gets this long before the call goes in (the server keeps
 // calls open 2 s into the reveal).
-const AUTO_SEND_WAIT_MS = 1700;
+// The host reveals 1.5 s after 0 s and the pad unmounts then, so the 0 s send must go out well inside that.
+const AUTO_SEND_WAIT_MS = 600;
+// A voice note still recording this close to the end is stopped, so its transcript lands before 0 s.
+const VOICE_CUTOFF_S = 5;
 
 export function CallPad({
   code,
@@ -154,6 +157,9 @@ export function CallPad({
   // AUTO_SEND_WAIT_MS, whichever comes first.
   const awaitingNote = useRef(false);
   useEffect(() => {
+    if (left > 0 && left <= VOICE_CUTOFF_S && voice.status === "recording") voice.stop();
+  });
+  useEffect(() => {
     if (left === 0 && !locked && !alreadyIn && !autoSent.current) {
       autoSent.current = true;
       if (voice.status === "recording" || voice.status === "starting") voice.stop();
@@ -169,10 +175,33 @@ export function CallPad({
       void sendRef.current(true);
     }
   });
-  useEffect(() => () => clearTimeout(autoTimer.current), []);
+  // If the pad unmounts (phase flipped to reveal) with the 0 s send still pending, send now: the request
+  // outlives the unmount and the server still accepts it during its short grace.
+  const lockedRef = useRef(false);
+  useEffect(() => {
+    lockedRef.current = !!locked || alreadyIn;
+  });
+  useEffect(
+    () => () => {
+      if (autoTimer.current !== undefined && autoSent.current && !lockedRef.current) {
+        clearTimeout(autoTimer.current);
+        void sendRef.current(true);
+      } else {
+        clearTimeout(autoTimer.current);
+      }
+    },
+    [],
+  );
 
   const recording = voice.status === "recording";
-  const talkMs = voice.startedAt && recording ? Math.max(0, now - voice.startedAt) : 0;
+  // Live while recording; afterwards the length of the last clip.
+  const talkMs = !voice.startedAt
+    ? 0
+    : recording
+      ? Math.max(0, now - voice.startedAt)
+      : voice.stoppedAt && voice.stoppedAt > voice.startedAt
+        ? voice.stoppedAt - voice.startedAt
+        : 0;
   const recSecs = Math.min(VOICE_NOTE_MAX_S, Math.floor(talkMs / 1000));
   const hasNote = voice.status === "done" && !!why.trim();
   const slow = voice.status === "transcribing" && voice.stoppedAt != null && now - voice.stoppedAt > SLOW_MS;
@@ -403,7 +432,7 @@ export function CallPad({
             {recording ? <span className="rec-dot size-3 shrink-0 rounded-full bg-white" aria-hidden /> : <MicGlyph className="shrink-0" />}
             <span className="flex min-w-0 flex-col">
               <span className="truncate text-[1.0625rem] font-bold">
-                {recording ? VOICE_COPY.stop : voice.status === "starting" ? VOICE_COPY.starting : voice.status === "transcribing" ? VOICE_COPY.transcribing : hasNote ? VOICE_COPY.again : VOICE_COPY.tap}
+                {recording ? VOICE_COPY.stop : voice.status === "starting" ? VOICE_COPY.starting : voice.status === "transcribing" ? VOICE_COPY.transcribingShort : hasNote ? VOICE_COPY.again : VOICE_COPY.tap}
               </span>
               <span className="mt-1 flex items-center gap-2">
                 {recording && (

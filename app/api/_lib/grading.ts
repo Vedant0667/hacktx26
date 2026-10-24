@@ -22,7 +22,7 @@ import { gradeReason, buildRubric, rubricScore, type Rubric } from "@/lib/muse";
 import { pointsFor, rankLabel, sharedRanks, stakesFor } from "@/lib/scoring";
 import type { Call, DecisionPoint } from "@/lib/types";
 import { HttpError, requireDecision } from "./http";
-import { audibleRubric, clockOf, freezeRubric, revealedLaps } from "./race";
+import { answerLaps, audibleRubric, clockOf, freezeRubric } from "./race";
 
 // Calls auto-sent as the host reveals can land up to 2 s after it (REVEAL_GRACE_S in submit); grade after that.
 export const GRADE_AFTER_S = 3;
@@ -125,21 +125,34 @@ export async function ensureMomentGraded(code: string, meta: LobbyMeta, ctx?: Mo
   return { grading: false, ctx: c };
 }
 
-// ---- The end screen payload ----
+// ---- The end-of-game summary (one shape for moment and race lobbies) ----
 
-export interface ResultCar {
+// Optional luck fields (Round 9, written by another pass when a red flag, a late SC/VSC or rain changed the
+// result): passed through when the decision data carries them, rendered by the end screen.
+export interface LuckFields {
+  final_right_call?: Call;
+  luck?: boolean;
+  luck_events?: unknown[];
+  explanation?: string;
+}
+
+export interface SummaryCar {
   code: string;
   name: string;
   team: string;
   team_colour: string | null;
+}
+
+export interface MomentCar extends LuckFields {
+  code: string;
+  team: string;
   correct: Call;
   swing_s: number;
   stakes: number;
-  reveal_to_lap: number;
   team_call: Call;
 }
 
-export interface ResultEntry {
+export interface MomentEntry {
   kind: "player" | "team" | "engine";
   name: string; // player name, team name, or "Engine"
   driver_code: string | null;
@@ -151,19 +164,49 @@ export interface ResultEntry {
   verdict: string | null;
   credited: string[];
   points: number;
+}
+
+export interface SummaryMoment {
+  lap: number;
+  triggers: string[]; // "SC", "VSC", "RIVAL_STOP", ...
+  cars: MomentCar[]; // every car with a call at this moment
+  entries: MomentEntry[]; // players who owed a call here (no call: call null, 0), then engine and team rows
+}
+
+export interface SummaryAudible {
+  name: string;
+  driver_code: string;
+  lap: number;
+  status: "scored" | "unscored" | "cancelled" | "pending";
+  right: boolean | null;
+  stakes: number;
+  reasoning: number;
+  verdict: string | null;
+  said: string;
+  points: number;
+}
+
+export interface RankRow {
+  kind: "player" | "team" | "engine";
+  name: string;
+  driver_code: string | null;
+  points: number; // total across every moment and audible
+  calls: number;
+  right: number;
   rank: number;
   tied: boolean;
   rank_label: string; // "1", "=2"
 }
 
-export interface ResultsResponse {
+export interface GameSummary {
   grading: boolean;
-  decision_id: string;
+  mode: "moment" | "race";
   race: string;
-  lap: number;
-  cars: ResultCar[];
-  takes: ResultEntry[]; // players in join order, including any who made no call
-  ranking: ResultEntry[]; // players, engine and real team, best first; equal points share a rank
+  cars: SummaryCar[];
+  winners: { names: string[]; points: number } | null; // top player or players (a tie)
+  ranking: RankRow[]; // players, then engine and real team per car; best first, equal points share a rank
+  moments: SummaryMoment[];
+  audibles: SummaryAudible[];
 }
 
 export function rankEntries<T extends { kind: string; name: string; points: number }>(rows: T[]): (T & { rank: number; tied: boolean; rank_label: string })[] {
@@ -172,53 +215,82 @@ export function rankEntries<T extends { kind: string; name: string; points: numb
   return sorted.map((r, i) => ({ ...r, ...ranks[i], rank_label: rankLabel(ranks[i]) }));
 }
 
-export async function momentResults(code: string, meta: LobbyMeta): Promise<ResultsResponse> {
+const luckOf = (src: unknown): LuckFields => {
+  const o = (src ?? {}) as Record<string, unknown>;
+  const out: LuckFields = {};
+  if (o.final_right_call === "BOX" || o.final_right_call === "STAY") out.final_right_call = o.final_right_call;
+  if (typeof o.luck === "boolean") out.luck = o.luck;
+  if (Array.isArray(o.luck_events)) out.luck_events = o.luck_events;
+  if (typeof o.explanation === "string") out.explanation = o.explanation;
+  return out;
+};
+
+// Totals per player and benchmark across moments and audibles, ranked; the top player or players win.
+function finish(base: Omit<GameSummary, "ranking" | "winners">, players: { name: string; driver_code: string | null }[]): GameSummary {
+  const rows = new Map<string, Omit<RankRow, "rank" | "tied" | "rank_label">>();
+  const key = (kind: string, name: string, car: string | null) => (kind === "player" ? `p:${name}` : `${kind}:${car}`);
+  for (const p of players) rows.set(key("player", p.name, null), { kind: "player", name: p.name, driver_code: p.driver_code, points: 0, calls: 0, right: 0 });
+  const add = (kind: RankRow["kind"], name: string, car: string | null, points: number, call: boolean, right: boolean | null) => {
+    const k = key(kind, name, car);
+    const r = rows.get(k) ?? { kind, name, driver_code: car, points: 0, calls: 0, right: 0 };
+    r.points += points;
+    if (call) r.calls++;
+    if (right) r.right++;
+    rows.set(k, r);
+  };
+  for (const m of base.moments) for (const e of m.entries) add(e.kind, e.name, e.driver_code, e.points, !!e.call, e.right);
+  for (const a of base.audibles) add("player", a.name, a.driver_code, a.points, a.status === "scored", a.right);
+  const ranking = rankEntries([...rows.values()]);
+  const top = ranking.filter((r) => r.kind === "player");
+  const best = top[0]?.points;
+  const winners = top.length ? { names: top.filter((r) => r.points === best).map((r) => r.name), points: best! } : null;
+  return { ...base, ranking, winners };
+}
+
+const pending = (mode: GameSummary["mode"], race: string): GameSummary => ({ grading: true, mode, race, cars: [], winners: null, ranking: [], moments: [], audibles: [] });
+
+export async function momentSummary(code: string, meta: LobbyMeta): Promise<GameSummary> {
   const { grading, ctx } = await ensureMomentGraded(code, meta);
-  const base = { grading, decision_id: ctx.decision.id, race: ctx.decision.race, lap: ctx.decision.lap };
-  if (grading) return { ...base, cars: [], takes: [], ranking: [] };
+  if (grading) return pending("moment", ctx.decision.race);
   const [state, cache] = await Promise.all([getLobbyState(code), getBenchmarkGrades(ctx.jobs.map((j) => j.key))]);
-  const cars: ResultCar[] = ctx.cars.map((c) => {
+  const carOf = (name: string) => state?.players.find((p) => p.name === name)?.driver_code ?? state?.driver_code ?? null;
+  const cars: SummaryCar[] = ctx.cars.map((c) => {
     const a = ctx.answers.find((x) => x.code === c)!;
+    return { code: c, name: a.name, team: a.team, team_colour: a.team_colour };
+  });
+  const momentCars: MomentCar[] = ctx.cars.map((c) => {
     const d = ctx.forCar(c);
+    const a = ctx.answers.find((x) => x.code === c)!;
     return {
-      code: c, name: a.name, team: a.team, team_colour: a.team_colour, correct: d.ground_truth.correct, swing_s: d.ground_truth.swing_s,
-      stakes: stakesFor(d.ground_truth.swing_s), reveal_to_lap: d.reveal_to_lap, team_call: d.team.call,
+      code: c, team: a.team, correct: d.ground_truth.correct, swing_s: d.ground_truth.swing_s, stakes: stakesFor(d.ground_truth.swing_s),
+      team_call: d.team.call, ...luckOf(a.ground_truth),
     };
   });
   const subs = new Map((state?.submissions ?? []).map((s) => [s.player_name, s]));
-  const carOf = (name: string) => state?.players.find((p) => p.name === name)?.driver_code ?? state?.driver_code ?? null;
-  const players = (state?.players ?? []).map((p) => {
-    const s = subs.get(p.name);
-    const d = ctx.forCar(s?.driver_code ?? carOf(p.name));
+  const names = [...(state?.players ?? []).map((p) => p.name), ...(state?.submissions ?? []).map((s) => s.player_name)].filter((n, i, all) => all.indexOf(n) === i);
+  const entries: MomentEntry[] = names.map((name) => {
+    const s = subs.get(name);
+    const car = s?.driver_code ?? carOf(name);
+    const d = ctx.forCar(car);
+    const stakes = stakesFor(d.ground_truth.swing_s);
     return {
-      kind: "player" as const, name: p.name, driver_code: s?.driver_code ?? carOf(p.name), call: s?.call ?? null, said: s?.transcript ?? "",
-      right: s?.call ? s.call === d.ground_truth.correct : null, stakes: stakesFor(d.ground_truth.swing_s),
+      kind: "player", name, driver_code: car, call: s?.call ?? null, said: s?.transcript ?? "",
+      right: s?.call ? s.call === d.ground_truth.correct : null, stakes,
       reasoning: s?.call ? s.score_reasoning : 0, verdict: s?.call ? (s.verdict ?? null) : null, credited: s?.credited ?? [], points: s?.call ? s.total : 0,
     };
   });
-  // A call from a player who has since been removed still counts (kick after the reveal keeps the row).
-  for (const s of state?.submissions ?? []) {
-    if (players.some((p) => p.name === s.player_name)) continue;
-    const d = ctx.forCar(s.driver_code);
-    players.push({
-      kind: "player", name: s.player_name, driver_code: s.driver_code, call: s.call, said: s.transcript,
-      right: s.call ? s.call === d.ground_truth.correct : null, stakes: stakesFor(d.ground_truth.swing_s),
-      reasoning: s.score_reasoning, verdict: s.verdict ?? null, credited: s.credited ?? [], points: s.total,
-    });
-  }
-  const benches = ctx.jobs.map((j) => {
+  for (const j of ctx.jobs) {
     const d = ctx.forCar(j.key.driver_code);
     const g = benchGrade(j, cache);
-    return {
+    const stakes = stakesFor(d.ground_truth.swing_s);
+    entries.push({
       kind: j.key.kind, name: j.key.kind === "engine" ? "Engine" : d.player_role.team, driver_code: j.key.driver_code, call: j.call,
-      said: j.reasons.join(" "), right: j.call === d.ground_truth.correct, stakes: stakesFor(d.ground_truth.swing_s),
-      reasoning: g.reasoning_score, verdict: g.verdict, credited: g.credited,
-      points: pointsFor(j.call, d.ground_truth.correct, stakesFor(d.ground_truth.swing_s), g.reasoning_score),
-    };
-  });
-  const ranking = rankEntries([...players, ...benches]);
-  const byName = new Map(ranking.filter((r) => r.kind === "player").map((r) => [r.name, r]));
-  return { ...base, cars, takes: players.map((p) => byName.get(p.name)!), ranking };
+      said: j.reasons.join(" "), right: j.call === d.ground_truth.correct, stakes, reasoning: g.reasoning_score, verdict: g.verdict,
+      credited: g.credited, points: pointsFor(j.call, d.ground_truth.correct, stakes, g.reasoning_score),
+    });
+  }
+  const moment: SummaryMoment = { lap: ctx.decision.lap, triggers: [ctx.decision.trigger], cars: momentCars, entries };
+  return finish({ grading: false, mode: "moment", race: ctx.decision.race, cars, moments: [moment], audibles: [] }, names.map((n) => ({ name: n, driver_code: subs.get(n)?.driver_code ?? carOf(n) })));
 }
 
 // Team and engine rows for each car played in a moment lobby (leaderboard), graded the same way.
@@ -250,23 +322,20 @@ function raceJobs(raceKey: string, plan: { lap: number; drivers: string[] }[], l
   return out;
 }
 
-// Freeze calls on revealed freezes, and at done the scored audibles, graded once per lobby ('race' scope).
-// The current freeze waits GRADE_AFTER_S into reveal_freeze for calls still in flight.
+// Round 7: nobody learns who was right until the flag, so race calls are graded once, at done: every freeze
+// call and every scored audible, plus the engine and team reasons per car and freeze ('race' scope).
 export async function ensureRaceGraded(code: string, meta: LobbyMeta, race: RaceEntry): Promise<{ grading: boolean }> {
   const clock = clockOf(meta);
-  const revealed = revealedLaps(clock);
   const done = meta.phase === "done";
   const plan = meta.freeze_plan ?? [];
-  const current = meta.phase === "reveal_freeze" ? plan[meta.freeze_index]?.lap : undefined;
-  const settling = current !== undefined && meta.phase_elapsed_s < GRADE_AFTER_S;
-  const laps = revealed.filter((l) => !(settling && l === current));
+  const laps = answerLaps(clock);
+  if (!done) return { grading: false };
   const [calls, freezes, cars] = await Promise.all([getRaceCalls(code), getRaceFreezes(race.race_key), getLobbyDriverCodes(code)]);
   const todo = calls.filter((c) => !c.graded && ((c.kind === "freeze" && laps.includes(c.lap)) || (c.kind === "audible" && done && c.status === "scored")));
   const jobs = raceJobs(race.race_key, plan, laps, cars, freezes);
   const cache = await getBenchmarkGrades(jobs.map((j) => j.key));
   const missing = jobs.filter((j) => !cache.has(keyOf(j.key)));
-  const waiting = settling && calls.some((c) => c.kind === "freeze" && c.lap === current && !c.graded);
-  if (!todo.length && !missing.length) return { grading: waiting };
+  if (!todo.length && !missing.length) return { grading: false };
   if (!(await claimGrading(code, "race"))) return { grading: true };
   try {
     await Promise.all([
@@ -292,7 +361,7 @@ export async function ensureRaceGraded(code: string, meta: LobbyMeta, race: Race
   } finally {
     await releaseGrading(code, "race");
   }
-  return { grading: waiting };
+  return { grading: false };
 }
 
 // Team and engine grades for one car's freeze (race leaderboard), from the cache or the rubric score.
@@ -304,4 +373,61 @@ export async function raceBenchmarkGrades(raceKey: string, items: { car: string;
     const stakes = stakesFor(j.rubric.swing_s);
     return { car: j.key.driver_code, lap: Number(j.rubric.decision_id.match(/-L(\d+)-/)?.[1]), kind: j.key.kind, call: j.call, grade: g, stakes, points: pointsFor(j.call, j.rubric.correct, stakes, g.reasoning_score) };
   });
+}
+
+// The race at the flag: every freeze with each car's answer and every player's call, the audibles, totals.
+export async function raceSummary(code: string, meta: LobbyMeta, race: RaceEntry): Promise<GameSummary> {
+  if (meta.phase !== "done") throw new HttpError(409, "The summary opens at the flag");
+  const { grading } = await ensureRaceGraded(code, meta, race);
+  if (grading) return pending("race", race.name);
+  const [calls, freezes, played, state] = await Promise.all([getRaceCalls(code), getRaceFreezes(race.race_key), getLobbyDriverCodes(code), getLobbyState(code)]);
+  const players = (state?.players ?? []).map((p) => ({ name: p.name, driver_code: p.driver_code ?? state?.driver_code ?? null }));
+  for (const c of calls) if (!players.some((p) => p.name === c.player_name)) players.push({ name: c.player_name, driver_code: c.driver_code });
+  const plan = meta.freeze_plan ?? [];
+  const items = plan.flatMap((e) =>
+    played.filter((car) => e.drivers.includes(car)).map((car) => ({ car, freeze: freezes.find((x) => x.lap === e.lap && x.driver_code === car) })),
+  ).filter((x): x is { car: string; freeze: RaceFreeze } => !!x.freeze);
+  const grades = await raceBenchmarkGrades(race.race_key, items);
+  const moments: SummaryMoment[] = plan.map((e) => {
+    const here = items.filter((x) => x.freeze.lap === e.lap);
+    const momentCars: MomentCar[] = here.map(({ car, freeze: f }) => ({
+      code: car, team: race.drivers.find((d) => d.code === car)?.team ?? car, correct: f.full.correct, swing_s: f.full.swing_s,
+      stakes: stakesFor(f.full.swing_s), team_call: f.full.team_call.call, ...luckOf(f.full),
+    }));
+    const entries: MomentEntry[] = players
+      .filter((p) => p.driver_code && here.some((x) => x.car === p.driver_code))
+      .map((p) => {
+        const c = calls.find((x) => x.kind === "freeze" && x.lap === e.lap && x.player_name === p.name);
+        const mc = momentCars.find((x) => x.code === (c?.driver_code ?? p.driver_code))!;
+        return {
+          kind: "player" as const, name: p.name, driver_code: mc.code, call: c?.call ?? null, said: c?.transcript ?? "",
+          right: c?.call ? c.call === mc.correct : null, stakes: mc.stakes, reasoning: c?.call ? c.score_reasoning : 0,
+          verdict: c?.call ? (c.verdict ?? null) : null, credited: c?.credited ?? [], points: c?.call ? c.total : 0,
+        };
+      });
+    for (const g of grades.filter((x) => x.lap === e.lap)) {
+      const mc = momentCars.find((x) => x.code === g.car)!;
+      const f = here.find((x) => x.car === g.car)!.freeze;
+      entries.push({
+        kind: g.kind, name: g.kind === "engine" ? "Engine" : mc.team, driver_code: g.car, call: g.call,
+        said: (g.kind === "engine" ? f.full.engine.reasons : f.full.team_call.reasons).join(" "), right: g.call === mc.correct,
+        stakes: g.stakes, reasoning: g.grade.reasoning_score, verdict: g.grade.verdict, credited: g.grade.credited, points: g.points,
+      });
+    }
+    return { lap: e.lap, triggers: [...new Set(here.flatMap((x) => x.freeze.blind.triggers.map((t) => t.type)))], cars: momentCars, entries };
+  });
+  const audibles: SummaryAudible[] = [];
+  for (const c of calls.filter((x) => x.kind === "audible")) {
+    const truth = c.status === "scored" ? await getAudibleTruth(race.race_key, c.driver_code, c.lap) : null;
+    audibles.push({
+      name: c.player_name, driver_code: c.driver_code, lap: c.lap, status: c.status,
+      right: truth?.correct ? truth.correct === "BOX" : null, stakes: c.score_call, reasoning: c.score_reasoning,
+      verdict: c.verdict ?? null, said: c.transcript, points: c.total,
+    });
+  }
+  const cars: SummaryCar[] = played.map((code) => {
+    const d = race.drivers.find((x) => x.code === code);
+    return { code, name: d?.name ?? code, team: d?.team ?? "", team_colour: d?.team_colour ?? null };
+  });
+  return finish({ grading: false, mode: "race", race: race.name, cars, moments, audibles }, players);
 }
