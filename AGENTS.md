@@ -1,6 +1,6 @@
 # AGENTS.md
 
-HackTX 2026 hackathon project. Reference docs live in `docs/`; ideas in `ideas.md`; plan in `tasks/todo.md`.
+HackTX 2026 hackathon project. Planning docs (`docs/`, `PRODUCT.md`, `tasks/`, `ideas.md`) are local-only and not committed.
 
 ## Commands
 - `npm run dev`: local dev at http://localhost:3000 (mic works on the laptop only).
