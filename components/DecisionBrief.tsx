@@ -32,31 +32,47 @@ export type Brief = ReturnType<typeof getBrief>;
 export function RejoinCaveat({ frame, lap, className = "" }: { frame: LapFrame | undefined; lap: number; className?: string }) {
   const s = frame?.track_status;
   if (s !== "SC" && s !== "VSC") return null;
-  return <p className={className}>{COPY.rejoin.caveat(s, lap - 1)}</p>;
+  return <p className={className}>{COPY.rejoin.caveat(s, Math.max(1, lap - 1))}</p>;
 }
 
-// "Box now: P10, 0.2 s behind HUL. The stop costs 14.2 s now, 28.3 s at green. 50 laps left on 7-lap mediums."
-export function RejoinSentence({ brief, className = "", withLaps = false }: { brief: Brief; className?: string; withLaps?: boolean }) {
+// "Box now: rejoin P13, 0.1 s behind HAD (HAD: 17-lap mediums)." The rival's tyres are named as the rival's,
+// so they never read as the player's own. Advanced adds the stop cost and laps left. Under SC or VSC the
+// caveat follows the projection directly.
+export function RejoinSentence({
+  brief,
+  className = "",
+  withLaps = false,
+  withCost = true,
+  caveatClass = "mt-1 text-sm font-bold",
+}: {
+  brief: Brief;
+  className?: string;
+  withLaps?: boolean;
+  withCost?: boolean;
+  caveatClass?: string;
+}) {
   const { rejoin, loss, story, ctx } = brief;
   if (!ctx) return null;
   const rival = rejoin?.ahead ? brief.frame?.drivers.find((d) => d.code === rejoin.ahead!.code) : null;
   const compound = ctx.compound ? (COPY.compounds[ctx.compound] ?? ctx.compound) : null;
   return (
-    <p className={className}>
-      {rejoin && (
-        <>
-          {COPY.phone.boxNow}{" "}
-          <b className="font-black">
-            {COPY.phone.out(rejoin.pos)}
-            {rejoin.ahead ? COPY.phone.behindCar(rejoin.ahead.gap, rejoin.ahead.code) : COPY.phone.inLead}
-            {rival?.compound && rival.tyre_age != null ? ` ${COPY.phone.onTyres(rival.tyre_age, COPY.compounds[rival.compound] ?? rival.compound)}` : ""}.
-          </b>{" "}
-          {rival?.compound && <TyreChip compound={rival.compound} age={rival.tyre_age} size="sm" />}{" "}
-        </>
-      )}
-      {loss && <>{COPY.phone.stopCost(loss.under, loss.normal)} </>}
-      {story && withLaps && COPY.phone.lapsLeftOn(story.lapsLeft, ctx.age, compound)}
-    </p>
+    <>
+      <p className={className}>
+        {rejoin && (
+          <>
+            {COPY.phone.boxNow}{" "}
+            <b className="font-black">
+              {COPY.phone.out(rejoin.pos)}
+              {rejoin.ahead ? COPY.phone.behindCar(rejoin.ahead.gap, rejoin.ahead.code) : COPY.phone.inLead}
+            </b>
+            {rival?.compound && rival.tyre_age != null ? ` ${COPY.phone.rivalTyres(rival.code, rival.tyre_age, COPY.compounds[rival.compound] ?? rival.compound)}` : ""}.{" "}
+          </>
+        )}
+        {loss && withCost && <>{COPY.phone.stopCost(loss.under, loss.normal)} </>}
+        {story && withLaps && COPY.phone.lapsLeftOn(story.lapsLeft, ctx.age, compound)}
+      </p>
+      {rejoin && <RejoinCaveat frame={brief.frame} lap={brief.frame?.lap ?? 0} className={caveatClass} />}
+    </>
   );
 }
 

@@ -6,7 +6,7 @@ import { useEffect, useState, useSyncExternalStore } from "react";
 import { COPY, factorLabel } from "@/lib/copy";
 import { ApiError, api, data, type LeaderboardResponse, type LeaderboardRow } from "@/lib/client/api";
 import { noopSubscribe, parsePlayed, recallPlayedRaw } from "@/lib/client/identity";
-import { MAX_TOTAL, fmtSeconds, tla } from "@/lib/client/race";
+import { MAX_TOTAL } from "@/lib/client/race";
 import type { DecisionIndexEntry } from "@/lib/types";
 import { fieldColours, teamColourOf } from "@/lib/client/field";
 import { CallWord, Check } from "./ui";
@@ -127,7 +127,7 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
           <>
             {youRow && (
               <p className="rise display text-2xl md:text-3xl">
-                <span className="nums">{COPY.leaderboard.you(youRank, lb.total_players, youRow.percentile)}</span>
+                <span className="nums">{COPY.leaderboard.you(youRank, lb.total_players)}</span>
               </p>
             )}
 
@@ -180,6 +180,7 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
               <Board rows={shown} factors={factors} youRow={youRow} youRank={youRank} youBelow={youIdx >= TOP} revealed={revealed} youLobby={youLobby} field={field} />
             )}
             <p className="nums text-xs text-[#bdbdbd]">{COPY.leaderboard.footer(lb.total_players)}</p>
+            <p className="text-sm text-[#bdbdbd]">{COPY.end.engineNote}</p>
           </>
         )}
       </div>
@@ -187,8 +188,9 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
   );
 }
 
-// Ranked rows: two columns on a laptop, one on a phone. Big code, room, call, percentile, score.
-const ROW = "grid grid-cols-[40px_80px_1fr_52px] md:grid-cols-[56px_120px_1fr_96px_72px_104px] items-center gap-x-3 md:gap-x-4";
+// Ranked rows: two columns on a laptop, one on a phone. Nickname, room, call, score. Engine and the real team
+// are unnumbered benchmark rows.
+const ROW = "grid grid-cols-[40px_minmax(0,1fr)_52px] md:grid-cols-[56px_minmax(0,1fr)_96px_104px] items-center gap-x-3 md:gap-x-4";
 
 function Board({
   rows,
@@ -225,20 +227,17 @@ function Board({
           {mine && <span role="img" aria-label={COPY.homeUi.yourMark} className="inline-block size-2.5 shrink-0" style={{ backgroundColor: field }} />}
           {shownRank != null ? String(shownRank).padStart(2, "0") : ""}
         </span>
-        <span role="cell" className="truncate text-2xl font-black tracking-tight md:text-[2.5rem] md:leading-none">
-          {r.kind === "player" ? tla(r.name) : r.kind === "engine" ? COPY.reveal.engine : COPY.reveal.team}
-        </span>
         <span role="cell" className="flex min-w-0 flex-col">
-          <span className="truncate text-base md:text-xl">
-            {r.kind === "team" ? COPY.leaderboard.teamRow(r.name) : r.kind === "engine" ? COPY.leaderboard.engineRow : `${r.name}${r.lobby_code ? ` · ${r.lobby_code}` : ""}`}
+          <span className="truncate text-2xl font-black tracking-tight md:text-[2rem] md:leading-tight">
+            {r.kind === "player" ? r.name : r.kind === "team" ? COPY.leaderboard.teamRow(r.name) : COPY.leaderboard.engineRow}
           </span>
+          {r.kind === "player" && r.lobby_code && <span className="nums truncate text-sm">{COPY.room.heading(r.lobby_code)}</span>}
           <span className={`nums flex items-center gap-2 text-xs ${inverted ? "text-ink-2" : "text-[#bdbdbd]"}`}>
             {revealed && (
               <span className="font-sans text-sm font-bold md:hidden">
                 <CallWord call={r.call} />
               </span>
             )}
-            {r.seconds_to_call != null && <span>{fmtSeconds(r.seconds_to_call)} s</span>}
             {revealed && factors.length > 0 && (
               <span className="hidden items-center gap-1 md:inline-flex" aria-label={r.factors_named.map(factorLabel).join(", ")}>
                 {factors.map((f) =>
@@ -250,9 +249,6 @@ function Board({
         </span>
         <span role="cell" className="hidden truncate text-lg font-bold md:block">
           {revealed && <CallWord call={r.call} />}
-        </span>
-        <span role="cell" className={`nums hidden text-right text-base md:block ${inverted ? "" : "text-[#bdbdbd]"}`}>
-          {r.percentile}%
         </span>
         <span role="cell" className="nums text-right text-xl font-bold md:text-[1.875rem]">
           {r.total}
@@ -272,9 +268,7 @@ function Board({
     <div role="row" className={`${ROW} h-9 border-b-2 border-white px-2 ${second ? "hidden md:grid" : ""}`}>
       <span role="columnheader" className="meta">{COPY.leaderboard.columns.rank}</span>
       <span role="columnheader" className="meta">{COPY.leaderboard.columns.player}</span>
-      <span role="columnheader" />
       <span role="columnheader" className="meta hidden md:block">{COPY.leaderboard.columns.call}</span>
-      <span role="columnheader" className="meta hidden text-right md:block">{COPY.leaderboard.columns.pct}</span>
       <span role="columnheader" className="meta text-right">{COPY.leaderboard.columns.score}</span>
     </div>
   );

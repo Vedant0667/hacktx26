@@ -1,19 +1,20 @@
 "use client";
-// The call screen. The page becomes the player's team-colour field: countdown, question, the rejoin line and
-// telemetry scroll above three full-width bands in the thumb zone: Stay out, Box, tap to say why (+ Type, Send).
+// The call screen. The page becomes the player's team-colour field: countdown, question and the rejoin line
+// (Simple stops there; Advanced adds telemetry and the undercut clock) above three full-width bands in the
+// thumb zone: Stay out, Box, tap to say why (+ Type, Send). Voice status sits right above the mic band.
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { COPY, VOICE_COPY } from "@/lib/copy";
 import { api, type BlindDecision } from "@/lib/client/api";
 import { recallResult } from "@/lib/client/identity";
-import { CALL_WINDOW_S, VOICE_NOTE_MAX_S, tla } from "@/lib/client/race";
+import { CALL_WINDOW_S, VOICE_NOTE_MAX_S } from "@/lib/client/race";
 import { submitCall, submitErrorText } from "@/lib/client/session";
 import { buzzFreeze } from "@/lib/client/cue";
 import { fieldStyle, teamColourOf } from "@/lib/client/field";
 import type { DataMode } from "@/lib/client/mode";
 import { METER_SEGMENTS, useVoiceNote } from "@/lib/client/recorder";
 import type { Call, LapFrame } from "@/lib/types";
-import { RejoinCaveat, RejoinSentence, getBrief } from "../DecisionBrief";
-import { FieldTyres, IntervalTable, LapChart, NeighbourList, Note, UndercutClock, PitLoss, RejoinStrip, Sec, StintTable, intervalNote, simpleChartLabel } from "../Telemetry";
+import { RejoinSentence, getBrief } from "../DecisionBrief";
+import { FieldTyres, IntervalTable, LapChart, NeighbourList, Note, UndercutClock, PitLoss, RejoinStrip, Sec, StintTable, intervalNote } from "../Telemetry";
 import { Check, ErrorText, MicGlyph, ModeToggle, TrackStrip, clockText } from "../ui";
 
 const SLOW_MS = 4000;
@@ -51,15 +52,19 @@ export function CallPad({
   const [noteShown, setNoteShown] = useState(false); // a transcript opened the field (no autofocus: no keyboard pop)
   const [note, setNote] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
-  const [locked, setLocked] = useState<{ call: Call | null; t: number } | null>(() => {
+  const [locked, setLocked] = useState<{ call: Call | null } | null>(() => {
     const r = recallResult(code, decision.id);
-    return r ? { call: r.submission.call, t: r.submission.seconds_to_call } : null;
+    return r ? { call: r.submission.call } : null;
   });
   const [err, setErr] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const autoSent = useRef(false);
   const autoTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [now, setNow] = useState(() => Date.now());
+  const callRef = useRef<Call | null>(null);
+  useEffect(() => {
+    callRef.current = call;
+  });
 
   const left = Math.max(0, Math.ceil(CALL_WINDOW_S - elapsed / 1000));
   const urgent = left <= 5 && left > 0;
@@ -76,6 +81,8 @@ export function CallPad({
       setWhy(text);
       setNoteShown(true);
       try {
+        // A call already tapped stays: the note only needs the why.
+        if (callRef.current) return setNote(VOICE_COPY.editHint);
         const parsed = await api.parse(text);
         if (parsed.call) {
           setCall(parsed.call);
@@ -144,7 +151,7 @@ export function CallPad({
     const seconds = Math.min(CALL_WINDOW_S, Math.max(0, elapsed / 1000));
     try {
       const r = await submitCall(code, decision.id, { player_name: me, transcript, seconds_to_call: Math.round(seconds * 10) / 10, call });
-      setLocked({ call: r.submission.call ?? call, t: r.submission.seconds_to_call });
+      setLocked({ call: r.submission.call ?? call });
     } catch (e) {
       setErr(submitErrorText(e, me));
     } finally {
@@ -203,6 +210,8 @@ export function CallPad({
         ? voice.stoppedAt - voice.startedAt
         : 0;
   const recSecs = Math.min(VOICE_NOTE_MAX_S, Math.floor(talkMs / 1000));
+  // A note started this close to the end would be cut off: the mic closes and typing takes over.
+  const tooLate = left > 0 && left <= VOICE_CUTOFF_S && !recording && voice.status !== "transcribing";
   const hasNote = voice.status === "done" && !!why.trim();
   const slow = voice.status === "transcribing" && voice.stoppedAt != null && now - voice.stoppedAt > SLOW_MS;
 
@@ -214,10 +223,10 @@ export function CallPad({
 
   const status = (
     <header className="flex h-[52px] shrink-0 items-center justify-between gap-3 px-5">
-      <span className="meta text-[13px]">{COPY.phone.status(decision.trigger, decision.lap, decision.total_laps)}</span>
-      <span className="meta text-[13px]">
-        {tla(me)}
-        {myCode && pos ? ` · ${myCode} P${pos}` : ""}
+      <span className="meta shrink-0 text-[13px]">{COPY.phone.status(decision.trigger, decision.lap, decision.total_laps)}</span>
+      <span className="flex min-w-0 items-baseline gap-1.5 text-[13px] font-bold">
+        <span className="truncate">{me}</span>
+        {myCode && pos ? <span className="meta shrink-0 text-[13px]">· {myCode} P{pos}</span> : null}
       </span>
     </header>
   );
@@ -241,12 +250,14 @@ export function CallPad({
       : recording
       ? voice.interim
         ? `"${voice.interim}"`
-        : VOICE_COPY.recording
+        : call
+          ? VOICE_COPY.recordingWhy
+          : VOICE_COPY.recording
       : voice.status === "transcribing"
         ? slow
           ? COPY.freeze.slow
           : VOICE_COPY.transcribing
-        : (micNote ?? voiceNotice ?? note)) ?? null;
+        : (micNote ?? voiceNotice ?? note ?? (tooLate ? VOICE_COPY.tooLate : null))) ?? null;
 
   if (locked || alreadyIn) {
     const waitingOn = Math.max(0, players.length - submittedNames.length);
@@ -259,7 +270,6 @@ export function CallPad({
           <h1 className="display mt-6 text-3xl">
             {locked?.call ? COPY.phone.lockedTitle(locked.call) : locked ? COPY.freeze.noCall : COPY.freeze.timeUp}
           </h1>
-          {locked?.call && <p className="nums mt-3 text-lg font-bold">{COPY.phone.lockedAt(locked.t)}</p>}
           {why && <q className="mt-5 text-lg leading-snug">{why}</q>}
         </div>
         <div className="on-dark bg-ink px-5 pb-[max(20px,env(safe-area-inset-bottom))] pt-5 text-white">
@@ -268,8 +278,8 @@ export function CallPad({
             {players.map((p) => {
               const inn = submittedNames.includes(p);
               return (
-                <li key={p} className={`inline-flex h-8 items-center px-2 text-sm font-black ${inn ? "bg-white text-ink" : "border border-dashed border-white/60"}`}>
-                  {tla(p)}
+                <li key={p} className={`inline-flex h-8 max-w-[14ch] items-center truncate px-2 text-sm font-black ${inn ? "bg-white text-ink" : "border border-dashed border-white/60"}`}>
+                  {p}
                 </li>
               );
             })}
@@ -283,7 +293,15 @@ export function CallPad({
     const on = call === c;
     const other = call !== null && !on;
     const base = c === "STAY" ? "bg-white text-ink" : "on-dark bg-ink text-white";
-    const sub = c === "STAY" ? (pos ? COPY.phone.keep(pos) : "") : brief?.rejoin ? COPY.phone.out(brief.rejoin.pos) : "";
+    const ctx = brief?.ctx;
+    const sub =
+      c === "STAY"
+        ? ctx
+          ? COPY.phone.keepTyres(ctx.pos, ctx.age, ctx.compound ? (COPY.compounds[ctx.compound] ?? ctx.compound) : null)
+          : ""
+        : brief?.rejoin
+          ? COPY.phone.out(brief.rejoin.pos)
+          : "";
     return (
       <button
         key={c}
@@ -329,21 +347,8 @@ export function CallPad({
           </div>
         </div>
         <h1 className={`display ${adv ? "mt-2 text-[1.875rem]" : "mt-3 text-[2.625rem] leading-[0.95]"}`}>{COPY.freeze.question}</h1>
-        {brief && !adv && <RejoinSentence brief={brief} className="mt-3 text-[1.1875rem] leading-[1.3]" />}
-        {brief?.tele && !adv && (
-          <div className="mt-4 border-t-2 border-current pt-2.5">
-            <div className="meta">{simpleChartLabel(brief.tele)}</div>
-            <div className="mt-2">
-              <LapChart laps={brief.tele.laps} cars={[brief.tele.me, brief.tele.ahead, brief.tele.behind]} height={124} status={brief.tele.status} />
-            </div>
-            <div className="mt-3">
-              <NeighbourList t={brief.tele} />
-            </div>
-            <div className="mt-4">
-              <UndercutClock t={brief.tele} mode={mode} />
-            </div>
-          </div>
-        )}
+        {brief && !adv && <RejoinSentence brief={brief} withCost={false} className="mt-3 text-[1.1875rem] leading-[1.3]" caveatClass="mt-1.5 text-base font-bold" />}
+        {brief && adv && <RejoinSentence brief={brief} withLaps className="mt-2.5 text-base leading-[1.35]" caveatClass="mt-1 text-sm font-bold" />}
         {brief?.tele && adv && (
           <div className="mt-3.5 flex flex-col">
             <Sec label={COPY.tele.stintLapTimes} meta={COPY.tele.lapRange(brief.tele.stintLaps[0] ?? 1, brief.tele.stintLaps[brief.tele.stintLaps.length - 1] ?? 1)}>
@@ -375,26 +380,13 @@ export function CallPad({
             )}
           </div>
         )}
-        {brief?.rejoin && <RejoinCaveat frame={brief.frame} lap={decision.lap} className="mt-2 text-xs font-medium" />}
       </div>
 
       <form onSubmit={onSubmit} className="shrink-0" noValidate>
-        {(helper || err) && (
-          <div className="bg-field px-5 pb-2 pt-1 text-sm font-bold" aria-live="polite">
-            {err ? (
-              <ErrorText>{err}</ErrorText>
-            ) : (
-              <div className="flex items-start justify-between gap-3">
-                <p className="line-clamp-2">{helper}</p>
-                {voice.canRetry && !busy && (
-                  <button type="button" onClick={voice.retry} className="shrink-0 border-b-2 border-current font-black">
-                    {VOICE_COPY.retry}
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        )}
+        <div role="group" aria-label={COPY.freeze.question}>
+          {band("STAY")}
+          {band("BOX")}
+        </div>
         {showTyping && (
           <div className="flex items-center gap-3 bg-white px-5 py-2 text-ink">
             <label htmlFor="why" className="sr-only">
@@ -413,10 +405,22 @@ export function CallPad({
             />
           </div>
         )}
-        <div role="group" aria-label={COPY.freeze.question}>
-          {band("STAY")}
-          {band("BOX")}
-        </div>
+        {(helper || err) && (
+          <div className="border-t border-line bg-white px-5 pb-2 pt-2 text-sm font-bold text-ink" aria-live="polite">
+            {err ? (
+              <ErrorText>{err}</ErrorText>
+            ) : (
+              <div className="flex items-start justify-between gap-3">
+                <p className="line-clamp-2">{helper}</p>
+                {voice.canRetry && !busy && (
+                  <button type="button" onClick={voice.retry} className="shrink-0 border-b-2 border-current font-black">
+                    {VOICE_COPY.retry}
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+        )}
         <div className="on-dark relative flex h-24 items-stretch border-t border-white/15 bg-ink pb-[env(safe-area-inset-bottom)] text-white">
           {recording && <div className="absolute inset-x-0 top-0 h-1 bg-field transition-[width] duration-200" style={{ width: `${(talkMs / (VOICE_NOTE_MAX_S * 1000)) * 100}%` }} aria-hidden />}
           {/* A plain click: iOS opens audio only inside a tap, so toggle() must run in this handler. */}
@@ -424,7 +428,7 @@ export function CallPad({
             type="button"
             onClick={voice.toggle}
             onContextMenu={(e) => e.preventDefault()}
-            disabled={left === 0 || micDown || voice.status === "starting" || voice.status === "transcribing"}
+            disabled={left === 0 || tooLate || micDown || voice.status === "starting" || voice.status === "transcribing"}
             aria-pressed={recording}
             aria-busy={voice.status === "transcribing" || undefined}
             className="flex min-w-0 flex-1 select-none items-center gap-3 pl-5 pr-2 text-left [-webkit-touch-callout:none] disabled:text-white/50"

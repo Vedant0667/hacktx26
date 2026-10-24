@@ -7,7 +7,7 @@ import type {
   RaceLeaderboardResponse,
   RaceRow,
 } from "@/lib/client/api";
-import { tla } from "@/lib/client/race";
+import { triggerText } from "@/lib/client/triggers";
 
 // Lap 1 to the flag. Filled to the current lap; a tick per freeze already reached (blind: the replay reveals
 // freezes only as it reaches them), the current freeze drawn solid.
@@ -71,8 +71,8 @@ export function RaceProgress({
   );
 }
 
-// Why the replay froze for one car: a square chip per trigger and the numbers behind it (end of lap - 1).
-// compact: chips only (a second car at the same freeze), no numbers.
+// Why the replay froze for one car: a square chip per trigger and the numbers behind it in plain words
+// (lib/client/triggers.ts). compact: chips only (a second car at the same freeze), no numbers.
 export function Triggers({
   freeze,
   size = "host",
@@ -85,6 +85,7 @@ export function Triggers({
   compact?: boolean;
 }) {
   const chip = size === "host" ? "h-9 px-3 text-base" : "h-7 px-2 text-sm";
+  const lines = freeze.triggers.map((t) => ({ type: t.type, text: triggerText(t.type, t.info, freeze.driver_code) })).filter((x) => x.text);
   return (
     <div className="flex flex-col gap-2">
       <ul className="flex flex-wrap items-center gap-2">
@@ -107,13 +108,11 @@ export function Triggers({
           );
         })}
       </ul>
-      {!compact && (
-        <ul
-          className={`flex flex-col gap-0.5 font-mono ${size === "host" ? "text-sm" : "text-xs"} leading-snug`}
-        >
-          {freeze.triggers.map((t) => (
+      {!compact && lines.length > 0 && (
+        <ul className={`flex flex-col gap-0.5 font-medium ${size === "host" ? "text-lg" : "text-sm"} leading-snug`}>
+          {lines.map((t) => (
             <li key={t.type} className="line-clamp-2">
-              {t.info}
+              {t.text}
             </li>
           ))}
         </ul>
@@ -160,7 +159,7 @@ export function RaceScores({
             >
               <span className="nums text-xs">{i + 1}</span>
               <span className="flex min-w-0 items-baseline gap-2">
-                <b className="font-black tracking-tight">{tla(r.name)}</b>
+                <b className="truncate font-black tracking-tight">{r.name}</b>
                 {carOf?.(r.name) && (
                   <span className="font-mono text-[11px] font-bold">
                     {carOf(r.name)}

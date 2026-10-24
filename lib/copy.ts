@@ -13,6 +13,10 @@ const callGerund = (c: Call) => (c === "BOX" ? "Pitting" : "Staying out");
 const waitText = (s: number) => (s < 60 ? `${Math.ceil(s)} s` : `${Math.ceil(s / 60)} min`);
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const signed = (n: number) => `${n > 0 ? "+" : ""}${n.toFixed(1)}`;
+// Signed points with a true minus: "+20", "−12", "0".
+const pts = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${Math.abs(n)}` : "0");
+const pct = (n: number) => (n > 0 ? `+${n}%` : n < 0 ? `−${Math.abs(n)}%` : "0%");
+const gainWord = (c: Call) => (c === "BOX" ? "Boxing" : "Staying out");
 
 export function ordinal(n: number): string {
   const s = ["th", "st", "nd", "rd"];
@@ -96,16 +100,11 @@ export const COPY = {
     countdown: (s: number) => `${s} s`,
     fiveLeft: "5 seconds.",
     timeUp: "Time. Calls locked.",
-    ptt: "Hold to talk",
-    pttKeyboard: "Hold space to talk",
     recording: "Recording. Say box or stay out, and why.",
     // Talk time used against the voice-note cap: "Rec 0:12 / 0:30".
     rec: (s: number, max: number) => `Rec ${clock(s)} / ${clock(max)}`,
-    reRecord: "Hold to record again", // added: one voice note per call; a new one replaces it
     noteCap: (max: number) => `One voice note per call, up to ${max} s.`, // added
-    released: "Copy. Reading your call.",
     parsed: (c: Call, transcript: string) => `Heard: ${callWord(c)}. "${transcript}"`,
-    unclear: "Didn't catch box or stay out. Hold and say it again, or type it.",
     slow: "Still transcribing. A typed call counts too.",
     typedLabel: "Why?", // added: input label
     typedPlaceholder: "box, the tyres are old and the stop is cheap now",
@@ -179,7 +178,7 @@ export const COPY = {
     teamRow: (team: string) => `${team} pit wall (real)`,
     engineRow: "Engine",
     footer: (n: number) => `${n} players on this call`,
-    you: (rank: number, n: number, pct: number) => `You: ${rank} of ${n}, ${ordinal(pct)} percentile.`,
+    you: (rank: number, n: number) => `You: ${rank} of ${n}.`,
     youMarker: "You",
     empty: (race: string, lap: number) => `No calls yet on ${race}, lap ${lap}. Play it from a lobby.`,
     first: "No other scores on this call yet.",
@@ -190,13 +189,14 @@ export const COPY = {
   play: {
     join: "Join lobby",
     joining: "Joining lobby",
-    tla: "Code on the tower", // added: TLA label
     // added: consent checkbox (docs/05 logistics; audit M6). The server rejects a join without it.
     consent:
       "Show my nickname and spoken reasons to the room and on the public leaderboard. Your browser's speech recognizer turns your voice into text. In Chrome, that sends the audio to Google. Lobbies, names and calls are deleted within a day.",
     consentMissing: "Tick the box to join.", // added
+    // added: the Join bar names what is still missing, in form order
+    need: { name: "Add your nickname", consent: "Tick consent", driver: "Pick a driver" },
     rejoin: (name: string) => `Rejoin as ${name}`, // added
-    youAre: (tla: string) => `You are ${tla}`, // added
+    youAre: (name: string) => `You are ${name}`, // added
     gridSlot: (n: number) => `P${n}`, // added: lobby grid slot
     open: "Open", // added: empty grid slot
   },
@@ -289,8 +289,8 @@ export const COPY = {
     // added: the projection uses end-of-lap gaps; a neutralisation changes them
     caveat: (status: "SC" | "VSC", lap: number) =>
       status === "SC"
-        ? `Gaps from the end of lap ${lap}. The safety car will close them up.`
-        : `Gaps from the end of lap ${lap}. They will shift under the VSC.`,
+        ? `Gaps from the end of lap ${lap}. The safety car will close these gaps.`
+        : `Gaps from the end of lap ${lap}. The virtual safety car will shift these gaps.`,
   },
   story: {
     stay: "Stay out",
@@ -371,7 +371,7 @@ export const COPY = {
       `Out P${pos}: ${ahead ? `${ahead.gap.toFixed(1)} s behind ${ahead.code}` : "in the lead"}${behind ? `, ${behind.gap.toFixed(1)} s ahead of ${behind.code}` : ""}.`,
     decisionComing: "Decision coming",
     lapsToGo: (n: number) => `${n} ${n === 1 ? "lap" : "laps"} to go`,
-    inRoom: (n: number) => `${n} in the room`,
+    inRoom: (n: number) => (n === 0 ? "Nobody in the room yet" : `${n} in the room`),
     waitingHost: "Waiting for the host",
     now: "Now",
     rateShort: (r: number) => `${r > 0 ? "▲" : "▼"}${Math.abs(r).toFixed(1)}/lap`,
@@ -414,29 +414,31 @@ export const COPY = {
   // added: phone call screen and shell
   phone: {
     typeInstead: "Type",
-    hideTyping: "Close",
+    hideTyping: "Hide",
     send: "Send",
     sendCall: (c: Call) => `Send: ${callWord(c)}`,
     selected: "Your pick",
-    holdWhy: "Hold to say why",
-    release: "Release to send the note",
     moreData: "More numbers",
     lessData: "Fewer numbers",
     keep: (pos: number) => `keep P${pos}`,
-    out: (pos: number) => `out P${pos}`,
+    // Stay band: the player's own tyres, so the only tyre age on the band is theirs.
+    keepTyres: (pos: number, age: number | null, compound: string | null) =>
+      `keep P${pos}${age != null ? `, ${age}-lap ${compound ? `${compound.toLowerCase()}s` : "tyres"}` : ""}`,
+    out: (pos: number) => `rejoin P${pos}`,
     you: (tla: string, driver: string, pos: number) => `${tla} · ${driver.slice(0, 3).toUpperCase()} P${pos}`,
-    status: (trigger: TrackStatus, lap: number, total: number) => `${trigger === "GREEN" ? "Green" : trigger} · L${lap}/${total}`,
+    status: (trigger: TrackStatus, lap: number, total: number) =>
+      `${trigger === "SC" ? "Safety car" : trigger === "VSC" ? "Virtual safety car" : "Green"} · L${lap}/${total}`,
     boxNow: "Box now:",
     inLead: ", in the lead",
     behindCar: (gap: number, code: string) => `, ${gap.toFixed(1)} s behind ${code}`,
-    onTyres: (age: number, compound: string) => `on ${age}-lap ${compound.toLowerCase()}s`,
+    // Whose tyres, named: "(HAD: 17-lap mediums)".
+    rivalTyres: (code: string, age: number, compound: string) => `(${code}: ${age}-lap ${compound.toLowerCase()}s)`,
     lapTyres: (age: number, compound: string | null) => `${age}-lap ${compound ? `${compound.toLowerCase()}s` : "tyres"}`,
     stopCost: (under: number, normal: number) =>
       under === normal ? `Stop costs ${normal.toFixed(1)} s at green.` : `Stop costs ${under.toFixed(1)} s now, ${normal.toFixed(1)} s at green.`,
     lapsLeftOn: (n: number, age: number | null, compound: string | null) =>
       `${n} laps left${age != null ? ` on ${age}-lap ${compound ? compound.toLowerCase() + "s" : "tyres"}` : ""}.`,
-    lockedTitle: (c: Call) => `${callWord(c)}.`,
-    lockedAt: (t: number) => `Locked at ${t.toFixed(1)} s.`,
+    lockedTitle: (c: Call) => `${callWord(c)}. Locked.`,
     room: "The room",
     joinTitle: "Join the room.",
     roomCode: "Room code",
@@ -482,7 +484,7 @@ export const COPY = {
     carSplit: (car: string, box: number, stay: number) => `${car}: ${box} box, ${stay} stay out`,
     otherCar: (code: string, team: string, did: Call, engine: Call, pct: number, correct: Call, swing: number) =>
       `${code} · ${team} ${did === "BOX" ? "boxed" : "stayed out"} · engine ${engine === "BOX" ? "box" : "stay out"} ${pct}% · ${correct === "BOX" ? "boxing" : "staying out"} worth ${swing.toFixed(1)} s`,
-    playerState: (tla: string, called: boolean) => `${tla}: ${called ? "called" : "thinking"}`,
+    playerState: (name: string, called: boolean) => `${name}: ${called ? "called" : "thinking"}`,
     stayLine: (pos: number, behind: { code: string; gap: string } | null) =>
       `keep P${pos}${behind ? ` · ${behind.code} ${behind.gap} s behind` : ""}`,
     boxLine: (pos: number, laps: number) => `out P${pos} · fresh tyres for ${laps} laps`,
@@ -654,13 +656,14 @@ export const COPY = {
     wins: (who: string, pts: number) => `${who} wins with ${pts > 0 ? "+" : pts < 0 ? "−" : ""}${Math.abs(pts)}.`,
     tie: (who: string[], pts: number) => `${who.slice(0, -1).join(", ")} and ${who[who.length - 1]} tie on ${pts > 0 ? "+" : pts < 0 ? "−" : ""}${Math.abs(pts)}.`,
     noWinner: "No calls this game.",
-    wasRight: (c: Call, swing: number) => `${callWord(c)} was right: +${swing.toFixed(1)} s.`,
+    // Seconds, never points: "Boxing gained 15.6 s."
+    wasRight: (c: Call, swing: number) => `${gainWord(c)} gained ${swing.toFixed(1)} s.`,
     teamDid: (team: string, c: Call) => `${team} ${callPast(c).toLowerCase()}.`,
     stakes: (n: number) => `${n}-point stakes`,
     gameLine: (moments: number, audibles: number) =>
       `${moments} ${moments === 1 ? "freeze" : "freezes"}${audibles ? `, ${audibles} ${audibles === 1 ? "audible" : "audibles"}` : ""}.`,
     momentHead: (lap: number) => `Lap ${lap}`,
-    carRight: (code: string, c: Call, swing: number) => `${code}: ${callWord(c).toLowerCase()} was right, +${swing.toFixed(1)} s`,
+    carRight: (code: string, c: Call, swing: number) => `${code}: ${gainWord(c).toLowerCase()} gained ${swing.toFixed(1)} s`,
     // Round 9 luck: a later red flag, SC/VSC or rain changed the result.
     unlucky: "Right call, unlucky:",
     lucky: "Lucky:",
@@ -668,7 +671,17 @@ export const COPY = {
     audibles: "Audibles",
     audibleRow: (lap: number) => `Box now, lap ${lap}`,
     ranking: "Final ranking",
-    how: "Points scale with how much the call was worth and how good your reasoning was; great reasoning counts even when the call was wrong.",
+    // The rule with its numbers, from lib/scoring.ts (lib/client/score.ts WEIGHTS).
+    how: (w: { right: number; wrong: number; reasoning: number; reasoningMax: number }, perSecond: number, max: number) =>
+      `Stakes: ${perSecond} points per second the call was worth, up to ${max}. Right call ${pct(w.right)} of the stakes, wrong call ${pct(w.wrong)}. Reasoning adds up to ${pct(w.reasoning)}, scored out of ${w.reasoningMax}.`,
+    // One score row's arithmetic: the two parts add up to the total.
+    split: (s: { right: boolean; call: number; r: number; reasoning: number; total: number }, withTotal = true) =>
+      `${s.right ? "Right call" : "Wrong call"} ${pts(s.call)} · Reasoning ${s.r}/50 ${pts(s.reasoning)}${withTotal ? ` = ${pts(s.total)}` : ""}`,
+    // A total across several calls.
+    sums: (call: number, reasoning: number, total: number) => `Calls ${pts(call)} · Reasoning ${pts(reasoning)} = ${pts(total)}`,
+    engineNote: "Engine: our strategy model, scored like a player. Engine and the real team are not ranked.",
+    audiblesLine: (n: number, points: number) => `${n} ${n === 1 ? "audible" : "audibles"} ${pts(points)}`,
+    stakesTag: (n: number) => `stakes ${n}`,
     right: "Right call",
     wrong: "Wrong call",
     noCall: "No call",
@@ -704,9 +717,9 @@ export const COPY = {
     wrongStrong: "wrong call · strong reasoning",
     rightWeak: "right call",
     noCallRow: "no call",
-    unscored: "unscored",
+    unscored: "not scored",
     boxNow: "Box now",
-    rightSwing: (c: Call, swing: number, stakes: number) => `${callWord(c)} was right: +${swing.toFixed(1)} s, ${stakes}-point stakes.`,
+    rightSwing: (c: Call, swing: number, stakes: number) => `${gainWord(c)} gained ${swing.toFixed(1)} s. ${stakes}-point stakes.`,
     triggerShort: { SC: "SC", VSC: "VSC", RIVAL_STOP: "Rival", UNDERCUT: "Undercut", FAST_DEG: "Deg", TYRE_WINDOW: "Tyres", RAIN: "Rain" } as Record<string, string>,
     // Race mode: after a freeze the race goes on; who was right shows at the flag.
     lockedTitle: "Calls locked.",
@@ -717,7 +730,7 @@ export const COPY = {
   race: {
     triggers: {
       SC: "Safety car",
-      VSC: "VSC",
+      VSC: "Virtual safety car",
       RIVAL_STOP: "Rival stopped nearby",
       UNDERCUT: "Undercut window",
       FAST_DEG: "Tyres fading",
@@ -750,7 +763,7 @@ export const COPY = {
     audible: {
       title: "Audible",
       button: "Box now",
-      hint: "Call a stop for your car while the replay runs. One every 5 laps. A wrong one costs 50.",
+      hint: "Box now: scored at the flag against cars that stopped around the same laps.",
       why: "Add why",
       whyClose: "Close",
       whyLabel: "Why? (optional)",
@@ -770,7 +783,6 @@ export const COPY = {
     nobodyCalled: "Nobody called this one.",
     winning: (c: Call) => `${callWord(c)} was right`,
     worth: (s: number) => `+${s.toFixed(1)} s`,
-    worthDeferred: "Worth: revealed at the flag",
     worthLabel: "What it was worth",
     window: (a: number, b: number) => (a === b ? `A stop on lap ${a} counts as box.` : `A stop on laps ${a} to ${b} counts as box.`),
     comparison: (boxed: string[], stayed: string[]) =>
@@ -796,13 +808,24 @@ export const COPY = {
     audibleStatus: {
       pending: "Pending",
       scored: "Scored",
-      unscored: "Unscored: no comparison cars",
+      unscored: "Not scored: no car stopped near that lap",
       cancelled: "Cancelled: a freeze made that call",
     } as Record<string, string>,
     breakdown: "Freeze by freeze",
     freezeCol: (lap: number) => `L${lap}`,
     newLobby: "Create new lobby",
     loading: "Loading the race",
+  },
+  // added: why a race freeze happened, in plain words (lib/client/triggers.ts parses the engine's numbers)
+  triggerInfo: {
+    rival: (codes: string[], lap: number) =>
+      `${codes.length > 1 ? `${codes.slice(0, -1).join(", ")} and ${codes[codes.length - 1]}` : codes[0]} pitted on lap ${lap}.`,
+    undercut: (gap: string, code: string, theirs: number, me: string, mine: number, gain: string) =>
+      `${gap} s behind ${code}. ${code}'s tyres are ${theirs} laps old, ${me}'s ${mine}. Two laps on new tyres are worth about ${gain} s.`,
+    deg: (d: string) => `Last 3 laps: ${d} s a lap slower than early in the stint.`,
+    window: (me: string, compound: string, age: number, life: number) =>
+      `${me}'s ${compound}s are ${age} laps old. Most cars stop around ${life}.`,
+    rain: (started: boolean, lap: number) => (started ? `Rain started on lap ${lap}.` : `Rain eased on lap ${lap}.`),
   },
   tyreLabel: (compound: string, age: number | null) => `${compound}${age != null ? `, ${age} laps` : ""}`, // added: tyre chip label
   cue: { mute: "Mute sound", unmute: "Sound on" },
@@ -821,6 +844,8 @@ export const VOICE_COPY = {
   again: "Tap to record again",
   starting: "Opening the mic",
   recording: "Recording. Say box or stay out, and why. Tap to stop.",
+  recordingWhy: "Recording. Say why. Tap to stop.", // a call is already picked: only the why is needed
+  tooLate: "Too close to the end to record. Type instead.",
   transcribing: "Copy. Transcribing your note.",
   transcribingShort: "Transcribing",
   unclear: "Didn't catch box or stay out. Tap the mic and say it again, or type it.",

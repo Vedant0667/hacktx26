@@ -7,7 +7,7 @@ import { COPY } from "@/lib/copy";
 import { ApiError, data, type BlindDecision, type BlindDriver, type JoinResponse, type LobbyStateResponse } from "@/lib/client/api";
 import { asDriver, driverCodeOf } from "@/lib/client/drivers";
 import { noopSubscribe, recallName, recallPlayerToken } from "@/lib/client/identity";
-import { callMomentFrames, fmtGap, replayLap, tla } from "@/lib/client/race";
+import { callMomentFrames, fmtGap, replayLap } from "@/lib/client/race";
 import { canRejoin, isLobbyFull, joinErrorText, joinLobby } from "@/lib/client/session";
 import { telemetry } from "@/lib/client/telemetry";
 import { useLobby, useTicker } from "@/lib/client/useLobby";
@@ -186,7 +186,7 @@ export function FieldHead({ status, right, children }: { status: React.ReactNode
           <Brand kind="mark" height={13} />
           {status}
         </span>
-        <span className="meta text-[13px]">{right}</span>
+        <span className="min-w-0 max-w-[45%] truncate text-[13px] font-bold">{right}</span>
       </div>
       <div className="px-5 pb-[22px] pt-[18px]">{children}</div>
     </div>
@@ -197,8 +197,8 @@ function Waiting({ lobby, decision, me, mode, setMode }: { lobby: LobbyStateResp
   const slot = Math.max(1, lobby.players.findIndex((p) => p.name === me) + 1);
   return (
     <>
-      <FieldHead status={COPY.phone.waitingStatus} right={tla(me)}>
-        <div className="display rise text-[4rem] leading-[0.9]">{COPY.play.youAre(tla(me))}</div>
+      <FieldHead status={COPY.phone.waitingStatus} right={me}>
+        <div className="display rise break-words text-[3rem] leading-[0.95]">{COPY.play.youAre(me)}</div>
         {decision?.blind_title && <p className="mt-2.5 text-lg font-bold leading-snug">{decision.blind_title}</p>}
       </FieldHead>
       <div className="flex flex-1 flex-col px-5 pt-[22px]">
@@ -208,11 +208,10 @@ function Waiting({ lobby, decision, me, mode, setMode }: { lobby: LobbyStateResp
         </div>
         <ol className="mt-3 flex flex-col">
           {lobby.players.map((p, i) => (
-            <li key={p.name} className={`rise grid h-10 grid-cols-[40px_64px_1fr] items-center font-mono text-[15px] ${p.name === me ? "-mx-2 bg-field px-2 font-bold text-on-field" : "border-b border-soft-2"}`}>
+            <li key={p.name} className={`rise grid h-10 grid-cols-[40px_1fr] items-center font-mono text-[15px] ${p.name === me ? "-mx-2 bg-field px-2 font-bold text-on-field" : "border-b border-soft-2"}`}>
               <span>{i + 1}</span>
-              <span className="font-bold">{tla(p.name)}</span>
               <span className="flex min-w-0 items-center justify-between gap-2">
-                <span className="truncate font-sans font-medium">{p.name}</span>
+                <span className="truncate font-sans text-base font-bold">{p.name}</span>
                 {p.driver_code && <span className="text-xs font-bold">{p.driver_code}</span>}
               </span>
             </li>
@@ -249,7 +248,7 @@ function Replay({ decision, frames, elapsed, mode, setMode, me }: { decision: Bl
             <ScChip status={f.track_status} />
           </>
         }
-        right={tla(me)}
+        right={me}
       >
         <div className="display text-[4rem] leading-[0.9]">{mine?.code}</div>
         {mine && (
@@ -350,21 +349,23 @@ export function JoinForm({
     e.preventDefault();
     const n = name.trim();
     if (!n) return setErr(COPY.home.nameMissing);
-    if (choose && !pick) return setErr(COPY.drivers.pick);
     if (!consent) return setErr(COPY.play.consentMissing);
+    if (choose && !pick) return setErr(COPY.drivers.pick);
     void join(n);
   }
 
   const rejoinable = taken ? canRejoin(code, taken) : false;
+  // The Join bar names the first thing still missing, in form order.
+  const need = !name.trim() ? COPY.play.need.name : !consent ? COPY.play.need.consent : choose && !pick ? COPY.play.need.driver : null;
   const letters = code.padEnd(4, " ").slice(0, 4).split("");
 
   return (
-    <form onSubmit={submit} className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col" noValidate>
+    <form onSubmit={submit} className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col [&_label]:scroll-mb-28" noValidate>
       <header className="flex h-[52px] items-center justify-between px-5">
         <Brand kind="wordmark" height={16} />
         <span className="meta text-[13px]">{COPY.room.heading(code)}</span>
       </header>
-      <div className="flex flex-1 flex-col px-5">
+      <div className="flex flex-1 flex-col px-5 pb-6">
         <h1 className="display mb-[30px] mt-[22px] text-[3.25rem] leading-[0.95]">{COPY.phone.joinTitle}</h1>
         <span className="meta">{COPY.phone.roomCode}</span>
         <div className="mt-2.5 grid grid-cols-4 gap-2" aria-label={COPY.room.heading(code)}>
@@ -389,18 +390,7 @@ export function JoinForm({
           aria-describedby="join-err"
           className="mt-2 h-14 w-full border-0 border-b-2 border-ink bg-transparent pb-1 text-[1.625rem] font-bold tracking-tight text-ink outline-none placeholder:text-lg placeholder:font-medium focus:border-b-4"
         />
-        <p className="mt-2 flex h-8 items-center gap-2 text-sm text-ink-2">
-          {name.trim() && (
-            <>
-              {COPY.play.tla}
-              <b className="bg-ink px-1.5 font-black text-white">{tla(name)}</b>
-            </>
-          )}
-        </p>
-
-        {choose && <DriverPicker drivers={drivers} frames={frames} pick={pick} onPick={setPick} metaFor={metaFor} />}
-
-        <label className="mt-5 flex cursor-pointer items-start gap-3.5 text-base leading-[1.4]">
+        <label className="mt-6 flex cursor-pointer items-start gap-3.5 text-base leading-[1.4]">
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="peer sr-only" />
           <span
             aria-hidden
@@ -410,6 +400,8 @@ export function JoinForm({
           </span>
           <span>{COPY.play.consent}</span>
         </label>
+
+        {choose && <DriverPicker drivers={drivers} frames={frames} pick={pick} onPick={setPick} metaFor={metaFor} />}
 
         <div className="mb-4 mt-4 min-h-6">
           <ErrorText id="join-err">{err}</ErrorText>
@@ -426,8 +418,8 @@ export function JoinForm({
         aria-busy={busy || undefined}
         className="on-dark sticky bottom-0 flex h-24 items-center justify-between bg-ink px-6 pb-[env(safe-area-inset-bottom)] text-[1.75rem] font-black text-white transition-colors duration-150 hover:bg-[#262626] disabled:text-white/60"
       >
-        <span>{busy ? COPY.play.joining : COPY.play.join}</span>
-        <small className="nums text-[13px] font-medium text-[#BDBDBD]">{COPY.tele.inRoom(players)}</small>
+        <span className={need && !busy ? "text-[1.375rem]" : ""}>{busy ? COPY.play.joining : (need ?? COPY.play.join)}</span>
+        <small className="nums ml-3 shrink-0 text-right text-[13px] font-medium text-[#BDBDBD]">{COPY.tele.inRoom(players)}</small>
       </button>
     </form>
   );

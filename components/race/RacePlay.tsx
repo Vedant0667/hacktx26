@@ -8,7 +8,7 @@ import { COPY } from "@/lib/copy";
 import { ApiError, api, type BlindDriver, type BlindFreeze, type JoinResponse, type LobbyStateResponse, type RaceEntry } from "@/lib/client/api";
 import { fieldStyle } from "@/lib/client/field";
 import type { DataMode } from "@/lib/client/mode";
-import { CALL_WINDOW_S, fmtGap, tla } from "@/lib/client/race";
+import { CALL_WINDOW_S, fmtGap } from "@/lib/client/race";
 import {
   REVEAL_HOLD_MS,
   clockLap,
@@ -148,7 +148,7 @@ export function RacePlay({
 
 function Head({ race, me, status, children }: { race: RaceLobby; me: string; status: React.ReactNode; children: React.ReactNode }) {
   return (
-    <FieldHead status={status} right={tla(me)}>
+    <FieldHead status={status} right={me}>
       {children}
       <div className="mt-4">
         <RaceProgress size="phone" total={race.race.total_laps} lap={racePhase(race) === "done" ? race.race.total_laps : race.race.visible_lap} past={race.race.past_freeze_laps} current={race.race.freeze_lap} />
@@ -161,8 +161,8 @@ function Waiting({ race, me, driver, mode, setMode }: { race: RaceLobby; me: str
   const slot = Math.max(1, race.players.findIndex((p) => p.name === me) + 1);
   return (
     <>
-      <FieldHead status={COPY.phone.waitingStatus} right={tla(me)}>
-        <div className="display rise text-[4rem] leading-[0.9]">{COPY.play.youAre(tla(me))}</div>
+      <FieldHead status={COPY.phone.waitingStatus} right={me}>
+        <div className="display rise break-words text-[3rem] leading-[0.95]">{COPY.play.youAre(me)}</div>
         <p className="mt-2.5 text-lg font-bold leading-snug">
           {driver ? `${COPY.drivers.picked(driver.code)} #${driver.number}. ` : ""}
           {COPY.race.raceLine(race.race.name, race.race.total_laps)}
@@ -176,17 +176,18 @@ function Waiting({ race, me, driver, mode, setMode }: { race: RaceLobby; me: str
         </div>
         <ol className="mt-3 flex flex-col">
           {race.players.map((p, i) => (
-            <li key={p.name} className={`rise grid h-10 grid-cols-[40px_64px_1fr] items-center font-mono text-[15px] ${p.name === me ? "-mx-2 bg-field px-2 font-bold text-on-field" : "border-b border-soft-2"}`}>
+            <li key={p.name} className={`rise grid h-10 grid-cols-[40px_1fr] items-center font-mono text-[15px] ${p.name === me ? "-mx-2 bg-field px-2 font-bold text-on-field" : "border-b border-soft-2"}`}>
               <span>{i + 1}</span>
-              <span className="font-bold">{tla(p.name)}</span>
               <span className="flex min-w-0 items-center justify-between gap-2">
-                <span className="truncate font-sans font-medium">{p.name}</span>
+                <span className="truncate font-sans text-base font-bold">{p.name}</span>
                 {(p.driver_code || race.driver_code) && <span className="text-xs font-bold">{p.driver_code || race.driver_code}</span>}
               </span>
             </li>
           ))}
         </ol>
-        <p className="mt-5 text-base text-ink-2">{COPY.race.audible.hint}</p>
+        <p className="mt-5 text-base text-ink-2">
+          <b className="font-bold text-ink">{COPY.race.audible.title}.</b> {COPY.race.audible.hint}
+        </p>
       </div>
       <Foot title={COPY.tele.waitingHost} meta={COPY.play.gridSlot(slot)} />
     </>
@@ -323,11 +324,14 @@ function AudibleDock({ code, me, lap }: { code: string; me: string; lap: number 
 
   return (
     <form onSubmit={send} className="sticky bottom-0 z-[var(--z-dock)] mt-auto" noValidate>
-      {(note || err || cooling) && (
-        <div className="bg-white px-5 pb-2 pt-2 text-sm font-bold" aria-live="polite">
-          {err ? <ErrorText>{err}</ErrorText> : cooling ? <p className="nums">{COPY.race.audible.cooldown(next!)} · {COPY.race.audible.lapsLeft(left)}</p> : <p>{note}</p>}
-        </div>
-      )}
+      <div className="border-t border-line bg-white px-5 pb-2 pt-2 text-sm" aria-live="polite">
+        <p className="font-medium">{COPY.race.audible.hint}</p>
+        {(note || err || cooling) && (
+          <div className="mt-1 font-bold">
+            {err ? <ErrorText>{err}</ErrorText> : cooling ? <p className="nums">{COPY.race.audible.cooldown(next!)} · {COPY.race.audible.lapsLeft(left)}</p> : <p>{note}</p>}
+          </div>
+        )}
+      </div>
       {typing && (
         <div className="flex items-center gap-3 border-t border-line bg-white px-5 py-2 text-ink">
           <label htmlFor="audible-why" className="sr-only">
@@ -406,8 +410,8 @@ function NoCall({
         })}
         <ol className="flex flex-wrap gap-1.5">
           {owing.map((p) => (
-            <li key={p.name} className={`inline-flex h-8 items-center px-2 text-sm font-black ${r.called.includes(p.name) ? "bg-ink text-white" : "border border-dashed border-ink"}`}>
-              {tla(p.name)}
+            <li key={p.name} className={`inline-flex h-8 max-w-[14ch] items-center truncate px-2 text-sm font-black ${r.called.includes(p.name) ? "bg-ink text-white" : "border border-dashed border-ink"}`}>
+              {p.name}
             </li>
           ))}
         </ol>
