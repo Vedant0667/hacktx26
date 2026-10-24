@@ -34,9 +34,10 @@ const post = <T>(url: string, body: unknown) => request<T>(url, { method: "POST"
 
 export interface SubmitResponse {
   submission: Submission;
-  percentile: number;
-  lobby_rank: number;
-  lobby_players_submitted: number;
+  // Null during the decision: the score would give away the answer.
+  percentile: number | null;
+  lobby_rank: number | null;
+  lobby_players_submitted: number | null;
   duplicate: boolean;
 }
 

@@ -34,9 +34,9 @@
  },
  "engine": {
   "call": "BOX",
-  "confidence": 0.98,
+  "confidence": 0.95,
   "reasons": [
-   "16 of 18 cars pitted under the SC, 4 of the 5 most similar.",
+   "Leading under the SC. 8 of 8 cars within 14.2 s behind expected to pit.",
    "SC stop costs 14.2 s, green-flag stop 28.3 s.",
    "Tyres 7 laps old, 50 laps left, 25-lap cap: 2 more stops owed."
   ]

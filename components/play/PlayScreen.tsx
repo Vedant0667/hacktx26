@@ -4,7 +4,7 @@ import { useEffect, useState, useSyncExternalStore, type FormEvent } from "react
 import { COPY } from "@/lib/copy";
 import { ApiError, api, data, type LobbyStateResponse } from "@/lib/client/api";
 import { noopSubscribe, recallName, rememberName } from "@/lib/client/identity";
-import { frameAt, replayLap, tla } from "@/lib/client/race";
+import { callMomentFrames, frameAt, replayLap, tla } from "@/lib/client/race";
 import { useLobby, useTicker } from "@/lib/client/useLobby";
 import type { DecisionPoint, LapFrame } from "@/lib/types";
 import { Tower } from "../Tower";
@@ -98,7 +98,7 @@ function Waiting({ lobby, decision, me }: { lobby: LobbyStateResponse; decision:
       <p className="text-24 font-semibold">{COPY.waiting.playerView}</p>
       {decision && r && <p className="text-20 text-ink-2">{COPY.waiting.race(decision.race, r.team, r.driver, r.number)}</p>}
       <div className="flex flex-col gap-2">
-        <Label>{COPY.waiting.count(lobby.players.length)}</Label>
+        <Label className="nums">{COPY.waiting.count(lobby.players.length)}</Label>
         <ol className="flex flex-wrap gap-0.5">
           {lobby.players.map((p) => (
             <li key={p.name} className={`px-3 py-2 text-24 font-bold uppercase stretch-75 ${p.name === me ? "bg-ink text-bg" : "bg-surface"}`}>
@@ -113,14 +113,14 @@ function Waiting({ lobby, decision, me }: { lobby: LobbyStateResponse; decision:
 
 function ReplayMini({ decision, frames, elapsed }: { decision: DecisionPoint; frames: LapFrame[]; elapsed: number }) {
   const lap = replayLap(decision, elapsed);
-  const f = frameAt(frames, lap);
+  const f = frameAt(callMomentFrames(frames, decision), lap);
   const total = frames[frames.length - 1]?.lap ?? lap;
   if (!f) return null;
   return (
     <section className="flex flex-col gap-4">
       <StatusStrip status={f.track_status} size="phone" />
       <span className="nums text-40 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.replay.lap(lap, total)}</span>
-      <Tower drivers={f.drivers} playerNumber={decision.player_role.number} maxRows={10} centerOn={decision.player_role.number} />
+      <Tower drivers={f.drivers} playerNumber={decision.player_role.number} maxRows={10} centerOn={decision.player_role.number} showPit={false} />
     </section>
   );
 }

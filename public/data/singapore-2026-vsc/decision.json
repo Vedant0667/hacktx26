@@ -34,9 +34,9 @@
  },
  "engine": {
   "call": "BOX",
-  "confidence": 0.86,
+  "confidence": 0.94,
   "reasons": [
-   "3 of 18 cars pitted under the VSC, 2 of the 5 most similar.",
+   "1 of 2 cars ahead pitted under the VSC, 1 of the 2 most similar.",
    "VSC stop costs 17.6 s, green-flag stop 23.5 s.",
    "Tyres 21 laps old, field median 8, 23 laps left."
   ]

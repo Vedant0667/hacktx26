@@ -8,7 +8,8 @@ const ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ";
 
 const Body = z.object({
   decision_id: z.string().min(1).max(64),
-  host_name: z.string().trim().min(1).max(24),
+  // Accepted for older clients; the host is not a player.
+  host_name: z.string().trim().max(24).optional(),
 });
 
 function newCode(): string {
@@ -18,11 +19,11 @@ function newCode(): string {
 }
 
 export const POST = handle(async (req: Request) => {
-  const { decision_id, host_name } = await readBody(req, Body);
+  const { decision_id } = await readBody(req, Body);
   await requireDecision(decision_id);
   for (let attempt = 0; attempt < 8; attempt++) {
     const code = newCode();
-    if (await createLobby(code, decision_id, host_name)) {
+    if (await createLobby(code, decision_id)) {
       const state = await getLobbyState(code);
       return Response.json(state, { status: 201 });
     }

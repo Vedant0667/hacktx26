@@ -25,6 +25,7 @@ export interface DriverFrame {
   code: string;
   number: number;
   team: string;
+  team_colour: string | null;
   position: number;
   gap_to_leader_s: number | null;
   compound: string | null;

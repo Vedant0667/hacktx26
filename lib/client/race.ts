@@ -14,6 +14,26 @@ export function frameAt(frames: LapFrame[], lap: number): LapFrame | undefined {
   return frames.find((f) => f.lap === lap) ?? frames[frames.length - 1];
 }
 
+// What the pit wall can see when the call is due: the order at the end of lap L-1, lap L's track status,
+// and only the stops made by cars ahead on the road (they reach pit entry first). Use before the reveal.
+export function callMomentFrames(frames: LapFrame[], d: DecisionPoint): LapFrame[] {
+  const prev = frames.find((f) => f.lap === d.lap - 1);
+  const now = frames.find((f) => f.lap === d.lap);
+  if (!prev || !now) return frames;
+  const me = prev.drivers.find((x) => x.number === d.player_role.number);
+  const pittedNow = new Set(now.drivers.filter((x) => x.pitted_this_lap).map((x) => x.code));
+  const moment: LapFrame = {
+    lap: d.lap,
+    track_status: now.track_status,
+    drivers: prev.drivers.map((x) => ({
+      ...x,
+      tyre_age: x.tyre_age == null ? null : x.tyre_age + 1,
+      pitted_this_lap: !!me && x.position < me.position && pittedNow.has(x.code),
+    })),
+  };
+  return frames.filter((f) => f.lap < d.lap).concat(moment);
+}
+
 export function replayLap(d: DecisionPoint, elapsedMs: number): number {
   return Math.min(d.lap, d.replay_from_lap + Math.max(0, Math.floor(elapsedMs / LAP_MS)));
 }

@@ -3,6 +3,7 @@ import { getLobbyState } from "@/lib/db";
 import { parseCallLocal } from "@/lib/muse";
 import type { Submission } from "@/lib/types";
 import { handle, HttpError, normalizeCode } from "../../../_lib/http";
+import { isRevealed } from "../../../_lib/redact";
 
 const QUOTE_MAX = 90;
 
@@ -26,6 +27,7 @@ export const GET = handle(async (_req: NextRequest, ctx: RouteContext<"/api/lobb
   const code = normalizeCode((await ctx.params).code);
   const state = await getLobbyState(code);
   if (!state) throw new HttpError(404, "Lobby not found");
+  if (!isRevealed(state.phase)) throw new HttpError(409, "Camps open at the reveal");
 
   const by_call = { BOX: 0, STAY: 0, none: 0 };
   const groups = new Map<string, { factor: string; count: number; players: string[]; quotes: string[] }>();

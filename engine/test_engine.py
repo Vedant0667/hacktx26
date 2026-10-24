@@ -31,6 +31,13 @@ def test_no_lookahead():
         for d in f["drivers"]:
             d["position"], d["pitted_this_lap"], d["tyre_age"] = 99, True, 0
     assert eng.decide(scrambled[:7], 7, "PIA", QATAR_TRACK) == base
+    # stops on lap L by cars behind us happen after our pit entry, so they must not change the call either
+    lap7 = copy.deepcopy(frames)
+    start = {d["code"]: d["position"] for d in lap7[5]["drivers"]}
+    for d in lap7[6]["drivers"]:
+        if start.get(d["code"], 99) > start["PIA"]:
+            d["pitted_this_lap"] = not d["pitted_this_lap"]
+    assert eng.decide(lap7[:7], 7, "PIA", QATAR_TRACK) == base
 
 
 def test_qatar_engine_box():
@@ -59,7 +66,7 @@ def test_contract_keys():
         assert set(dec["ground_truth"]) == {"correct", "swing_s"}
         assert {f["lap"] for f in frames} == set(range(1, len(frames) + 1))
         for d in frames[0]["drivers"]:
-            assert set(d) == {"code", "number", "team", "position", "gap_to_leader_s", "compound", "tyre_age", "pitted_this_lap"}
+            assert set(d) == {"code", "number", "team", "team_colour", "position", "gap_to_leader_s", "compound", "tyre_age", "pitted_this_lap"}
 
 
 if __name__ == "__main__":

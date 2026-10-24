@@ -57,7 +57,7 @@ export function Tyre({ compound, age, size = "md", inverted = false }: { compoun
           {l}
         </span>
       ) : (
-        <span className={`inline-flex ${dim} items-center justify-center ${inverted ? "" : "text-ink-3"}`}>–</span>
+        <span className={`inline-flex ${dim}`} aria-hidden />
       )}
       <span className="nums w-6 text-right">{age ?? ""}</span>
     </span>
@@ -88,10 +88,20 @@ export function BadgeTags({ badges, size = "md", inverted = false }: { badges: B
     size === "md"
       ? "min-h-10 px-3 py-1 text-20 stretch-112 tracking-label"
       : "h-6 whitespace-nowrap px-2 text-14 stretch-75";
+  const tag = `inline-flex items-center font-semibold uppercase leading-row ${inverted ? "bg-bg text-ink" : "bg-ink text-bg"} ${cls}`;
+  // Tower rows have room for one badge: show the first plus a count of the rest.
+  if (size === "sm") {
+    return (
+      <span className="flex gap-2" aria-label={list.join(", ")}>
+        <span className={tag}>{list[0]}</span>
+        {list.length > 1 && <span className={`${tag} nums`}>+{list.length - 1}</span>}
+      </span>
+    );
+  }
   return (
-    <span className={`flex gap-2 ${size === "md" ? "flex-wrap" : "flex-nowrap overflow-hidden"}`}>
+    <span className="flex flex-wrap gap-2">
       {list.map((b) => (
-        <span key={b} className={`inline-flex items-center font-semibold uppercase leading-row ${inverted ? "bg-bg text-ink" : "bg-ink text-bg"} ${cls}`}>
+        <span key={b} className={tag}>
           {b}
         </span>
       ))}

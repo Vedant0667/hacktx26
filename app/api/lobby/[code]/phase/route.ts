@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { advancePhase, getLobbyMeta, getLobbyState, PHASES } from "@/lib/db";
 import { handle, HttpError, normalizeCode, readBody } from "../../../_lib/http";
+import { redactForPhase } from "../../../_lib/redact";
 
 const Body = z.object({ phase: z.enum(["waiting", "replay", "decision", "reveal", "done"]) });
 
@@ -20,5 +21,5 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
       throw new HttpError(409, "Phase changed concurrently, refetch the lobby");
     }
   }
-  return Response.json(await getLobbyState(code));
+  return Response.json(redactForPhase((await getLobbyState(code))!));
 });

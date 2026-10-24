@@ -34,7 +34,7 @@ export const COPY = {
     createFailed: "Couldn't create the lobby. Try again.", // added
     decisionLabel: "Race moment", // added
     joinLabel: "Room code",
-    join: "Join",
+    join: "Join lobby", // docs/06 3.1 button; verb plus object
     nameMissing: "Enter a name.",
     codeMissing: "Enter a room code.",
     codeNotFound: (code: string) => `No lobby with code ${code}.`,

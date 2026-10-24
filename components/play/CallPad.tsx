@@ -131,9 +131,11 @@ export function CallPad({
   };
 
   const countdown = (
-    <div className="on-yellow relative flex h-24 items-center justify-between bg-flag-yellow px-4 text-bg">
-      <span className="text-24 font-extrabold uppercase stretch-125 leading-hero">{decision.trigger} · L{decision.lap}</span>
-      <span className={`nums text-72 font-extrabold stretch-125 leading-hero ${left <= 5 ? "text-flag-red" : ""}`} aria-live="polite">
+    <div
+      className={`relative flex h-24 items-center justify-between gap-6 px-4 text-bg transition-colors duration-200 ${left <= 5 ? "bg-flag-red" : "on-yellow bg-flag-yellow"}`}
+    >
+      <span className="nums text-24 font-extrabold uppercase stretch-125 leading-hero">{decision.trigger} · L{decision.lap}</span>
+      <span className="nums w-[120px] shrink-0 text-right text-72 font-extrabold stretch-125 leading-hero" aria-live="polite">
         {left}
       </span>
       <span
@@ -152,7 +154,7 @@ export function CallPad({
           {locked?.call ? COPY.freeze.locked(locked.call, locked.t) : locked ? COPY.freeze.noCall : COPY.freeze.timeUp}
         </p>
         {why && <q className="text-20 text-ink-2">{why}</q>}
-        <p className="text-20 text-ink-2">{left === 0 ? COPY.freeze.timeUp : COPY.freeze.waitingOn(waitingOn)}</p>
+        <p className="nums text-20 text-ink-2">{left === 0 ? COPY.freeze.timeUp : COPY.freeze.waitingOn(waitingOn)}</p>
       </section>
     );
   }

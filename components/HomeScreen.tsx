@@ -126,7 +126,7 @@ export function HomeScreen({ index }: { index: DecisionIndexEntry[] }) {
           <div className="flex gap-2">
             <input
               id="room-code"
-              className={`${inputCls} nums h-[72px] text-40 font-extrabold uppercase stretch-125 tracking-code`}
+              className={`${inputCls} nums h-[72px] min-w-0 text-40 font-extrabold uppercase stretch-125 tracking-code`}
               value={code}
               maxLength={4}
               autoCapitalize="characters"
@@ -137,7 +137,7 @@ export function HomeScreen({ index }: { index: DecisionIndexEntry[] }) {
               aria-invalid={!!joinErr || undefined}
               aria-describedby={joinErr ? "join-err" : undefined}
             />
-            <Button type="submit" className="h-[72px] text-20" busy={busy === "join"}>
+            <Button type="submit" className="h-[72px] shrink-0 text-20" busy={busy === "join"}>
               {COPY.home.join}
             </Button>
           </div>

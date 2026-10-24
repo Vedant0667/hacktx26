@@ -36,6 +36,14 @@ DECISIONS = [
 COHORT_AGE_BAND = 7  # ground-truth cohort: cars whose tyre age is within +/-7 laps of the player's
 
 
+
+# Swatch colours for the timing tower (data markers only, never livery artwork). Keyed by Jolpica constructor name.
+TEAM_COLOURS = {
+    "McLaren": "#FF8000", "Red Bull": "#3671C6", "Ferrari": "#E8002D", "Mercedes": "#27F4D2",
+    "Aston Martin": "#229971", "Alpine F1 Team": "#0093CC", "Williams": "#64C4FF", "RB F1 Team": "#6692FF",
+    "Sauber": "#52E252", "Audi": "#BB0A30", "Haas F1 Team": "#B6BABD", "Cadillac F1 Team": "#C9A75D",
+}
+
 def secs(t):
     if ":" in t:
         m, s = t.split(":")
@@ -297,8 +305,9 @@ def main():
         d.mkdir(parents=True, exist_ok=True)
         (d / "decision.json").write_text(json.dumps(decision, indent=1))
         clean = [{"lap": f["lap"], "track_status": f["track_status"],
-                  "drivers": [{k: r[k] for k in ("code", "number", "team", "position", "gap_to_leader_s",
-                                                 "compound", "tyre_age", "pitted_this_lap")} for r in f["drivers"]]}
+                  "drivers": [{**{k: r[k] for k in ("code", "number", "team", "position", "gap_to_leader_s",
+                                                    "compound", "tyre_age", "pitted_this_lap")},
+                               "team_colour": TEAM_COLOURS.get(r["team"])} for r in f["drivers"]]}
                  for f in frames]
         (d / "frames.json").write_text(json.dumps(clean, separators=(",", ":")))
         (d / "ground_truth.json").write_text(json.dumps({"seconds": tg, "positions_reference": gt,

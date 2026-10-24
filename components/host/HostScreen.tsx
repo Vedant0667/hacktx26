@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { COPY } from "@/lib/copy";
 import { data } from "@/lib/client/api";
 import { noopSubscribe, rememberHost } from "@/lib/client/identity";
-import { CALL_WINDOW_S, contextAt, frameAt, raceControl, replayDoneMs, replayLap, tla } from "@/lib/client/race";
+import { CALL_WINDOW_S, callMomentFrames, contextAt, frameAt, raceControl, replayDoneMs, replayLap, tla } from "@/lib/client/race";
 import { useLobby, useTicker } from "@/lib/client/useLobby";
 import type { DecisionPoint, LapFrame } from "@/lib/types";
 import { QrCode } from "../QrCode";
@@ -175,10 +175,11 @@ function RaceView({
   submitted: Set<string>;
   onAdvance: () => void;
 }) {
-  const frame = frameAt(frames, lap);
+  const seen = callMomentFrames(frames, decision);
+  const frame = frameAt(seen, lap);
   const total = frames[frames.length - 1]?.lap ?? lap;
-  const msgs = raceControl(frames, lap, decision.replay_from_lap).slice(0, 8);
-  const ctx = contextAt(decision, frames);
+  const msgs = raceControl(seen, lap, decision.replay_from_lap).slice(0, 8);
+  const ctx = contextAt(decision, seen);
   const left = Math.max(0, Math.ceil(CALL_WINDOW_S - elapsed / 1000));
   const r = decision.player_role;
 
@@ -220,11 +221,16 @@ function RaceView({
           </>
         ) : (
           <>
-            <div className="on-yellow wipe-in relative z-20 flex h-[120px] items-center justify-between bg-flag-yellow px-6 text-bg">
-              <span className={`whitespace-nowrap font-extrabold uppercase tracking-hero leading-hero ${decision.trigger === "VSC" ? "text-40 stretch-62" : "text-56 stretch-100"}`}>
+            {/* At 5 s and below the banner turns red; numerals stay bg (4.7:1), docs/06 flag-red rule. */}
+            <div
+              className={`wipe-in relative z-20 flex h-[120px] items-center gap-6 px-6 text-bg transition-colors duration-200 ${left <= 5 ? "bg-flag-red" : "on-yellow bg-flag-yellow"}`}
+            >
+              <span
+                className={`min-w-0 flex-1 whitespace-nowrap font-extrabold uppercase tracking-hero leading-hero ${decision.trigger === "VSC" ? "text-40 stretch-62" : "text-56 stretch-75"}`}
+              >
                 {COPY.freeze.bannerShort(decision.trigger, decision.lap)}
               </span>
-              <span className={`nums text-96 font-extrabold stretch-125 leading-hero ${left <= 5 ? "text-flag-red" : ""}`} aria-live="polite">
+              <span className="nums w-[168px] shrink-0 text-right text-96 font-extrabold stretch-125 leading-hero" aria-live="polite">
                 {left}
               </span>
               <span
@@ -245,7 +251,7 @@ function RaceView({
                 })}
               </p>
             )}
-            <p className="text-24 font-semibold">{left === 0 ? COPY.freeze.timeUp : COPY.freeze.waitingOn(Math.max(0, players.length - submitted.size))}</p>
+            <p className="nums text-24 font-semibold">{left === 0 ? COPY.freeze.timeUp : COPY.freeze.waitingOn(Math.max(0, players.length - submitted.size))}</p>
             <div className="mt-auto flex flex-col gap-4">
               <LobbyStrip players={players} submitted={submitted} />
               <Button variant="secondary" className="h-14 self-start text-20" onClick={onAdvance}>

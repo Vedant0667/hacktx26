@@ -102,65 +102,71 @@ export function HostReveal({
 
   if (step === 3) return <Verdict decision={decision} lobby={lobby} lb={lb} camps={camps} onNext={onNext} />;
 
+  const header = (
+    <div className="flex items-end justify-between gap-6">
+      <span className="text-24 font-semibold">{COPY.reveal.heading(decision.lap)}</span>
+      <span className="nums shrink-0 whitespace-nowrap text-72 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.replay.lap(lap, total)}</span>
+    </div>
+  );
+
+  // Step 1: the lobby's calls get the whole screen (docs/06 3.4: the biggest social moment). The tower returns at step 2.
+  if (step === 0) {
+    const cols = Math.min(players.length, 6) || 1;
+    const quoteCls = cols > 4 ? "text-24" : "text-32";
+    return (
+      <main className="flex h-dvh flex-col gap-6 overflow-hidden p-12">
+        <span className="text-24 font-semibold">{COPY.reveal.heading(decision.lap)}</span>
+        <h2 className="nums text-40 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.reveal.split(box, stay)}</h2>
+        <ol className="grid min-h-0 content-start gap-0.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
+          {players.map((p, i) => (
+            <li key={p.name} className="row-in flex min-h-0 flex-col gap-4 bg-surface p-6" style={{ animationDelay: `${i * 600}ms` }}>
+              <span className="text-40 font-bold uppercase stretch-75 leading-hero">{tla(p.name)}</span>
+              <CallWord call={p.sub?.call ?? null} className={`text-56 stretch-75! ${p.sub?.call ? "" : "text-ink-3"}`} />
+              {p.sub?.transcript ? <q className={`line-clamp-6 ${quoteCls} leading-body text-ink`}>{p.sub.transcript}</q> : null}
+            </li>
+          ))}
+        </ol>
+      </main>
+    );
+  }
+
   return (
     <main className="grid h-dvh grid-cols-[minmax(420px,5fr)_7fr] gap-12 overflow-hidden p-12">
       <section className="min-h-0">
         {frame && <Tower drivers={frame.drivers} playerNumber={decision.player_role.number} dim={step < 2} pitTags={step >= 2 ? pitTags : undefined} />}
       </section>
       <section className="flex min-h-0 flex-col gap-6">
-        <div className="flex items-end justify-between gap-6">
-          <span className="text-24 font-semibold">{COPY.reveal.heading(decision.lap)}</span>
-          <span className="nums shrink-0 whitespace-nowrap text-72 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.replay.lap(lap, total)}</span>
-        </div>
+        {header}
 
-        {step === 0 ? (
-          <>
-            <h2 className="nums text-40 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.reveal.split(box, stay)}</h2>
-            <ol className="grid min-h-0 content-start gap-0.5" style={{ gridTemplateColumns: `repeat(${Math.min(players.length, 6) || 1}, minmax(0, 1fr))` }}>
-              {players.map((p, i) => (
-                <li key={p.name} className="row-in flex min-h-0 flex-col gap-3 bg-surface p-4" style={{ animationDelay: `${i * 120}ms` }}>
-                  <span className="text-40 font-bold uppercase stretch-75 leading-hero">{tla(p.name)}</span>
-                  <CallWord call={p.sub?.call ?? null} className={`${players.length > 4 ? "text-40" : "text-56"} stretch-75! ${p.sub?.call ? "" : "text-ink-3"}`} />
-                  {p.sub?.transcript ? (
-                    <q className="line-clamp-3 text-24 leading-body text-ink">{p.sub.transcript}</q>
-                  ) : null}
-                </li>
-              ))}
-            </ol>
-          </>
-        ) : (
-          <>
-            <div className="row-in flex flex-col gap-4 bg-surface p-6">
-              <div className="flex flex-col gap-1">
-                <span className="text-56 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.reveal.teamRow(decision.player_role.team, team.call)}</span>
-                <span className="text-20 text-ink-2">{team.reasons[0] ?? COPY.empty.noRadio}</span>
-              </div>
-              <div className="row-in flex flex-col gap-1" style={{ animationDelay: "600ms" }}>
-                <span className="nums text-56 font-extrabold uppercase stretch-125 tracking-hero leading-hero text-engine">
-                  {COPY.reveal.engineRow(engine.call, Math.round(engine.confidence * 100))}
-                </span>
-                {engine.reasons.length ? (
-                  <ol className="flex list-decimal flex-col gap-1 pl-6 text-20 text-ink-2">
-                    {engine.reasons.map((r) => (
-                      <li key={r}>{r}</li>
-                    ))}
-                  </ol>
-                ) : (
-                  <span className="text-20 text-ink-2">{COPY.empty.noEngine}</span>
-                )}
-              </div>
-            </div>
-            <ol className="flex flex-wrap gap-0.5">
-              {players.map((p) => (
-                <li key={p.name} className="flex h-24 min-w-36 flex-col justify-center gap-1 bg-surface px-4">
-                  <span className="text-40 font-bold uppercase stretch-75 leading-hero">{tla(p.name)}</span>
-                  <CallWord call={p.sub?.call ?? null} className={`text-24 ${p.sub?.call ? "" : "text-ink-3"}`} />
-                </li>
-              ))}
-            </ol>
-            {step === 2 && <p className="text-24 text-ink-2">{COPY.reveal.outcome[decision.id] ?? ""}</p>}
-          </>
-        )}
+        <div className="row-in flex flex-col gap-4 bg-surface p-6">
+          <div className="flex flex-col gap-1">
+            <span className="text-56 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.reveal.teamRow(decision.player_role.team, team.call)}</span>
+            <span className="text-20 text-ink-2">{team.reasons[0] ?? COPY.empty.noRadio}</span>
+          </div>
+          <div className="row-in flex flex-col gap-1" style={{ animationDelay: "600ms" }}>
+            <span className="nums text-56 font-extrabold uppercase stretch-125 tracking-hero leading-hero text-engine">
+              {COPY.reveal.engineRow(engine.call, Math.round(engine.confidence * 100))}
+            </span>
+            {engine.reasons.length ? (
+              <ol className="flex list-decimal flex-col gap-1 pl-6 text-20 text-ink-2">
+                {engine.reasons.map((r) => (
+                  <li key={r}>{r}</li>
+                ))}
+              </ol>
+            ) : (
+              <span className="text-20 text-ink-2">{COPY.empty.noEngine}</span>
+            )}
+          </div>
+        </div>
+        <ol className="flex flex-wrap gap-0.5">
+          {players.map((p) => (
+            <li key={p.name} className="flex h-24 min-w-36 flex-col justify-center gap-1 bg-surface px-4">
+              <span className="text-40 font-bold uppercase stretch-75 leading-hero">{tla(p.name)}</span>
+              <CallWord call={p.sub?.call ?? null} className={`text-24 ${p.sub?.call ? "" : "text-ink-3"}`} />
+            </li>
+          ))}
+        </ol>
+        {step === 2 && <p className="text-24 text-ink-2">{COPY.reveal.outcome[decision.id] ?? ""}</p>}
       </section>
     </main>
   );
@@ -195,7 +201,7 @@ function Verdict({
   const subs = [...lobby.submissions].sort((a, b) => b.total - a.total || a.seconds_to_call - b.seconds_to_call);
   const factors = decision.factors;
   const rowH = subs.length > 5 ? "h-10" : "h-14";
-  const cols = `minmax(120px,1.2fr) 200px repeat(${factors.length}, minmax(72px,0.8fr)) 56px 104px`;
+  const cols = `minmax(120px,1.2fr) 248px repeat(${factors.length}, minmax(64px,0.8fr)) 56px 104px`;
 
   const best = subs.filter((s) => s.factors_named.length > 0);
   const bestK = best.length ? Math.max(...best.map((s) => s.factors_named.length)) : 0;
@@ -214,18 +220,22 @@ function Verdict({
 
   return (
     <main className="flex h-dvh flex-col gap-4 overflow-hidden p-12">
-      <div className="flex h-[160px] shrink-0 items-center justify-between gap-6 bg-surface px-6">
-        <h1 className="whitespace-nowrap text-96 font-extrabold uppercase stretch-112 tracking-hero leading-hero">{COPY.reveal.verdict(correct)}</h1>
-        <span className="nums whitespace-nowrap text-72 font-extrabold stretch-100 leading-hero text-flag-green">
-          +{decision.ground_truth.swing_s.toFixed(1)} s
-        </span>
+      <div className="flex shrink-0 flex-col gap-4 bg-surface px-6 py-6">
+        <h1 className={`whitespace-nowrap text-96 font-extrabold uppercase tracking-hero leading-hero ${correct === "STAY" ? "stretch-75" : "stretch-112"}`}>
+          {COPY.reveal.verdict(correct)}
+        </h1>
+        <div className="flex items-center gap-6">
+          <span className="nums shrink-0 whitespace-nowrap text-72 font-extrabold stretch-100 leading-hero text-flag-green">
+            +{decision.ground_truth.swing_s.toFixed(1)} s
+          </span>
+          <p className="min-w-0 text-24 text-ink-2">
+            {COPY.reveal.swing(correct, decision.ground_truth.swing_s, decision.reveal_to_lap)} {COPY.reveal.outcome[decision.id] ?? ""}
+          </p>
+        </div>
       </div>
-      <p className="text-24 text-ink-2">
-        {COPY.reveal.swing(correct, decision.ground_truth.swing_s, decision.reveal_to_lap)} {COPY.reveal.outcome[decision.id] ?? ""}
-      </p>
 
       <div className="grid min-h-0 flex-1 grid-cols-12 gap-8">
-        <section className="col-span-8 flex min-h-0 flex-col gap-4">
+        <section className="col-span-9 flex min-h-0 flex-col gap-4">
           <div role="table" className="flex flex-col gap-0.5">
             <div role="row" className="grid min-h-8 items-end gap-x-4 px-4 pb-1 text-14 font-semibold uppercase tracking-label text-ink-3" style={{ gridTemplateColumns: cols }}>
               <span role="columnheader">{COPY.reveal.who}</span>
@@ -249,9 +259,9 @@ function Verdict({
                   {r.label}
                 </span>
                 <span role="cell" className="flex items-baseline gap-3 whitespace-nowrap">
-                  <CallWord call={r.call} className={`text-32 stretch-100! ${r.call === correct ? "text-ink" : "text-ink-2"}`} />
+                  <CallWord call={r.call} className={`text-32 stretch-75! ${r.call === correct ? "text-ink" : "text-ink-2"}`} />
                   {r.call === correct && (
-                    <span className={`text-16 font-semibold uppercase tracking-label ${r.kind === "engine" ? "text-ink" : "text-flag-green"}`}>{COPY.reveal.right}</span>
+                    <span className={`text-32 font-extrabold uppercase stretch-75 leading-hero ${r.kind === "engine" ? "text-ink" : "text-flag-green"}`}>{COPY.reveal.right}</span>
                   )}
                 </span>
                 <FactorDots named={r.named} factors={factors} onDeep={r.kind === "engine"} />
@@ -272,7 +282,7 @@ function Verdict({
           ))}
         </section>
 
-        <section className="col-span-4 flex min-h-0 flex-col gap-3 overflow-hidden">
+        <section className="col-span-3 flex min-h-0 flex-col gap-3 overflow-hidden">
           <Label>{COPY.reveal.camps}</Label>
           {camps && camps.camps.length > 0 ? (
             <ol className="flex flex-col gap-0.5">

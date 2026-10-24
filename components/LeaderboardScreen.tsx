@@ -11,6 +11,7 @@ import { CallWord } from "./ui";
 
 const BIN = 10;
 const TOP = 20;
+const LABEL_ROW = 18;
 
 export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
   const [active, setActive] = useState(index[0]?.id ?? "");
@@ -89,8 +90,9 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
       {lb && entry && (
         <>
           {/* Distribution strip: totals 0 to 150 in 10-point bins, with team, engine and you marked. */}
-          <div className="relative h-[120px] overflow-hidden pt-8">
-            <div className="flex h-full items-end gap-0.5">
+          {/* Labels sit in their own strip above the bars (one 18 px row per marker); only the 2 px lines cross the bars. */}
+          <div className="relative" style={{ paddingTop: markers.length * LABEL_ROW + 4 }}>
+            <div className="flex h-[120px] items-end gap-0.5">
               {bins.map((n, i) => (
                 <div key={i} className="flex-1 bg-ink-3" style={{ height: `${(n / peak) * 100}%`, minHeight: n ? 2 : 0 }} />
               ))}
@@ -100,10 +102,10 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
               const [line, text] = m.cls.split(" ");
               return (
                 <div key={m.key} className="absolute bottom-0 top-0" style={{ left: `${frac * 100}%` }}>
-                  <div className={`absolute bottom-0 w-0.5 ${line}`} style={{ top: i * 18 + 10 }} />
+                  <div className={`absolute bottom-0 w-0.5 ${line}`} style={{ top: i * LABEL_ROW + 8 }} />
                   <span
-                    className={`absolute whitespace-nowrap text-14 font-semibold uppercase tracking-label ${text}`}
-                    style={{ top: i * 18, ...(frac > 0.6 ? { right: 6 } : { left: 6 }) }}
+                    className={`absolute whitespace-nowrap text-14 font-semibold uppercase leading-none tracking-label ${text}`}
+                    style={{ top: i * LABEL_ROW, ...(frac > 0.6 ? { right: 6 } : { left: 6 }) }}
                   >
                     {m.label} <span className="nums">{m.total}</span>
                   </span>
@@ -111,7 +113,7 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
               );
             })}
           </div>
-          <div className="nums -mt-4 flex justify-between text-14 text-ink-3" style={{ paddingRight: `${(BIN / (MAX_TOTAL + BIN)) * 100}%` }}>
+          <div className="nums flex justify-between text-14 text-ink-3" style={{ paddingRight: `${(BIN / (MAX_TOTAL + BIN)) * 100}%` }}>
             {[0, 50, 100, 150].map((v) => (
               <span key={v}>{v}</span>
             ))}
@@ -138,7 +140,9 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
   );
 }
 
-const COLS = "grid-cols-[56px_72px_minmax(120px,1fr)_160px_120px_72px_96px_112px]";
+// Phone shows rank, code, call, score; md and up adds name, factors, time and percentile.
+const COLS = "grid-cols-[36px_72px_1fr_48px] md:grid-cols-[56px_72px_minmax(120px,1fr)_160px_120px_72px_96px_112px]";
+const WIDE = "hidden md:block";
 
 function Table({
   rows,
@@ -158,35 +162,35 @@ function Table({
     <div
       role="row"
       key={`${r.kind}-${r.name}-${r.lobby_code}`}
-      className={`grid ${COLS} h-9 items-center gap-x-4 px-4 text-20 ${inverted ? "bg-ink text-bg" : r.kind === "engine" ? "bg-engine-deep" : "bg-surface"}`}
+      className={`grid ${COLS} h-9 items-center gap-x-3 px-4 text-20 md:gap-x-4 ${inverted ? "bg-ink text-bg" : r.kind === "engine" ? "bg-engine-deep" : "bg-surface"}`}
     >
       <span role="cell" className="nums text-right font-semibold">{shownRank ?? ""}</span>
       <span role="cell" className="font-bold uppercase stretch-75">{r.kind === "player" ? tla(r.name) : r.kind === "engine" ? COPY.reveal.engine : COPY.reveal.team}</span>
-      <span role="cell" className="truncate">{r.kind === "team" ? COPY.leaderboard.teamRow(r.name) : r.kind === "engine" ? "" : r.name}</span>
-      <span role="cell"><CallWord call={r.call} className="text-20" /></span>
-      <span role="cell" className="flex gap-2" aria-label={r.factors_named.map(factorLabel).join(", ")}>
+      <span role="cell" className={`truncate ${WIDE}`}>{r.kind === "team" ? COPY.leaderboard.teamRow(r.name) : r.kind === "engine" ? "" : r.name}</span>
+      <span role="cell" className="whitespace-nowrap"><CallWord call={r.call} className="text-20" /></span>
+      <span role="cell" className="hidden gap-2 md:flex" aria-label={r.factors_named.map(factorLabel).join(", ")}>
         {factors.map((f) => (
           <span key={f} className={r.factors_named.includes(f) || r.kind === "engine" || inverted ? "" : "text-ink-3"}>
             {r.factors_named.includes(f) ? COPY.reveal.named : COPY.reveal.notNamed}
           </span>
         ))}
       </span>
-      <span role="cell" className="nums text-right">{r.seconds_to_call != null ? fmtSeconds(r.seconds_to_call) : ""}</span>
+      <span role="cell" className={`nums text-right ${WIDE}`}>{r.seconds_to_call != null ? fmtSeconds(r.seconds_to_call) : ""}</span>
       <span role="cell" className="nums text-right font-semibold">{r.total}</span>
-      <span role="cell" className="nums text-right">{r.percentile}%</span>
+      <span role="cell" className={`nums text-right ${WIDE}`}>{r.percentile}%</span>
     </div>
   );
   return (
-    <div role="table" className="flex flex-col gap-0.5 overflow-x-auto">
-      <div role="row" className={`grid ${COLS} h-8 items-center gap-x-4 px-4 text-14 font-semibold uppercase tracking-label text-ink-3`}>
+    <div role="table" className="flex flex-col gap-0.5">
+      <div role="row" className={`grid ${COLS} h-8 items-center gap-x-3 px-4 text-14 md:gap-x-4 font-semibold uppercase tracking-label text-ink-3`}>
         <span role="columnheader" className="text-right">{COPY.leaderboard.columns.rank}</span>
         <span role="columnheader" />
-        <span role="columnheader">{COPY.leaderboard.columns.player}</span>
+        <span role="columnheader" className={WIDE}>{COPY.leaderboard.columns.player}</span>
         <span role="columnheader">{COPY.leaderboard.columns.call}</span>
-        <span role="columnheader">{COPY.leaderboard.columns.factors}</span>
-        <span role="columnheader" className="text-right">{COPY.leaderboard.columns.time}</span>
+        <span role="columnheader" className={WIDE}>{COPY.leaderboard.columns.factors}</span>
+        <span role="columnheader" className={`text-right ${WIDE}`}>{COPY.leaderboard.columns.time}</span>
         <span role="columnheader" className="text-right">{COPY.leaderboard.columns.score}</span>
-        <span role="columnheader" className="text-right">{COPY.leaderboard.columns.pct}</span>
+        <span role="columnheader" className={`text-right ${WIDE}`}>{COPY.leaderboard.columns.pct}</span>
       </div>
       {rows.map((r) => {
         if (r.kind === "player") rank++;

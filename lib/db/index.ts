@@ -42,14 +42,11 @@ function isPgError(err: unknown, code: string): boolean {
 }
 
 // Returns false if the code is already taken (caller retries with a new code).
-export async function createLobby(code: string, decisionId: string, hostName: string): Promise<boolean> {
+// The host runs the shared screen and is not a player; players join from their phones.
+export async function createLobby(code: string, decisionId: string): Promise<boolean> {
   const rows = await query<{ code: string }>(
-    `with l as (
-       insert into lobbies (code, decision_id) values ($1, $2)
-       on conflict (code) do nothing returning code
-     )
-     insert into players (lobby_code, name) select code, $3 from l returning lobby_code as code`,
-    [code, decisionId, hostName],
+    `insert into lobbies (code, decision_id) values ($1, $2) on conflict (code) do nothing returning code`,
+    [code, decisionId],
   );
   return rows.length === 1;
 }
@@ -89,9 +86,10 @@ export async function addPlayer(code: string, name: string): Promise<"ok" | "tak
 export async function getLobbyMeta(
   code: string,
   playerName?: string,
-): Promise<{ decision_id: string; phase: LobbyPhase; is_player: boolean } | null> {
-  const rows = await query<{ decision_id: string; phase: LobbyPhase; is_player: boolean }>(
+): Promise<{ decision_id: string; phase: LobbyPhase; is_player: boolean; phase_elapsed_s: number } | null> {
+  const rows = await query<{ decision_id: string; phase: LobbyPhase; is_player: boolean; phase_elapsed_s: number }>(
     `select l.decision_id, l.phase,
+       extract(epoch from now() - l.phase_started_at)::float8 as phase_elapsed_s,
        exists(select 1 from players p where p.lobby_code = l.code and p.name = $2) as is_player
      from lobbies l where l.code = $1`,
     [code, playerName ?? ""],
@@ -135,7 +133,7 @@ export async function insertSubmission(s: Submission): Promise<{ submission: Sub
 export async function getTotals(decisionId: string, lobbyCode: string): Promise<{ global: number[]; lobby: number[] }> {
   const rows = await query<{ global: number[]; lobby: number[] }>(
     `select
-       coalesce((select json_agg(total) from submissions where decision_id = $1), '[]'::json) as global,
+       coalesce((select json_agg(total) from submissions s where s.decision_id = $1 and exists (select 1 from lobbies l where l.code = s.lobby_code and l.phase in ('reveal','done'))), '[]'::json) as global,
        coalesce((select json_agg(total) from submissions where decision_id = $1 and lobby_code = $2), '[]'::json) as lobby`,
     [decisionId, lobbyCode],
   );
@@ -144,7 +142,7 @@ export async function getTotals(decisionId: string, lobbyCode: string): Promise<
 
 export async function getDecisionTotals(decisionId: string): Promise<number[]> {
   const rows = await query<{ totals: number[] }>(
-    `select coalesce(json_agg(total), '[]'::json) as totals from submissions where decision_id = $1`,
+    `select coalesce(json_agg(total), '[]'::json) as totals from submissions s where s.decision_id = $1 and exists (select 1 from lobbies l where l.code = s.lobby_code and l.phase in ('reveal','done'))`,
     [decisionId],
   );
   return rows[0].totals;
@@ -153,7 +151,7 @@ export async function getDecisionTotals(decisionId: string): Promise<number[]> {
 export async function topSubmissions(decisionId: string, limit = 50): Promise<Submission[]> {
   const rows = await query<{ row: Submission }>(
     `select ${SUBMISSION_JSON} as row from submissions s
-     where s.decision_id = $1 order by ${SUBMISSION_ORDER} limit $2`,
+     where s.decision_id = $1 and exists (select 1 from lobbies l where l.code = s.lobby_code and l.phase in ('reveal','done')) order by ${SUBMISSION_ORDER} limit $2`,
     [decisionId, limit],
   );
   return rows.map((r) => r.row);
