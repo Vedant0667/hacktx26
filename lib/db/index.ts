@@ -668,7 +668,7 @@ export async function saveSubmissionGrade(
   await query(
     `update submissions set score_reasoning = $4, total = $5, verdict = $6, credited = $7::jsonb, factors_named = $7::jsonb,
        graded_at = now()
-     where lobby_code = $1 and player_name = $2 and decision_id = $3`,
+     where lobby_code = $1 and player_name = $2 and decision_id = $3 and graded_at is null`,
     [code, player, decisionId, g.score_reasoning, g.total, g.verdict, JSON.stringify(g.credited)],
   );
 }
@@ -683,7 +683,7 @@ export async function saveRaceCallGrade(
   await query(
     `update race_calls set score_reasoning = $5, total = $6, verdict = $7, credited = $8::jsonb, factors_named = $8::jsonb,
        graded_at = now()
-     where lobby_code = $1 and player_name = $2 and kind = $3 and lap = $4`,
+     where lobby_code = $1 and player_name = $2 and kind = $3 and lap = $4 and graded_at is null`,
     [code, player, kind, lap, g.score_reasoning, g.total, g.verdict, JSON.stringify(g.credited)],
   );
 }

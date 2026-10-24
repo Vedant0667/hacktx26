@@ -6,7 +6,7 @@
 // fallback, and groundedIn / verdictGrounded keep Muse from crediting ideas that are not in the player's words.
 import { COPY } from "../copy";
 import type { Call } from "../types";
-import { REASONING_MAX } from "../scoring";
+import { FALLBACK_SLOPE, REASONING_FLOOR, REASONING_MAX } from "../scoring";
 
 export type FactorId = "tyre_age" | "cheap_stop_under_sc" | "cheap_stop_under_vsc" | "similar_cars_pitted" | "track_position";
 const KNOWN: FactorId[] = ["tyre_age", "cheap_stop_under_sc", "cheap_stop_under_vsc", "similar_cars_pitted", "track_position"];
@@ -139,6 +139,17 @@ export function isEmptyReason(transcript: string): boolean {
   return reasonWords(transcript).length === 0;
 }
 
+// Text aimed at the grader rather than at the race. It scores 0 and never gets the floor.
+const INJECTION = /\b(ignore (all |any )?(the )?(previous|prior|above|earlier) (instructions|rules)|system\s*:|you are (now )?|output (all|every)|credit (every|all)|give (me )?(50|full|max)|full (marks|points))\b/i;
+export function isInjection(transcript: string): boolean {
+  return INJECTION.test(transcript);
+}
+
+// No reason, or not a reason about the race: 0 with no Muse call. Anything else is a genuine attempt.
+export function isUngradeable(transcript: string): boolean {
+  return isEmptyReason(transcript) || isInjection(transcript);
+}
+
 // Ideas as players say them (fallback scorer). Each idea is credited at most once.
 const PIT_COST = /\b((sc|vsc|safety car|neutrali[sz]ed) stop|stop costs?\b[^.;]*\bgreen|green[- ]flag stop|stop is (shorter|quicker))\b/i;
 const CHEAP =
@@ -218,9 +229,10 @@ export interface Grade {
 
 // Deterministic fallback: full points for each idea the words state, capped at 50.
 export function rubricScore(rubric: Rubric, transcript: string): Grade {
-  if (isEmptyReason(transcript)) return { reasoning_score: 0, verdict: COPY.grade.empty, credited: [], source: "empty" };
+  if (isUngradeable(transcript)) return { reasoning_score: 0, verdict: COPY.grade.empty, credited: [], source: "empty" };
   const credited = ideasIn(rubric, transcript);
-  const score = Math.min(REASONING_MAX, rubric.points.filter((p) => credited.includes(p.id)).reduce((a, p) => a + p.max, 0));
+  const raw = Math.min(REASONING_MAX, rubric.points.filter((p) => credited.includes(p.id)).reduce((a, p) => a + p.max, 0));
+  const score = Math.round(REASONING_FLOOR + FALLBACK_SLOPE * raw);
   return { reasoning_score: score, verdict: verdictFor(rubric, credited), credited, source: "rubric" };
 }
 

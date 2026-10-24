@@ -30,7 +30,10 @@ the player's own words.
 - "credited_points": the ids you credited.
 - "reasoning_score": an integer. For each credited idea give up to its maximum: full points when it is stated
   clearly and supports the right call, about half when it is vague or argues for the other call. Sum them.
-  Nothing credited: 0.
+  This is a party game played by friends, not an exam: grade generously and casually. Gut feel, slang and
+  half-formed ideas count when they point at a real factor; no F1 vocabulary is needed. Any attempt at a reason
+  earns at least 5. Calibrate so typical reasons centre on about 25: one clear idea about 15-20, two ideas
+  about 25-30, three or more well argued about 35-40. Above 40 is almost never right, and never above 45.
 - "verdict": one plain sentence, at most 18 words, that explains the score: what the player named and the main
   idea they missed. Start with a verb, no subject ("Named stops owed and rivals pitting; missed the cheap SC stop.").
   Use no number that is not in the input. No praise, no advice, no second person.

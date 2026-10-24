@@ -21,6 +21,12 @@ export const STAKES_PER_SECOND = 5;
 export const CALL_WEIGHT = 0.37;
 export const REASONING_WEIGHT = 0.78;
 export const BASE_PENALTY = 0.15;
+// Reasoning scores centre on about 25. A party game: any attempt earns at least the floor (0 is only for no
+// reason, or text aimed at the grader); the cap keeps the top of the scale out of reach.
+export const REASONING_FLOOR = 5;
+export const REASONING_CAP = 45;
+// Keyword fallback curve: floor + 70% of the credited ideas' points (1 idea ~14, 2 ~23, 3 ~31, all 4 = 40).
+export const FALLBACK_SLOPE = 0.7;
 
 export function stakesFor(swingS: number | null | undefined): number {
   if (swingS == null || !Number.isFinite(swingS) || swingS <= 0) return 0;

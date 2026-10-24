@@ -155,6 +155,9 @@ export async function ensureMomentGraded(code: string, meta: LobbyMeta, ctx?: Mo
   if (meta.phase === "reveal" && meta.phase_elapsed_s < GRADE_AFTER_S) return { grading: true, ctx: c };
   if (!(await claimGrading(code, meta.decision_id))) return { grading: true, ctx: c };
   try {
+    // Re-read after winning the claim: a grader that just finished may already have graded these.
+    const fresh = await getLobbyState(code);
+    subs.splice(0, subs.length, ...(fresh?.submissions ?? []).filter((s) => !s.graded));
     const situation = c.decision.blind_title ?? `Lap ${c.decision.lap}. ${c.decision.trigger}.`;
     await Promise.all([
       ...subs.map(async (s) => {
@@ -277,7 +280,8 @@ const luckOf = (src: unknown): LuckFields => {
 function finish(base: Omit<GameSummary, "ranking" | "winners">, players: { name: string; driver_code: string | null }[]): GameSummary {
   const rows = new Map<string, Omit<RankRow, "rank" | "tied" | "rank_label">>();
   const key = (kind: string, name: string, car: string | null) => (kind === "player" ? `p:${name}` : `${kind}:${car}`);
-  for (const p of players) rows.set(key("player", p.name, null), { kind: "player", name: p.name, driver_code: p.driver_code, points: 0, calls: 0, right: 0 });
+  // Only players with a car (a call to make) get a row up front; watchers who joined late without a car don't.
+  for (const p of players) if (p.driver_code) rows.set(key("player", p.name, null), { kind: "player", name: p.name, driver_code: p.driver_code, points: 0, calls: 0, right: 0 });
   const add = (kind: RankRow["kind"], name: string, car: string | null, points: number, call: boolean, right: boolean | null) => {
     const k = key(kind, name, car);
     const r = rows.get(k) ?? { kind, name, driver_code: car, points: 0, calls: 0, right: 0 };
@@ -315,7 +319,8 @@ export async function momentSummary(code: string, meta: LobbyMeta): Promise<Game
     };
   });
   const subs = new Map((state?.submissions ?? []).map((s) => [s.player_name, s]));
-  const names = [...(state?.players ?? []).map((p) => p.name), ...(state?.submissions ?? []).map((s) => s.player_name)].filter((n, i, all) => all.indexOf(n) === i);
+  // Current players only: a player the host kicked doesn't come back through a stored call.
+  const names = (state?.players ?? []).map((p) => p.name);
   const entries: MomentEntry[] = names.map((name) => {
     const s = subs.get(name);
     const car = s?.driver_code ?? carOf(name);
@@ -386,6 +391,10 @@ export async function ensureRaceGraded(code: string, meta: LobbyMeta, race: Race
   if (!todo.length && !missing.length) return { grading: false };
   if (!(await claimGrading(code, "race"))) return { grading: true };
   try {
+    // Re-read after winning the claim: a grader that just finished may already have graded these.
+    const fresh = await getRaceCalls(code);
+    const graded = new Set(fresh.filter((c) => c.graded).map((c) => `${c.player_name}:${c.kind}:${c.lap}`));
+    todo.splice(0, todo.length, ...todo.filter((c) => !graded.has(`${c.player_name}:${c.kind}:${c.lap}`)));
     await Promise.all([
       ...todo.map(async (c) => {
         let rubric: Rubric | null = null;
@@ -430,7 +439,6 @@ export async function raceSummary(code: string, meta: LobbyMeta, race: RaceEntry
   if (grading) return pending("race", race.name);
   const [calls, freezes, played, state] = await Promise.all([getRaceCalls(code), getRaceFreezes(race.race_key), getLobbyDriverCodes(code), getLobbyState(code)]);
   const players = (state?.players ?? []).map((p) => ({ name: p.name, driver_code: p.driver_code ?? state?.driver_code ?? null }));
-  for (const c of calls) if (!players.some((p) => p.name === c.player_name)) players.push({ name: c.player_name, driver_code: c.driver_code });
   const plan = meta.freeze_plan ?? [];
   const items = plan.flatMap((e) =>
     played.filter((car) => e.drivers.includes(car)).map((car) => ({ car, freeze: freezes.find((x) => x.lap === e.lap && x.driver_code === car) })),

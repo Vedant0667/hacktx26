@@ -114,7 +114,7 @@ async function main() {
   await test("fallback scorer: the playtest reason and other synonyms", () => {
     const owed = rubricScore(qatar, "box we'll need to pit once more anyway");
     assert.deepEqual(owed.credited, ["tyre_age"], "stops still owed");
-    assert.equal(owed.reasoning_score, 15);
+    assert.equal(owed.reasoning_score, 16, "one clear idea lands mid-teens");
     assert.equal(owed.verdict, "Named stops owed; missed the cheap SC stop.");
     for (const [said, id] of [
       ["box, we need another stop", "tyre_age"],
@@ -128,9 +128,9 @@ async function main() {
       assert.ok(rubricScore(qatar, said).credited.includes(id), `${said} -> ${id}`);
     }
     const all = rubricScore(qatar, "box, tyres won't last, cheap stop under the SC, everyone's pitting and we keep track position");
-    assert.equal(all.reasoning_score, 50);
+    assert.equal(all.reasoning_score, 40, "the keyword fallback tops out at 40");
     assert.equal(all.verdict, "Named every idea that decided this call.");
-    assert.equal(rubricScore(qatar, "box because I like the colour blue").reasoning_score, 0);
+    assert.equal(rubricScore(qatar, "box because I like the colour blue").reasoning_score, 5, "any attempt earns the floor");
     // Naming the safety car alone is not the cheaper-stop idea.
     assert.ok(!rubricScore(qatar, "box under the safety car please").credited.includes("cheap_stop_under_sc"));
   });

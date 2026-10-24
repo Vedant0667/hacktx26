@@ -1,3 +1,4 @@
+import { REASONING_CAP, REASONING_FLOOR } from "../scoring";
 // Reasoning grades (Round 7). Muse Spark (muse-spark-1.3) scores a reason 0–50 against the decision's rubric
 // with a one-line verdict; rubricScore (lib/muse/rubric.ts) is the deterministic fallback whenever Muse is off,
 // over budget, fails, or twice returns a grade that credits something the player did not say.
@@ -6,7 +7,7 @@ import { z } from "zod";
 import type { Call, ParsedCall } from "../types";
 import { museJson } from "./client";
 import { COPY_RULES_PROMPT, GRADE_TASK } from "./prompt";
-import { capFor, gradeProblems, isEmptyReason, rubricScore, type Grade, type Rubric } from "./rubric";
+import { capFor, gradeProblems, isUngradeable, rubricScore, type Grade, type Rubric } from "./rubric";
 
 export * from "./rubric";
 
@@ -73,7 +74,7 @@ export type AskMuse = (rubric: Rubric, call: Call | null, said: string, ctx: Gra
 
 export async function gradeReason(rubric: Rubric, call: Call | null, transcript: string, ctx: GradeContext, ask: AskMuse = askMuse): Promise<Grade> {
   const said = transcript.trim();
-  if (isEmptyReason(said) || rubric.points.length === 0) return rubricScore(rubric, said);
+  if (isUngradeable(said) || rubric.points.length === 0) return rubricScore(rubric, said);
   let note: string | null = null;
   for (let attempt = 0; attempt < 2; attempt++) {
     const out = await ask(rubric, call, said, ctx, note);
@@ -86,7 +87,7 @@ export async function gradeReason(rubric: Rubric, call: Call | null, transcript:
       note = problems.join("; ");
       continue;
     }
-    const score = Math.max(0, Math.min(Math.round(out.reasoning_score), capFor(rubric, credited)));
+    const score = Math.max(REASONING_FLOOR, Math.min(Math.round(out.reasoning_score), capFor(rubric, credited), REASONING_CAP));
     return { reasoning_score: score, verdict, credited, source: "muse" };
   }
   return rubricScore(rubric, said);
