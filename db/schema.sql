@@ -185,3 +185,24 @@ alter table lobbies add column if not exists driver_mode text not null default '
 alter table lobbies add column if not exists driver_code text;
 alter table players add column if not exists driver_code text;
 alter table submissions add column if not exists driver_code text;
+
+-- Round 5: "defend your call" duel. One pick per lobby and decision (at most one Muse call), never re-picked,
+-- so polling reads the cache and votes always refer to the same pair. duel: { source, pair, prompt }.
+create table if not exists muse_duels (
+  lobby_code text not null references lobbies(code) on delete cascade,
+  decision_id text not null,
+  status text not null default 'pending',
+  submitted int not null default 0,
+  duel jsonb,
+  updated_at timestamptz not null default now(),
+  primary key (lobby_code, decision_id)
+);
+
+create table if not exists duel_votes (
+  lobby_code text not null references lobbies(code) on delete cascade,
+  decision_id text not null,
+  player_name text not null,
+  choice int not null check (choice in (0, 1)),
+  created_at timestamptz not null default now(),
+  primary key (lobby_code, decision_id, player_name)
+);

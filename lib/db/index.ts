@@ -462,3 +462,96 @@ export async function saveMuseCamps(code: string, decisionId: string, camps: unk
     [code, decisionId, camps ? "done" : "failed", camps ? JSON.stringify(camps) : null],
   );
 }
+
+// ---- Round 5: "defend your call" duel (tables muse_duels, duel_votes) ----
+
+export interface DuelEntryRow {
+  name: string;
+  driver_code: string | null;
+  call: "BOX" | "STAY" | null;
+  reasons: string[];
+  transcript: string;
+}
+
+// This decision's calls in submission order (not score order), for the duel pick.
+export async function getDuelEntries(code: string, decisionId: string): Promise<DuelEntryRow[]> {
+  return query<DuelEntryRow>(
+    `select player_name as name, driver_code, call, reasons, transcript from submissions
+     where lobby_code = $1 and decision_id = $2 order by created_at, player_name`,
+    [code, decisionId],
+  );
+}
+
+export interface MuseDuelRow {
+  status: "pending" | "done";
+  submitted: number;
+  duel: unknown;
+}
+
+export async function getMuseDuel(code: string, decisionId: string): Promise<MuseDuelRow | null> {
+  const rows = await query<MuseDuelRow>(
+    `select status, submitted, duel from muse_duels where lobby_code = $1 and decision_id = $2`,
+    [code, decisionId],
+  );
+  return rows[0] ?? null;
+}
+
+// Claims the right to pick the duel. "new": first claim for this lobby and decision (the one Muse call);
+// "stale": a pending claim abandoned for over 30 s, taken over without a second Muse call; null: someone else holds it
+// or it is already done. A done row is never re-picked, so votes always refer to the same pair.
+export async function claimMuseDuel(code: string, decisionId: string, submitted: number): Promise<"new" | "stale" | null> {
+  const rows = await query<{ inserted: boolean }>(
+    `insert into muse_duels as m (lobby_code, decision_id, status, submitted) values ($1, $2, 'pending', $3)
+     on conflict (lobby_code, decision_id) do update set submitted = $3, updated_at = now()
+       where m.status = 'pending' and m.updated_at < now() - interval '30 seconds'
+     returning (xmax = 0) as inserted`,
+    [code, decisionId, submitted],
+  );
+  if (rows.length !== 1) return null;
+  return rows[0].inserted ? "new" : "stale";
+}
+
+export async function saveMuseDuel(code: string, decisionId: string, duel: unknown): Promise<void> {
+  await query(
+    `update muse_duels set status = 'done', duel = $3::jsonb, updated_at = now()
+     where lobby_code = $1 and decision_id = $2`,
+    [code, decisionId, JSON.stringify(duel)],
+  );
+}
+
+export interface DuelTally {
+  votes: [number, number];
+  my_vote: 0 | 1 | null;
+}
+
+export async function getDuelVotes(code: string, decisionId: string, playerName: string | null): Promise<DuelTally> {
+  const rows = await query<{ v0: number; v1: number; mine: number | null }>(
+    `select count(*) filter (where choice = 0)::int as v0, count(*) filter (where choice = 1)::int as v1,
+       (select choice from duel_votes where lobby_code = $1 and decision_id = $2 and player_name = $3) as mine
+     from duel_votes where lobby_code = $1 and decision_id = $2`,
+    [code, decisionId, playerName ?? ""],
+  );
+  const r = rows[0];
+  return { votes: [r?.v0 ?? 0, r?.v1 ?? 0], my_vote: r?.mine === 0 || r?.mine === 1 ? r.mine : null };
+}
+
+// One vote per player: the first one stands. Only counted once the duel has a pair.
+// null: there is no pair to vote on. duplicate: the player had already voted (their stored choice is in my_vote).
+export async function castDuelVote(
+  code: string,
+  decisionId: string,
+  playerName: string,
+  choice: 0 | 1,
+): Promise<(DuelTally & { duplicate: boolean }) | null> {
+  const inserted = await query(
+    `insert into duel_votes (lobby_code, decision_id, player_name, choice)
+     select $1, $2, $3, $4 where exists(
+       select 1 from muse_duels where lobby_code = $1 and decision_id = $2 and status = 'done'
+         and jsonb_typeof(duel->'pair') = 'array')
+     on conflict (lobby_code, decision_id, player_name) do nothing returning choice`,
+    [code, decisionId, playerName, choice],
+  );
+  const tally = await getDuelVotes(code, decisionId, playerName);
+  if (tally.my_vote === null) return null;
+  return { ...tally, duplicate: inserted.length === 0 };
+}

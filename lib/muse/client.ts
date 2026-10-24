@@ -50,6 +50,7 @@ export interface MuseRequest<T> {
   jsonSchema: Record<string, unknown>;
   validator: z.ZodType<T>;
   maxOutputTokens: number;
+  timeoutMs?: number; // default TIMEOUT_MS; the spend cap does not depend on it (the reservation is the worst case)
 }
 
 export async function museJson<T>(req: MuseRequest<T>): Promise<T | null> {
@@ -93,7 +94,7 @@ export async function museJson<T>(req: MuseRequest<T>): Promise<T | null> {
         reasoning: { effort: "minimal" },
         text: { format: { type: "json_schema", name: req.schemaName, strict: true, schema: req.jsonSchema } },
       }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal: AbortSignal.timeout(req.timeoutMs ?? TIMEOUT_MS),
     });
     const body = (await res.json().catch(() => null)) as {
       status?: string;

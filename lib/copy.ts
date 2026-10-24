@@ -379,6 +379,7 @@ export const COPY = {
     inRoom: (n: number) => `${n} in the room`,
     waitingHost: "Waiting for the host",
     now: "Now",
+    rateShort: (r: number) => `${r > 0 ? "▲" : "▼"}${Math.abs(r).toFixed(1)}/lap`,
     sideAhead: "ahead",
     sideBehind: "behind",
     gapAhead: (s: number) => `+${s.toFixed(1)} s`,
@@ -398,6 +399,7 @@ export const COPY = {
       `${code} just boxed${compound ? `, new ${compound.toLowerCase()}s` : ""}. Too early to read the pace: expect it to be very tight.`,
     ucEstimate: (code: string, v: number) =>
       `Estimate from gap and pit loss only: ${Math.abs(v).toFixed(1)} s ${v >= 0 ? "ahead of" : "behind"} ${code}.`,
+    ucEstimateTight: (code: string) => `Estimate from gap and pit loss only: about level with ${code}.`,
     ucStaysTight: (code: string) => `If you box and ${code} stays out: about level with ${code}.`,
     ucStays: (code: string, v: number) => `If you box and ${code} stays out: you come out ${Math.abs(v).toFixed(1)} s ${v >= 0 ? "ahead of" : "behind"} ${code}.`,
     ucGain: (g: number, n: number) => `New tyres have been worth about ${g.toFixed(1)} s a lap for the ${n} ${n === 1 ? "car" : "cars"} that stopped. An estimate.`,
@@ -431,6 +433,7 @@ export const COPY = {
     status: (trigger: "SC" | "VSC", lap: number, total: number) => `${trigger} · L${lap}/${total}`,
     boxNow: "Box now:",
     inLead: ", in the lead",
+    behindCar: (gap: number, code: string) => `, ${gap.toFixed(1)} s behind ${code}`,
     onTyres: (age: number, compound: string) => `on ${age}-lap ${compound.toLowerCase()}s`,
     lapTyres: (age: number, compound: string | null) => `${age}-lap ${compound ? `${compound.toLowerCase()}s` : "tyres"}`,
     stopCost: (under: number, normal: number) => `Stop costs ${under.toFixed(1)} s now, ${normal.toFixed(1)} s at green.`,
@@ -603,6 +606,7 @@ export const COPY = {
     modeLabel: "Drivers",
     loading: "Loading drivers",
   },
+  tyreLabel: (compound: string, age: number | null) => `${compound}${age != null ? `, ${age} laps` : ""}`, // added: tyre chip label
   cue: { mute: "Mute sound", unmute: "Sound on" },
   compounds: { SOFT: "Soft", MEDIUM: "Medium", HARD: "Hard", INTERMEDIATE: "Inter", WET: "Wet" } as Record<string, string>,
 } as const;

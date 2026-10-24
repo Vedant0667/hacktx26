@@ -9,7 +9,7 @@ import { ApiError, api, data, type BlindDriver, type DriverMode } from "@/lib/cl
 import { createErrorText, createLobby } from "@/lib/client/session";
 import type { DecisionIndexEntry } from "@/lib/types";
 import type { DriverFrame } from "@/lib/types";
-import { Button, ErrorText, Field, FieldLabel, TyreChip } from "./ui";
+import { Brand, Button, ErrorText, Field, FieldLabel, TyreChip } from "./ui";
 
 export function HomeScreen({ index }: { index: DecisionIndexEntry[] }) {
   const router = useRouter();
@@ -83,8 +83,13 @@ export function HomeScreen({ index }: { index: DecisionIndexEntry[] }) {
   return (
     <main className="mx-auto grid min-h-dvh w-full max-w-[1440px] grid-cols-4 content-start gap-x-4 pb-[max(24px,env(safe-area-inset-bottom))] md:grid-cols-12 md:gap-x-6 md:px-14 md:pb-12">
       <div className="meta col-span-4 flex h-13 items-center justify-between px-5 md:col-span-12 md:h-24 md:px-0 md:text-lg">
-        {/* Wordmark: plain text, never a logo. */}
-        <span className="font-sans text-lg font-black normal-case tracking-tight md:text-2xl">{COPY.home.title}</span>
+        {/* Wordmark in currentColor; its accessible name is the product name. */}
+        <span className="flex md:hidden">
+          <Brand kind="wordmark" height={22} />
+        </span>
+        <span className="hidden md:flex">
+          <Brand kind="wordmark" height={32} label={false} />
+        </span>
         <Link href="/leaderboard" className="underline decoration-2 underline-offset-4 hover:decoration-ink-3">
           {COPY.homeUi.leaderboardTitle}
         </Link>

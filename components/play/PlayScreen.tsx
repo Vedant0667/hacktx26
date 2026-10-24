@@ -15,7 +15,7 @@ import { useDataMode, type DataMode } from "@/lib/client/mode";
 import { fieldStyle, teamColourOf } from "@/lib/client/field";
 import type { LapFrame } from "@/lib/types";
 import { LapChart, NeighbourList, simpleChartLabel } from "../Telemetry";
-import { Check, ConnNotice, ErrorText, ModeToggle, ScChip, TrackStrip, TyreChip } from "../ui";
+import { Brand, Check, ConnNotice, ErrorText, ModeToggle, ScChip, TrackStrip, TyreChip } from "../ui";
 import { CallPad } from "./CallPad";
 import { PlayerResult } from "./PlayerResult";
 
@@ -26,10 +26,12 @@ export function PlayScreen({ code }: { code: string }) {
   const [joinedAs, setMe] = useState<string | null>(null);
   const me = joinedAs ?? stored;
   const token = useSyncExternalStore(noopSubscribe, () => (me ? recallPlayerToken(code, me) : null), () => null);
-  // This device holds a token for `me` but the name is gone from the lobby: the host removed it.
-  const kicked = !!lobby && !!me && !!token && !lobby.players.some((p) => p.name === me);
-  // Latched during render (React's "adjust state on change" pattern) so polling stops on the next pass.
-  if (kicked && !removed) setRemoved(true);
+  // Removed by the host: this device's name was in the lobby (seen once) and is now gone. Both flags are
+  // latched during render (React's "adjust state on change" pattern); polling stops once removed is set.
+  const inList = !!lobby && !!me && lobby.players.some((p) => p.name === me);
+  const [seenIn, setSeenIn] = useState(false);
+  if (inList && !!token && !seenIn) setSeenIn(true);
+  if (seenIn && !!lobby && !inList && !removed) setRemoved(true);
   const [decision, setDecision] = useState<BlindDecision | null>(null);
   const [frames, setFrames] = useState<LapFrame[] | null>(null);
   const [drivers, setDrivers] = useState<BlindDriver[] | null>(null);
@@ -53,10 +55,17 @@ export function PlayScreen({ code }: { code: string }) {
   }, [decisionId]);
 
   // Joined only with this device's token for the name (without it the server refuses submits).
-  const joined = !!me && !!(token || joinedAs) && !!lobby?.players.some((p) => p.name === me);
+  const joined = !!me && !!token && inList;
   // Everything driver-specific follows the player's own car (Round 4).
   const myCode = driverCodeOf(lobby, me);
-  const myDriver = drivers?.find((d) => d.code === myCode) ?? null;
+  // The picked car from the driver list; if the list failed, the same car rebuilt from the blind frames, so the
+  // screen never silently shows the default car to a player who drives another one.
+  const fromFrames = myCode && decision && frames ? frames[frames.length - 1]?.drivers.find((d) => d.code === myCode) : null;
+  const myDriver =
+    drivers?.find((d) => d.code === myCode) ??
+    (fromFrames && decision
+      ? { code: fromFrames.code, number: fromFrames.number, name: fromFrames.code, team: "", team_colour: fromFrames.team_colour, blind_title: decision.blind_title ?? "" }
+      : null);
   const mine = decision ? asDriver(decision, myDriver) : null;
   const team = mine ? (myDriver?.team_colour ?? teamColourOf(reveal?.frames ?? frames, mine.player_role.number)) : null;
   const myReveal = reveal ? revealFor(reveal, myCode) : null;
@@ -65,7 +74,7 @@ export function PlayScreen({ code }: { code: string }) {
     return (
       <main className="mx-auto flex min-h-dvh max-w-[480px] flex-col px-5">
         <header className="flex h-[52px] items-center">
-          <span className="meta text-[13px]">{COPY.name}</span>
+          <Brand kind="wordmark" height={16} />
         </header>
         <p role="alert" className="display mt-16 text-[2.5rem] leading-[0.95]">
           {COPY.error.removed}
@@ -76,7 +85,7 @@ export function PlayScreen({ code }: { code: string }) {
     return (
       <main className="mx-auto flex min-h-dvh max-w-[480px] flex-col px-5">
         <header className="flex h-[52px] items-center">
-          <span className="meta text-[13px]">{COPY.name}</span>
+          <Brand kind="wordmark" height={16} />
         </header>
         <p className="display mt-16 text-[2.5rem] leading-[0.95]">{COPY.home.codeNotFound(code)}</p>
       </main>
@@ -99,6 +108,7 @@ export function PlayScreen({ code }: { code: string }) {
           drivers={drivers}
           frames={frames}
           initialName={me ?? ""}
+          onRemoved={() => setRemoved(true)}
           onJoined={(name, state) => {
             setMe(name);
             apply(state, Date.now());
@@ -158,7 +168,10 @@ function FieldHead({ status, right, children }: { status: React.ReactNode; right
   return (
     <div className="bg-field text-on-field">
       <div className="flex h-[52px] items-center justify-between gap-3 px-5">
-        <span className="meta flex items-center gap-2 text-[13px]">{status}</span>
+        <span className="meta flex items-center gap-2.5 text-[13px]">
+          <Brand kind="mark" height={13} />
+          {status}
+        </span>
         <span className="meta text-[13px]">{right}</span>
       </div>
       <div className="px-5 pb-[22px] pt-[18px]">{children}</div>
@@ -281,6 +294,7 @@ function JoinForm({
   drivers,
   frames,
   initialName,
+  onRemoved,
   onJoined,
 }: {
   code: string;
@@ -289,6 +303,7 @@ function JoinForm({
   drivers: BlindDriver[] | null;
   frames: LapFrame[] | null;
   initialName: string;
+  onRemoved: () => void;
   onJoined: (name: string, state: JoinResponse) => void;
 }) {
   const [name, setName] = useState(initialName);
@@ -305,6 +320,8 @@ function JoinForm({
     try {
       onJoined(n, await joinLobby(code, n, consent, choose ? pick : null));
     } catch (e) {
+      // 403 on join: the host removed this name or this device from the lobby.
+      if (e instanceof ApiError && e.status === 403) return onRemoved();
       setErr(joinErrorText(e, code, n));
       if (e instanceof ApiError && e.status === 409 && !isLobbyFull(e)) setTaken(n);
     } finally {
@@ -327,7 +344,7 @@ function JoinForm({
   return (
     <form onSubmit={submit} className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col" noValidate>
       <header className="flex h-[52px] items-center justify-between px-5">
-        <span className="meta text-[13px]">{COPY.name}</span>
+        <Brand kind="wordmark" height={16} />
         <span className="meta text-[13px]">{COPY.room.heading(code)}</span>
       </header>
       <div className="flex flex-1 flex-col px-5">

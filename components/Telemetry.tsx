@@ -175,7 +175,7 @@ export function NeighbourList({ t, revealed, big = false }: { t: Telemetry; reve
   const n = t.neighbours;
   const v = big ? "text-2xl" : "text-[1.0625rem]";
   const cols = big ? "grid-cols-[minmax(0,1fr)_150px]" : "grid-cols-[minmax(0,1fr)_104px]";
-  const rateTxt = (r: number | null) => (r == null || Math.abs(r) < 0.05 ? "" : `${r > 0 ? "▲" : "▼"}${Math.abs(r).toFixed(1)}/lap`);
+  const rateTxt = (r: number | null) => (r == null || Math.abs(r) < 0.05 ? "" : COPY.tele.rateShort(r));
   const tag = (text: string, strong = false) => (
     <span className={`meta px-1 leading-[1.5] ${strong ? "bg-ink text-white" : "border border-current"}`}>{text}</span>
   );
@@ -257,7 +257,7 @@ export function UndercutClock({ t, mode, big = false }: { t: Telemetry; mode: Da
               {adv && (
                 <span className="nums mt-1 block text-[11px] leading-snug opacity-90">
                   {u.paceDelta != null && u.paceLaps.length > 0 && <>{COPY.tele.ucPaceAdv(u.paceDelta, u.paceLaps[0], u.paceLaps[u.paceLaps.length - 1])} </>}
-                  {u.pitted && u.tooEarly && <>{COPY.tele.ucEstimate(u.code, u.boxNow)} </>}
+                  {u.pitted && u.tooEarly && <>{isTight(u.boxNow) ? COPY.tele.ucEstimateTight(u.code) : COPY.tele.ucEstimate(u.code, u.boxNow)} </>}
                   {u.pitted && !u.tooEarly && <>{COPY.tele.ucUntil(u.lapsUntilUndercut)} </>}
                   {COPY.tele.ucInputs(u.gapNow, u.loss)}
                 </span>

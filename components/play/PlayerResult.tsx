@@ -8,11 +8,13 @@ import { api, type CampsResponse, type LeaderboardResponse, type LobbyStateRespo
 import { recallResult } from "@/lib/client/identity";
 import { MAX_TOTAL, REASONING_MAX, badgesFor, callMomentFrames, perFactor, tla } from "@/lib/client/race";
 import { neighbourCalls, telemetry } from "@/lib/client/telemetry";
+import { driverCodeOf } from "@/lib/client/drivers";
+import { benchmarksFor } from "../host/cars";
 import type { DataMode, GroundTruthFile } from "@/lib/client/mode";
 import type { LapFrame } from "@/lib/types";
 import { Measured } from "../Measured";
 import { NeighbourList } from "../Telemetry";
-import { CallWord, Check, ModeToggle, Section, Tag, clockText } from "../ui";
+import { Brand, CallWord, Check, ModeToggle, Section, Tag, clockText } from "../ui";
 
 export function PlayerResult({
   code,
@@ -49,7 +51,9 @@ export function PlayerResult({
   const ranked = [...lobby.submissions].sort((a, b) => b.total - a.total);
   const rank = mine ? ranked.findIndex((s) => s.player_name === me) + 1 || stored?.lobby_rank || 0 : 0;
   const friends = lobby.submissions.filter((s) => s.player_name !== me);
-  const badges = mine ? badgesFor(mine, decision, lb?.team?.total ?? null, lb?.engine?.total ?? null) : null;
+  // Team and engine rows for this player's own car (per-car benchmarks in "choose" lobbies).
+  const bench = benchmarksFor(lb, driverCodeOf(lobby, me));
+  const badges = mine ? badgesFor(mine, decision, bench.team?.total ?? null, bench.engine?.total ?? null) : null;
   const badgeNames = badges ? ([badges.winning && COPY.badges.winning.name, badges.team && COPY.badges.team.name, badges.engine && COPY.badges.engine.name].filter(Boolean) as string[]) : [];
   const adv = mode === "advanced";
   const named = mine ? mine.factors_named.filter((f) => decision.factors.includes(f)) : [];
@@ -70,7 +74,10 @@ export function PlayerResult({
     <>
       <div className="bg-field text-on-field">
         <div className="flex h-[52px] items-center justify-between gap-3 px-5">
-          <span className="meta text-[13px]">{COPY.phone.resultStatus(decision.race, decision.lap)}</span>
+          <span className="meta flex items-center gap-2.5 text-[13px]">
+            <Brand kind="mark" height={13} />
+            {COPY.phone.resultStatus(decision.race, decision.lap)}
+          </span>
           <span className="meta text-[13px]">{tla(me)}</span>
         </div>
         <div className="rise px-5 pb-[26px] pt-1.5">

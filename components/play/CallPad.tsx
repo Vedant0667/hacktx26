@@ -51,6 +51,7 @@ export function CallPad({
   const [err, setErr] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const autoSent = useRef(false);
+  const autoTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const [now, setNow] = useState(() => Date.now());
 
   const left = Math.max(0, Math.ceil(CALL_WINDOW_S - elapsed / 1000));
@@ -94,6 +95,12 @@ export function CallPad({
     if (micNote) inputRef.current?.focus();
   }, [micNote]);
 
+  // Latest send (reads the latest reason), for the delayed auto-send at 0 s.
+  const sendRef = useRef<(final?: boolean) => Promise<void>>(async () => {});
+  useEffect(() => {
+    sendRef.current = send;
+  });
+
   async function send(final = false) {
     if (locked || sending) return;
     if (!call && !final) {
@@ -116,13 +123,18 @@ export function CallPad({
     }
   }
 
-  // At 0 s whatever is on the pad goes in; with no call the row records "No call".
+  // At 0 s whatever is on the pad goes in; with no call the row records "No call". A voice note still being
+  // recorded is stopped first and gets ~1.2 s to transcribe (inside the host's 1.5 s grace) before sending.
   useEffect(() => {
     if (left === 0 && !locked && !alreadyIn && !autoSent.current) {
       autoSent.current = true;
-      void send(true);
+      const busy = speech.status === "recording" || speech.status === "transcribing";
+      if (busy) speech.stop();
+      // Not cleared on re-render (the countdown re-renders every 200 ms); only on unmount, below.
+      autoTimer.current = setTimeout(() => void sendRef.current(true), busy ? 1200 : 0);
     }
   });
+  useEffect(() => () => clearTimeout(autoTimer.current), []);
 
   const recording = speech.status === "recording";
   const talkMs = speech.startedAt && recording ? now - speech.startedAt : 0;

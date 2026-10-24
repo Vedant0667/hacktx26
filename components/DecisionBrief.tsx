@@ -48,7 +48,7 @@ export function RejoinSentence({ brief, className = "", withLaps = false }: { br
           {COPY.phone.boxNow}{" "}
           <b className="font-black">
             {COPY.phone.out(rejoin.pos)}
-            {rejoin.ahead ? `, ${rejoin.ahead.gap.toFixed(1)} s behind ${rejoin.ahead.code}` : COPY.phone.inLead}
+            {rejoin.ahead ? COPY.phone.behindCar(rejoin.ahead.gap, rejoin.ahead.code) : COPY.phone.inLead}
             {rival?.compound && rival.tyre_age != null ? ` ${COPY.phone.onTyres(rival.tyre_age, COPY.compounds[rival.compound] ?? rival.compound)}` : ""}.
           </b>{" "}
           {rival?.compound && <TyreChip compound={rival.compound} age={rival.tyre_age} size="sm" />}{" "}

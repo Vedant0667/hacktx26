@@ -8,4 +8,6 @@ python3 engine/test_engine.py
 python3 engine/test_triggers.py
 npx tsx scripts/test-gate.ts
 npx tsx scripts/test-security.ts
+npx tsx scripts/test-duel.ts
 npx tsx scripts/test-data.ts
+npx tsx lib/client/race.check.ts

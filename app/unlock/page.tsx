@@ -1,15 +1,19 @@
 import { Suspense } from "react";
 import { gateMisconfigured, safeNext } from "@/lib/gate";
 import { GATE_COPY } from "@/lib/copy-gate";
+import { Brand } from "@/components/ui";
 
 // Test-deployment gate. Posts to /api/unlock, which sets the cookie and sends the visitor back to `next`.
 // searchParams is request data, so it is read inside a Suspense boundary (cacheComponents prerenders the shell).
 export default function UnlockPage({ searchParams }: PageProps<"/unlock">) {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-[1440px] flex-col justify-end px-5 pb-[max(32px,env(safe-area-inset-bottom))] pt-10 md:justify-center md:px-14">
-      <Suspense fallback={null}>
-        <UnlockForm searchParams={searchParams} />
-      </Suspense>
+      <div className="flex w-full max-w-md flex-col gap-10">
+        <Brand kind="wordmark" height={36} />
+        <Suspense fallback={null}>
+          <UnlockForm searchParams={searchParams} />
+        </Suspense>
+      </div>
     </main>
   );
 }

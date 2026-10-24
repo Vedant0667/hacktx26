@@ -4,7 +4,7 @@
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { COPY, factorLabel } from "@/lib/copy";
-import { api, data, type LeaderboardResponse, type LeaderboardRow } from "@/lib/client/api";
+import { ApiError, api, data, type LeaderboardResponse, type LeaderboardRow } from "@/lib/client/api";
 import { noopSubscribe, parsePlayed, recallPlayedRaw } from "@/lib/client/identity";
 import { MAX_TOTAL, fmtSeconds, tla } from "@/lib/client/race";
 import type { DecisionIndexEntry } from "@/lib/types";
@@ -30,6 +30,8 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
     let alive = true;
     api
       .leaderboard(active, youLobby)
+      // 403: the remembered lobby is gone or this device holds no token for it; show the global board instead.
+      .catch((e) => (youLobby && e instanceof ApiError && e.status === 403 ? api.leaderboard(active, null) : Promise.reject(e)))
       .then((r) => alive && setResults((m) => ({ ...m, [active]: r })))
       .catch(() => alive && setResults((m) => ({ ...m, [active]: "error" })));
     data
@@ -186,7 +188,7 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
 }
 
 // Ranked rows: two columns on a laptop, one on a phone. Big code, room, call, percentile, score.
-const ROW = "grid grid-cols-[32px_64px_1fr_56px] md:grid-cols-[48px_120px_1fr_96px_72px_104px] items-center gap-x-3 md:gap-x-4";
+const ROW = "grid grid-cols-[28px_80px_1fr_52px] md:grid-cols-[48px_120px_1fr_96px_72px_104px] items-center gap-x-3 md:gap-x-4";
 
 function Board({
   rows,
@@ -209,12 +211,13 @@ function Board({
   field: string;
 }) {
   let rank = 0;
-  const line = (r: LeaderboardRow, shownRank: number | null, inverted: boolean) => {
+  const line = (r: LeaderboardRow, shownRank: number | null, inverted: boolean, idx: number) => {
     const mine = r.kind === "player" && !!youLobby && r.lobby_code === youLobby;
     return (
       <div
         role="row"
-        key={`${r.kind}-${r.name}-${r.lobby_code}-${inverted ? "you" : ""}`}
+        // Names and lobby codes repeat across rooms (lobby_code is null before a reveal), so the index keeps keys unique.
+        key={`${idx}-${r.kind}-${r.name}-${r.lobby_code}-${inverted ? "you" : ""}`}
         className={`${ROW} min-h-[72px] border-b px-2 md:min-h-[88px] ${inverted ? "border-white bg-white text-ink" : "border-[#3a3a3a]"} ${r.kind === "player" ? "" : "text-[#d6d6d6]"}`}
       >
         <span role="cell" className={`nums text-sm ${inverted ? "" : "text-[#bdbdbd]"}`}>
@@ -256,9 +259,9 @@ function Board({
       </div>
     );
   };
-  const body = rows.map((r) => {
+  const body = rows.map((r, i) => {
     if (r.kind === "player") rank++;
-    return line(r, r.kind === "player" ? rank : null, r === youRow);
+    return line(r, r.kind === "player" ? rank : null, r === youRow, i);
   });
   const half = Math.ceil(body.length / 2);
   return (
@@ -280,7 +283,7 @@ function Board({
           <div aria-hidden className="h-8 px-2 text-base text-[#bdbdbd]">
             …
           </div>
-          {line(youRow, youRank, true)}
+          {line(youRow, youRank, true, -1)}
         </>
       )}
     </div>

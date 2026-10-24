@@ -28,12 +28,15 @@ const normal = (c: string | null | undefined) => {
   return /^[0-9a-f]{6}$/i.test(h) || /^[0-9a-f]{3}$/i.test(h) ? `#${h.toUpperCase()}` : null;
 };
 
-// Any colour reaches at least 4.58:1 against black or white, so the higher one always passes AA.
+// Pure black or white always reaches at least 4.58:1 against any colour. The near-black ink (#0E0E0E) can fall
+// just short on a few mid tones, so those fields get pure black instead.
 export function fieldColours(teamColour: string | null | undefined): { field: string; ink: string; ratio: number } {
   const field = normal(teamColour) ?? FIELD_FALLBACK;
   const cb = contrast(field, INK);
   const cw = contrast(field, WHITE);
-  return cb >= cw ? { field, ink: INK, ratio: cb } : { field, ink: WHITE, ratio: cw };
+  if (cw > cb) return { field, ink: WHITE, ratio: cw };
+  if (cb >= 4.5) return { field, ink: INK, ratio: cb };
+  return { field, ink: "#000000", ratio: contrast(field, "#000000") };
 }
 
 // The player's team colour from the latest frame that has it.

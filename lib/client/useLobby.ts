@@ -23,7 +23,13 @@ export function useLobby(code: string, stop = false) {
   // Earliest time the next poll may go out (set from Retry-After on a 429).
   const pauseUntil = useRef(0);
 
+  // Server time of the newest state applied: an older poll that lands late is dropped.
+  const lastNow = useRef(0);
   const apply = useCallback((s: LobbyStateResponse, sentAt: number) => {
+    if (typeof s.now === "number") {
+      if (s.now < lastNow.current) return;
+      lastNow.current = s.now;
+    }
     const now = Date.now();
     // Server stamped `now` somewhere in the round trip; take the midpoint.
     if (typeof s.now === "number") offset.current = s.now - (sentAt + now) / 2;
@@ -88,6 +94,10 @@ export function useLobby(code: string, stop = false) {
           if (e instanceof ApiError && e.status === 403) {
             setPhaseErr("forbidden");
             break;
+          }
+          if (e instanceof ApiError && e.status === 429) {
+            await new Promise((r) => setTimeout(r, Math.min(15, e.retryAfter ?? RATE_LIMIT_DEFAULT_S) * 1000));
+            continue;
           }
           if (e instanceof ApiError && e.status === 409) {
             const fromMsg = Number(/(\d+(?:\.\d+)?)\s*s/.exec(e.message)?.[1]);

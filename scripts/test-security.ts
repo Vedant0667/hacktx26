@@ -138,6 +138,8 @@ async function main() {
     ["kick", /requireHost\(req, code/],
     ["reveal", /requireLobbyMember\(req, code/],
     ["camps", /requireLobbyMember\(req, code/],
+    ["duel", /requireLobbyMember\(req, code/],
+    ["duel/vote", /lobbyMetaGuarded\(req, code/],
     ["submit", /lobbyMetaGuarded\(req, code/],
     ["join", /guardLobbyRead\(req, code/],
   ] as const) {

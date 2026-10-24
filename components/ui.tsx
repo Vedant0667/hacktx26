@@ -165,7 +165,7 @@ export function TyreChip({ compound, age, size = "md", bare = false }: { compoun
   const l = compoundLetter(compound);
   const dot = l ? COMPOUND_DOT[l] : null;
   const d = { sm: "size-4 text-[9px]", md: "size-[18px] text-[10px]", lg: "size-6 text-xs" }[size];
-  const label = `${COPY.compounds[compound?.toUpperCase() ?? ""] ?? compound ?? ""}${age != null ? `, ${age} laps` : ""}`;
+  const label = COPY.tyreLabel(COPY.compounds[compound?.toUpperCase() ?? ""] ?? compound ?? "", age ?? null);
   return (
     <span
       className={`inline-flex shrink-0 items-center gap-1 align-middle font-mono font-bold leading-none text-ink ${bare ? "" : "bg-white py-0.5 pl-0.5 pr-1.5 shadow-[inset_0_0_0_1px_rgba(14,14,14,0.18)]"}`}
@@ -329,3 +329,33 @@ export function DrainBar({ total, elapsedS, className = "bg-current" }: { total:
 
 // "0:36"
 export const clockText = (s: number) => `${Math.floor(s / 60)}:${String(Math.max(0, Math.floor(s % 60))).padStart(2, "0")}`;
+
+// The OutpaceF1 logo, drawn as a CSS mask so it takes the current text colour (ink on white, white on black,
+// the on-field ink on the team colour). Never a fixed colour. The accessible name is the product name.
+const BRAND = {
+  wordmark: { src: "/brand/wordmark.png", ratio: 2048 / 372 },
+  mark: { src: "/brand/mark.png", ratio: 1024 / 631 },
+} as const;
+export function Brand({ kind = "wordmark", height = 20, className = "", label = true }: { kind?: keyof typeof BRAND; height?: number; className?: string; label?: boolean }) {
+  const b = BRAND[kind];
+  return (
+    <span
+      role={label ? "img" : undefined}
+      aria-label={label ? COPY.name : undefined}
+      aria-hidden={label ? undefined : true}
+      className={`inline-block shrink-0 bg-current align-middle ${className}`}
+      style={{
+        height,
+        width: Math.round(height * b.ratio),
+        WebkitMaskImage: `url(${b.src})`,
+        maskImage: `url(${b.src})`,
+        WebkitMaskSize: "contain",
+        maskSize: "contain",
+        WebkitMaskRepeat: "no-repeat",
+        maskRepeat: "no-repeat",
+        WebkitMaskPosition: "center",
+        maskPosition: "center",
+      }}
+    />
+  );
+}
