@@ -522,9 +522,15 @@ export function PhoneSummary({ summary: s, me }: { summary: GameSummary; me: str
           <p className="pb-2 text-sm text-ink-2">{howText}</p>
         </details>
 
-        <Link href="/leaderboard" className="on-dark mt-4 flex h-14 items-center justify-center bg-ink text-lg font-bold text-white hover:bg-[#262626]">
-          {COPY.end.leaderboard}
+        <Link href="/" className="on-dark mt-4 flex h-14 items-center justify-center bg-ink text-lg font-bold text-white hover:bg-[#262626]">
+          {COPY.end.home}
         </Link>
+        {/* The public leaderboard covers the quick moments only; a race game is not on it. */}
+        {!race && (
+          <Link href="/leaderboard" className="mt-2 flex h-12 items-center justify-center border-2 border-ink text-base font-bold">
+            {COPY.end.leaderboard}
+          </Link>
+        )}
       </div>
     </>
   );

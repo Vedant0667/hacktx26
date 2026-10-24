@@ -52,6 +52,7 @@ export function CallPad({
   const [noteShown, setNoteShown] = useState(false); // a transcript opened the field (no autofocus: no keyboard pop)
   const [note, setNote] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
+  const [queued, setQueued] = useState(false); // Send tapped while the note was still recording or transcribing
   const [locked, setLocked] = useState<{ call: Call | null } | null>(() => {
     const r = recallResult(code, decision.id);
     return r ? { call: r.submission.call } : null;
@@ -144,6 +145,15 @@ export function CallPad({
       return;
     }
     setErr(null);
+    // Send tapped while a note is still recording or transcribing: stop it and send once the transcript lands
+    // (the awaitingNote effect below), so the reason goes in with the call. The 0 s send (final) never waits here.
+    if (!final && (voice.status === "recording" || voice.status === "starting" || voice.status === "transcribing")) {
+      if (voice.status !== "transcribing") voice.stop();
+      awaitingNote.current = true;
+      setQueued(true);
+      return;
+    }
+    setQueued(false);
     setSending(true);
     const text = why.trim();
     const word = call ? COPY.freeze.options[call] : "";
@@ -243,7 +253,7 @@ export function CallPad({
   );
 
   const helper =
-    (sending
+    (sending || queued
       ? COPY.freeze.sending
       : voice.status === "starting"
       ? VOICE_COPY.starting
@@ -428,7 +438,7 @@ export function CallPad({
             type="button"
             onClick={voice.toggle}
             onContextMenu={(e) => e.preventDefault()}
-            disabled={left === 0 || tooLate || micDown || voice.status === "starting" || voice.status === "transcribing"}
+            disabled={left === 0 || tooLate || micDown || queued || voice.status === "starting" || voice.status === "transcribing"}
             aria-pressed={recording}
             aria-busy={voice.status === "transcribing" || undefined}
             className="flex min-w-0 flex-1 select-none items-center gap-3 pl-5 pr-2 text-left [-webkit-touch-callout:none] disabled:text-white/50"
@@ -466,8 +476,8 @@ export function CallPad({
           </button>
           <button
             type="submit"
-            disabled={sending || !call}
-            aria-busy={sending || undefined}
+            disabled={sending || queued || !call}
+            aria-busy={sending || queued || undefined}
             className="w-[5.5rem] shrink-0 bg-field text-base font-black text-on-field transition-opacity duration-150 disabled:bg-white/10 disabled:text-white/50"
           >
             {COPY.phone.send}

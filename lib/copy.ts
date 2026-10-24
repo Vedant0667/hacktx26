@@ -690,6 +690,7 @@ export const COPY = {
     cols: { rank: "#", who: "Who", call: "Call", reasoning: "Reason", points: "Points" },
     newLobby: "Create new lobby",
     leaderboard: "Open leaderboard",
+    home: "Back to home",
     credit: "Reasons graded by Muse Spark. Speech to text by Muse Voice Transcribe, with the browser's recognizer as a fallback. Engine: offline model on Jolpica and OpenF1 lap data.",
     retry: "Scores didn't load. Retrying.",
     // Phone summary (one screen): place and total, winner line, compact rows.
