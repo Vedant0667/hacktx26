@@ -14,31 +14,16 @@
   "STAY"
  ],
  "replay_from_lap": 1,
- "reveal_to_lap": 62,
- "ground_truth": {
-  "correct": "BOX",
-  "swing_s": 15.1
- },
  "factors": [
   "tyre_age",
   "cheap_stop_under_vsc",
   "similar_cars_pitted",
   "track_position"
  ],
- "team": {
-  "call": "STAY",
-  "reasons": [
-   "Hamilton after the race: \"my call.\"",
-   "Stayed out on 21-lap-old softs."
-  ]
- },
- "engine": {
-  "call": "BOX",
-  "confidence": 0.95,
-  "reasons": [
-   "1 of 2 cars ahead pitted under the VSC, 1 of the 2 most similar.",
-   "VSC stop costs 17.6 s, green-flag stop 23.5 s.",
-   "Tyres 21 laps old, field median 8, 23 laps left."
-  ]
+ "total_laps": 62,
+ "pit_loss": {
+  "normal_s": 23.5,
+  "n_stops": 18,
+  "from": "2026-singapore"
  }
 }

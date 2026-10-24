@@ -20,6 +20,13 @@ export const rememberName = (code: string, name: string) => set(key(code, "name"
 export const recallName = (code: string) => get(key(code, "name"));
 export const rememberHost = (code: string) => set(key(code, "host"), "1");
 
+// Bearer tokens from the API (shown once by the server, which keeps only a hash). Per lobby; the player's also per name,
+// so this device can rejoin as that name and no one else can.
+export const rememberHostToken = (code: string, token: string) => set(key(code, "host_token"), token);
+export const recallHostToken = (code: string) => get(key(code, "host_token"));
+export const rememberPlayerToken = (code: string, name: string, token: string) => set(key(code, `player:${name}:token`), token);
+export const recallPlayerToken = (code: string, name: string) => get(key(code, `player:${name}:token`));
+
 export function rememberResult(code: string, decisionId: string, r: SubmitResponse) {
   set(key(code, `result:${decisionId}`), JSON.stringify(r));
   set(`played:${decisionId}`, JSON.stringify({ name: r.submission.player_name, lobby: code, total: r.submission.total }));

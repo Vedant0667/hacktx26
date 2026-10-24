@@ -62,4 +62,21 @@ create table if not exists muse_camps (
   camps jsonb,
   updated_at timestamptz not null default now(),
   primary key (lobby_code, decision_id)
-)
+);
+
+-- Security fixes (docs/audits/security.md M4, L2, M6, M3, M5). Only hashes of tokens are stored.
+alter table lobbies add column if not exists host_token_hash text;
+alter table players add column if not exists token_hash text;
+alter table players add column if not exists consent_at timestamptz;
+
+-- Fixed-window counters for per-IP and site-wide rate limits (lobby creation, lobby reads, unlock attempts).
+create table if not exists rate_limits (
+  bucket text not null,
+  key text not null,
+  window_start timestamptz not null,
+  count int not null default 0,
+  primary key (bucket, key, window_start)
+);
+
+create index if not exists rate_limits_window on rate_limits (window_start);
+create index if not exists lobbies_created_at on lobbies (created_at);

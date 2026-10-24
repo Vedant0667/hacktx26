@@ -1,14 +1,36 @@
-// Browser-side fetchers for the lobby API (app/api/**) and the static race data (public/data/**).
+// Browser-side fetchers for the lobby API (app/api/**) and the blind static race data (public/data/**).
 import type { LobbyStateResponse } from "@/lib/db";
 import type { GroundTruthFile } from "./mode";
 import type { Call, DecisionIndexEntry, DecisionPoint, LapFrame, Submission } from "@/lib/types";
 
 export type { LobbyStateResponse };
 
+export interface PitLoss {
+  normal_s: number;
+  n_stops: number;
+  from: string;
+}
+
+// public/data/<id>/decision.json since the M2 fix: what the pit wall knows at the call, nothing about the answer.
+export type BlindDecision = Omit<DecisionPoint, "team" | "engine" | "ground_truth" | "reveal_to_lap"> & {
+  total_laps: number;
+  pit_loss: PitLoss;
+};
+
+// GET /api/lobby/[code]/reveal: the full decision, every lap, and the measured outcome. 409 before the reveal.
+export type RevealDecision = DecisionPoint & { total_laps: number; pit_loss: PitLoss };
+export interface RevealResponse {
+  decision: RevealDecision;
+  frames: LapFrame[];
+  ground_truth: GroundTruthFile;
+}
+
 export class ApiError extends Error {
   constructor(
     public status: number,
     message: string,
+    // Seconds from the Retry-After header on a 429; null when absent.
+    public retryAfter: number | null = null,
   ) {
     super(message);
   }
@@ -26,12 +48,16 @@ async function request<T>(url: string, init?: RequestInit): Promise<T> {
     try {
       msg = ((await res.json()) as { error?: string }).error ?? msg;
     } catch {}
-    throw new ApiError(res.status, msg);
+    const ra = Number(res.headers.get("retry-after"));
+    throw new ApiError(res.status, msg, Number.isFinite(ra) && ra > 0 ? ra : null);
   }
   return (await res.json()) as T;
 }
 
-const post = <T>(url: string, body: unknown) => request<T>(url, { method: "POST", body: JSON.stringify(body) });
+const post = <T>(url: string, body: unknown, headers?: Record<string, string>) =>
+  request<T>(url, { method: "POST", body: JSON.stringify(body), headers });
+const tokenHeader = (name: string, token: string | null | undefined): Record<string, string> | undefined =>
+  token ? { [name]: token } : undefined;
 
 export interface SubmitResponse {
   submission: Submission;
@@ -48,7 +74,8 @@ export interface CampsResponse {
   camps: { factor: string; count: number; players: string[]; quotes: string[] }[];
   no_factor: { count: number; players: string[]; quotes: string[] };
   // Camp names written by Muse Spark from the room's reasons; null when Muse was skipped.
-  labels: { label: string; call: Call | null; players: string[]; count: number }[] | null;
+  // MIXED: the camp's members made different calls.
+  labels: { label: string; call: Call | "MIXED" | null; players: string[]; count: number }[] | null;
   labels_source: "muse" | "factors";
 }
 
@@ -60,8 +87,9 @@ export interface LeaderboardRow {
   reasons: string[];
   factors_named: string[];
   seconds_to_call: number | null;
-  score_call: number;
-  score_reasoning: number;
+  // Null on every row until the viewer's lobby has revealed this decision.
+  score_call: number | null;
+  score_reasoning: number | null;
   total: number;
   percentile: number;
 }
@@ -71,24 +99,40 @@ export interface LeaderboardResponse {
   total_players: number;
   // Every player's total on this decision, ascending.
   totals: number[];
-  team: LeaderboardRow;
-  engine: LeaderboardRow;
+  // True only when `lobby` names a lobby on this decision that is in reveal or done. When false, team and
+  // engine are null and player rows carry no call, reasons or factors.
+  revealed: boolean;
+  team: LeaderboardRow | null;
+  engine: LeaderboardRow | null;
   rows: LeaderboardRow[];
 }
+
+export type JoinResponse = LobbyStateResponse & { player_token: string | null; rejoined: boolean };
 
 const enc = encodeURIComponent;
 
 export const api = {
-  createLobby: (decision_id: string, host_name: string) => post<LobbyStateResponse>("/api/lobby", { decision_id, host_name }),
-  join: (code: string, name: string) => post<LobbyStateResponse>(`/api/lobby/${enc(code)}/join`, { name }),
+  // host_token comes back once; keep it (identity.rememberHostToken) to advance phases.
+  createLobby: (decision_id: string, host_name: string) =>
+    post<LobbyStateResponse & { host_token: string }>("/api/lobby", { decision_id, host_name }),
+  // consent is the ticked checkbox; the route rejects a join without it. playerToken proves a rejoin.
+  join: (code: string, name: string, consent: true, playerToken?: string | null) =>
+    post<JoinResponse>(`/api/lobby/${enc(code)}/join`, { name, consent }, tokenHeader("x-player-token", playerToken)),
   lobby: (code: string) => request<LobbyStateResponse>(`/api/lobby/${enc(code)}`),
-  phase: (code: string, phase: string) => post<LobbyStateResponse>(`/api/lobby/${enc(code)}/phase`, { phase }),
+  phase: (code: string, phase: string, hostToken: string | null) =>
+    post<LobbyStateResponse>(`/api/lobby/${enc(code)}/phase`, { phase }, tokenHeader("x-host-token", hostToken)),
   // `call` is the button the player picked; the route currently ignores it and parses the transcript.
-  submit: (code: string, body: { player_name: string; transcript: string; seconds_to_call: number; call: Call | null }) =>
-    post<SubmitResponse>(`/api/lobby/${enc(code)}/submit`, body),
+  submit: (
+    code: string,
+    body: { player_name: string; transcript: string; seconds_to_call: number; call: Call | null },
+    playerToken: string | null,
+  ) => post<SubmitResponse>(`/api/lobby/${enc(code)}/submit`, body, tokenHeader("x-player-token", playerToken)),
+  reveal: (code: string) => request<RevealResponse>(`/api/lobby/${enc(code)}/reveal`),
   parse: (transcript: string) => post<{ call: Call | null; factors_named: string[] }>("/api/parse", { transcript }),
   camps: (code: string) => request<CampsResponse>(`/api/lobby/${enc(code)}/camps`),
-  leaderboard: (decisionId: string) => request<LeaderboardResponse>(`/api/leaderboard?decision_id=${enc(decisionId)}`),
+  // Pass the viewer's lobby: team, engine and calls come back only once that lobby has revealed.
+  leaderboard: (decisionId: string, lobby?: string | null) =>
+    request<LeaderboardResponse>(`/api/leaderboard?decision_id=${enc(decisionId)}${lobby ? `&lobby=${enc(lobby)}` : ""}`),
 };
 
 const staticCache = new Map<string, Promise<unknown>>();
@@ -107,8 +151,11 @@ export const data = {
     const raw = await staticJson<DecisionIndexEntry[] | { decision_points: DecisionIndexEntry[] }>("/data/index.json");
     return Array.isArray(raw) ? raw : raw.decision_points;
   },
-  decision: (id: string) => staticJson<DecisionPoint>(`/data/${enc(id)}/decision.json`),
+  // Blind: no team, engine or answer. Frames stop at the call-moment lap. The rest comes from api.reveal.
+  decision: (id: string) => staticJson<BlindDecision>(`/data/${enc(id)}/decision.json`),
   frames: (id: string) => staticJson<LapFrame[]>(`/data/${enc(id)}/frames.json`),
-  // Read for pit_loss before the reveal; the comparison numbers render only after it.
-  groundTruth: (id: string) => staticJson<GroundTruthFile>(`/data/${enc(id)}/ground_truth.json`),
 };
+
+// The post-reveal data (full decision, every lap, ground truth). 409 until the lobby is in reveal or done;
+// screens normally use useReveal (lib/client/useLobby.ts), which calls this once and retries.
+export const revealData = (code: string) => api.reveal(code);

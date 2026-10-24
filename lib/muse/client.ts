@@ -1,8 +1,9 @@
-// Server-only Muse Spark client with a hard spend cap. Every call is logged to muse_calls with its cost;
+// Server-only Muse Spark client with a hard spend cap. Each call first reserves its worst-case cost in
+// muse_calls (atomic, see reserveMuseCall), then the row is updated with the real usage;
 // callers get null (and use the local fallback) when the key is missing, the budget or lobby cap is hit,
 // or the call fails, times out, is truncated, or returns JSON that does not validate.
 import type { z } from "zod";
-import { getMuseSpend, logMuseCall } from "../db";
+import { finishMuseCall, reserveMuseCall } from "../db";
 
 export const MUSE_MODEL = "muse-spark-1.3";
 const ENDPOINT = "https://api.meta.ai/v1/responses";
@@ -54,14 +55,20 @@ export async function museJson<T>(req: MuseRequest<T>): Promise<T | null> {
   const key = process.env.MODEL_API_KEY;
   if (!key) return null;
 
+  // Worst case for this call: input at 2 characters per token (English runs about 4) plus the full output allowance.
+  const worstInput = Math.ceil((req.instructions.length + req.input.length) / 2);
+  const worstCost = Math.ceil(costOf(worstInput, 0, req.maxOutputTokens) * 1e6) / 1e6;
+  let reservation: number | null;
   try {
-    const spend = await getMuseSpend(req.lobbyCode);
-    if (spend.cost_usd >= museBudgetUsd()) return null;
-    if (req.lobbyCode && spend.lobby_calls >= lobbyMaxCalls()) return null;
+    reservation = await reserveMuseCall({
+      purpose: req.purpose, lobby_code: req.lobbyCode, decision_id: req.decisionId, model: MUSE_MODEL,
+      worst_cost_usd: worstCost, budget_usd: museBudgetUsd(), lobby_max_calls: lobbyMaxCalls(),
+    });
   } catch (err) {
-    console.error("muse: spend check failed, using local fallback", err);
+    console.error("muse: budget reservation failed, using local fallback", err);
     return null; // fail closed: no spend we cannot account for
   }
+  if (reservation === null) return null; // over budget or over the lobby cap
 
   const started = Date.now();
   const log = {
@@ -119,7 +126,7 @@ export async function museJson<T>(req: MuseRequest<T>): Promise<T | null> {
     log.error = err instanceof Error ? err.message : String(err);
     if (log.input_tokens === 0 && log.output_tokens === 0) {
       // No usage came back (timeout or network): log the worst case so the cap stays conservative.
-      log.input_tokens = Math.ceil((req.instructions.length + req.input.length) / 3);
+      log.input_tokens = worstInput;
       log.output_tokens = req.maxOutputTokens;
       log.status = log.status ?? "no_usage_estimated";
     }
@@ -127,7 +134,7 @@ export async function museJson<T>(req: MuseRequest<T>): Promise<T | null> {
   log.latency_ms = Date.now() - started;
   log.cost_usd = Math.round(costOf(log.input_tokens, log.cached_tokens, log.output_tokens) * 1e6) / 1e6;
   try {
-    await logMuseCall(log);
+    await finishMuseCall(reservation, log); // if this fails, the reservation stays at the worst case
   } catch (err) {
     console.error("muse: failed to log call", err);
   }

@@ -1,25 +1,34 @@
 // The call moment explained from visible info only: the gap line with the rejoin ghost, the trade-off,
-// and the race story (Simple) or the full figures (Advanced). Never reads decision.engine or ground_truth.correct.
+// and the race story (Simple) or the full figures (Advanced). Takes the blind decision, which has no answer in it.
 import { COPY } from "@/lib/copy";
-import { advRows, advancedFigures, pitLoss, type DataMode, type GroundTruthFile } from "@/lib/client/mode";
+import type { BlindDecision } from "@/lib/client/api";
+import { advRows, advancedFigures, pitLoss, type DataMode } from "@/lib/client/mode";
 import { callMomentFrames, contextAt, projectRejoin, raceStory, type Rejoin } from "@/lib/client/race";
-import type { DecisionPoint, LapFrame } from "@/lib/types";
+import type { LapFrame } from "@/lib/types";
 import { Figures } from "./ui";
 
-export function getBrief(decision: DecisionPoint, frames: LapFrame[], gt: GroundTruthFile | null) {
+// Reads the blind decision and blind frames only; total laps and pit loss come from the decision.
+export function getBrief(decision: BlindDecision, frames: LapFrame[]) {
   const seen = callMomentFrames(frames, decision);
-  const total = frames[frames.length - 1]?.lap ?? decision.lap;
+  const total = decision.total_laps;
   const f = seen.find((x) => x.lap === decision.lap) ?? seen[seen.length - 1];
   return {
     seen,
     frame: f,
     total,
     ctx: contextAt(decision, seen),
-    rejoin: projectRejoin(seen, decision, gt?.pit_loss?.normal_s),
+    rejoin: projectRejoin(seen, decision, decision.pit_loss?.normal_s),
     story: raceStory(seen, decision, total),
-    loss: pitLoss(gt, decision.trigger),
-    adv: advancedFigures(decision, seen, total, gt),
+    loss: pitLoss(decision.pit_loss, decision.trigger),
+    adv: advancedFigures(decision, seen),
   };
+}
+
+// Under SC or VSC the projection uses gaps from the end of the previous lap, which the neutralisation will change.
+export function RejoinCaveat({ frame, lap, className = "" }: { frame: LapFrame | undefined; lap: number; className?: string }) {
+  const s = frame?.track_status;
+  if (s !== "SC" && s !== "VSC") return null;
+  return <p className={`text-ink-2 ${className}`}>{COPY.rejoin.caveat(s, lap - 1)}</p>;
 }
 
 // Horizontal seconds axis: every visible car by gap to the leader, the player's car, and where a stop now puts it.
@@ -108,7 +117,7 @@ export function TradeOff({ brief, size = "host", mode }: { brief: ReturnType<typ
 }
 
 // Simple: the race story in plain numbered facts. Advanced: the full figures.
-export function StoryFacts({ decision, brief, mode, size = "host" }: { decision: DecisionPoint; brief: ReturnType<typeof getBrief>; mode: DataMode; size?: "host" | "phone" }) {
+export function StoryFacts({ decision, brief, mode, size = "host" }: { decision: BlindDecision; brief: ReturnType<typeof getBrief>; mode: DataMode; size?: "host" | "phone" }) {
   const { story, ctx, adv } = brief;
   if (!story || !ctx) return null;
   // The trade-off already prints the pit loss, so the figures skip it.

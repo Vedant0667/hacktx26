@@ -1,6 +1,7 @@
 // Pure helpers for the replay clock, the timing tower and scoreboard facts.
 import { CALL_WINDOW_S, VOICE_NOTE_MAX_S } from "@/lib/scoring";
 import type { Call, DecisionPoint, LapFrame, Submission } from "@/lib/types";
+import type { BlindDecision } from "./api";
 
 export { CALL_WINDOW_S, VOICE_NOTE_MAX_S };
 export const LAP_MS = 1200; // replay speed before the call
@@ -16,7 +17,7 @@ export function frameAt(frames: LapFrame[], lap: number): LapFrame | undefined {
 
 // What the pit wall can see when the call is due: the order at the end of lap L-1, lap L's track status,
 // and only the stops made by cars ahead on the road (they reach pit entry first). Use before the reveal.
-export function callMomentFrames(frames: LapFrame[], d: DecisionPoint): LapFrame[] {
+export function callMomentFrames(frames: LapFrame[], d: BlindDecision): LapFrame[] {
   const prev = frames.find((f) => f.lap === d.lap - 1);
   const now = frames.find((f) => f.lap === d.lap);
   if (!prev || !now) return frames;
@@ -34,7 +35,7 @@ export function callMomentFrames(frames: LapFrame[], d: DecisionPoint): LapFrame
   return frames.filter((f) => f.lap < d.lap).concat(moment);
 }
 
-export function replayLap(d: DecisionPoint, elapsedMs: number): number {
+export function replayLap(d: BlindDecision, elapsedMs: number): number {
   return Math.min(d.lap, d.replay_from_lap + Math.max(0, Math.floor(elapsedMs / LAP_MS)));
 }
 
@@ -44,7 +45,7 @@ export function playedOutLap(d: DecisionPoint, elapsedMs: number): number {
   return Math.min(d.reveal_to_lap, d.lap + Math.max(0, Math.floor(elapsedMs / per)));
 }
 
-export function replayDoneMs(d: DecisionPoint): number {
+export function replayDoneMs(d: BlindDecision): number {
   return (d.lap - d.replay_from_lap) * LAP_MS + 600;
 }
 
@@ -92,7 +93,7 @@ export function raceControl(frames: LapFrame[], uptoLap: number, fromLap: number
   return out.reverse();
 }
 
-export function contextAt(d: DecisionPoint, frames: LapFrame[]) {
+export function contextAt(d: BlindDecision, frames: LapFrame[]) {
   const f = frameAt(frames, d.lap);
   const me = f?.drivers.find((x) => x.number === d.player_role.number);
   if (!f || !me) return null;
@@ -125,7 +126,7 @@ export function badgesFor(s: Pick<Submission, "call" | "total">, d: DecisionPoin
   };
 }
 
-export function perFactor(d: DecisionPoint): number {
+export function perFactor(d: BlindDecision): number {
   return REASONING_MAX / Math.min(Math.max(d.factors.length, 1), 4);
 }
 
@@ -152,7 +153,8 @@ export interface Rejoin {
   // Projected gap to the leader after the stop, for the ghost marker.
   gapToLeader: number;
 }
-export function projectRejoin(seen: LapFrame[], d: DecisionPoint, normalLoss: number | null | undefined): Rejoin | null {
+// normalLoss defaults to the blind decision's pit_loss.normal_s.
+export function projectRejoin(seen: LapFrame[], d: BlindDecision, normalLoss: number | null | undefined = d.pit_loss?.normal_s): Rejoin | null {
   if (normalLoss == null) return null;
   const f = seen.find((x) => x.lap === d.lap) ?? seen[seen.length - 1];
   const me = f?.drivers.find((x) => x.number === d.player_role.number);
@@ -176,7 +178,7 @@ export function projectRejoin(seen: LapFrame[], d: DecisionPoint, normalLoss: nu
 }
 
 // Plain race-story numbers for Simple mode, from visible info only.
-export function raceStory(seen: LapFrame[], d: DecisionPoint, totalLaps: number) {
+export function raceStory(seen: LapFrame[], d: BlindDecision, totalLaps: number) {
   const f = seen.find((x) => x.lap === d.lap) ?? seen[seen.length - 1];
   const me = f?.drivers.find((x) => x.number === d.player_role.number);
   if (!f || !me) return null;

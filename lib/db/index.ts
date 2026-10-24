@@ -43,12 +43,99 @@ function isPgError(err: unknown, code: string): boolean {
 
 // Returns false if the code is already taken (caller retries with a new code).
 // The host runs the shared screen and is not a player; players join from their phones.
-export async function createLobby(code: string, decisionId: string): Promise<boolean> {
+// Only the SHA-256 of the host token is stored.
+export async function createLobby(code: string, decisionId: string, hostTokenHash: string): Promise<boolean> {
   const rows = await query<{ code: string }>(
-    `insert into lobbies (code, decision_id) values ($1, $2) on conflict (code) do nothing returning code`,
-    [code, decisionId],
+    `insert into lobbies (code, decision_id, host_token_hash) values ($1, $2, $3) on conflict (code) do nothing returning code`,
+    [code, decisionId, hostTokenHash],
   );
   return rows.length === 1;
+}
+
+// Retention: games (lobbies, and by cascade players, submissions, camp labels) live 24 hours; rate-limit
+// windows a day. Run opportunistically on lobby creation. muse_calls holds no player text and stays for the cap.
+export async function purgeExpired(): Promise<void> {
+  await sql().transaction([
+    sql().query(`delete from lobbies where created_at < now() - interval '24 hours'`),
+    sql().query(`delete from rate_limits where window_start < now() - interval '1 day'`),
+  ]);
+}
+
+// ---- Rate limits (table rate_limits: fixed windows, one row per bucket, key and window) ----
+
+const WINDOW = (secParam: string) =>
+  `to_timestamp(floor(extract(epoch from now()) / ${secParam}::int) * ${secParam}::int)`;
+
+// Counts one hit and returns the new count in the current window. One upsert, so concurrent hits each
+// see their own count. retry_after_s: seconds until the window rolls over.
+export async function hitRateLimit(bucket: string, key: string, windowS: number): Promise<{ count: number; retry_after_s: number }> {
+  const rows = await query<{ count: number; retry_after_s: number }>(
+    `insert into rate_limits (bucket, key, window_start, count) values ($1, $2, ${WINDOW("$3")}, 1)
+     on conflict (bucket, key, window_start) do update set count = rate_limits.count + 1
+     returning count, ceil($3::int - mod(extract(epoch from now()), $3::int))::int as retry_after_s`,
+    [bucket, key, windowS],
+  );
+  return rows[0];
+}
+
+// Gives back one hit (a correct password does not count against the unlock limit).
+export async function undoRateLimit(bucket: string, key: string, windowS: number): Promise<void> {
+  await query(
+    `update rate_limits set count = greatest(count - 1, 0)
+     where bucket = $1 and key = $2 and window_start = ${WINDOW("$3")}`,
+    [bucket, key, windowS],
+  );
+}
+
+export interface LobbyReadGuard {
+  found: boolean; // the lobby code exists
+  reads: number; // requests from this IP in the current read window
+  misses: number; // lookups of codes that do not exist from this IP in the current miss window (this one included)
+  retry_after_s: number;
+  state: LobbyStateResponse | null;
+}
+
+// Rate-limit check and lobby read in one transaction, serialised per IP by an advisory lock, so a burst of
+// guesses cannot slip past the miss count. A miss is counted only when the code does not exist.
+export async function guardedLobbyRead(
+  ip: string,
+  code: string,
+  opts: { readWindowS: number; missWindowS: number; withState: boolean },
+): Promise<LobbyReadGuard> {
+  const results = (await sql().transaction([
+    sql().query(`select pg_advisory_xact_lock(hashtext($1))`, [`lobby-read:${ip}`]),
+    sql().query(
+      `insert into rate_limits (bucket, key, window_start, count) values ('lobby_read', $1, ${WINDOW("$2")}, 1)
+       on conflict (bucket, key, window_start) do update set count = rate_limits.count + 1
+       returning count, ceil($2::int - mod(extract(epoch from now()), $2::int))::int as retry_after_s`,
+      [ip, opts.readWindowS],
+    ),
+    sql().query(
+      `with found as (select exists(select 1 from lobbies where code = $2) as f),
+       ins as (
+         insert into rate_limits (bucket, key, window_start, count)
+         select 'lobby_miss', $1, ${WINDOW("$3")}, 1 from found where not found.f
+         on conflict (bucket, key, window_start) do update set count = rate_limits.count + 1
+         returning count
+       )
+       select (select f from found) as found,
+         coalesce((select count from ins),
+                  (select count from rate_limits where bucket = 'lobby_miss' and key = $1 and window_start = ${WINDOW("$3")}),
+                  0)::int as misses,
+         ceil($3::int - mod(extract(epoch from now()), $3::int))::int as miss_retry_s`,
+      [ip, code, opts.missWindowS],
+    ),
+  ])) as unknown as [unknown, { count: number; retry_after_s: number }[], { found: boolean; misses: number; miss_retry_s: number }[]];
+  const read = results[1][0];
+  const miss = results[2][0];
+  const state = miss.found && opts.withState ? await getLobbyState(code) : null;
+  return {
+    found: miss.found,
+    reads: read.count,
+    misses: miss.misses,
+    retry_after_s: Math.max(read.retry_after_s, miss.misses > 0 ? miss.miss_retry_s : 0),
+    state,
+  };
 }
 
 // One round trip: lobby, players, this decision's submissions, and the DB clock.
@@ -69,32 +156,67 @@ export async function getLobbyState(code: string): Promise<LobbyStateResponse | 
   return rows[0] ?? null;
 }
 
-export async function addPlayer(code: string, name: string): Promise<"ok" | "taken" | "no_lobby"> {
+export const MAX_PLAYERS = 12;
+
+// Adds a player (token hash and consent time stored) unless the lobby is full or the name is taken.
+// Serialised per lobby with an advisory lock so concurrent joins cannot pass the cap.
+// "taken" carries the stored token hash so the route can allow a rejoin by the same device.
+export async function addPlayer(
+  code: string,
+  name: string,
+  tokenHash: string,
+): Promise<{ result: "ok" } | { result: "taken"; token_hash: string | null } | { result: "full" | "no_lobby" }> {
   try {
-    const rows = await query(
-      `insert into players (lobby_code, name) values ($1, $2)
-       on conflict (lobby_code, name) do nothing returning name`,
-      [code, name],
-    );
-    return rows.length === 1 ? "ok" : "taken";
+    const results = (await sql().transaction([
+      sql().query(`select pg_advisory_xact_lock(hashtext($1))`, [`lobby-join:${code}`]),
+      sql().query(
+        `insert into players (lobby_code, name, token_hash, consent_at)
+         select $1, $2, $3, now() where (select count(*) from players where lobby_code = $1) < $4
+         on conflict (lobby_code, name) do nothing returning name`,
+        [code, name, tokenHash, MAX_PLAYERS],
+      ),
+      sql().query(`select token_hash from players where lobby_code = $1 and name = $2`, [code, name]),
+    ])) as unknown as [unknown, { name: string }[], { token_hash: string | null }[]];
+    if (results[1].length === 1) return { result: "ok" };
+    if (results[2].length === 1) return { result: "taken", token_hash: results[2][0].token_hash };
+    return { result: "full" };
   } catch (err) {
-    if (isPgError(err, "23503")) return "no_lobby"; // foreign key: lobby does not exist
+    if (isPgError(err, "23503")) return { result: "no_lobby" }; // foreign key: lobby does not exist
     throw err;
   }
 }
 
-export async function getLobbyMeta(
-  code: string,
-  playerName?: string,
-): Promise<{ decision_id: string; phase: LobbyPhase; is_player: boolean; phase_elapsed_s: number } | null> {
-  const rows = await query<{ decision_id: string; phase: LobbyPhase; is_player: boolean; phase_elapsed_s: number }>(
-    `select l.decision_id, l.phase,
+export interface LobbyMeta {
+  decision_id: string;
+  phase: LobbyPhase;
+  phase_elapsed_s: number;
+  host_token_hash: string | null;
+  is_player: boolean;
+  player_token_hash: string | null;
+  has_submitted: boolean;
+}
+
+export async function getLobbyMeta(code: string, playerName?: string): Promise<LobbyMeta | null> {
+  const rows = await query<LobbyMeta>(
+    `select l.decision_id, l.phase, l.host_token_hash,
        extract(epoch from now() - l.phase_started_at)::float8 as phase_elapsed_s,
-       exists(select 1 from players p where p.lobby_code = l.code and p.name = $2) as is_player
+       exists(select 1 from players p where p.lobby_code = l.code and p.name = $2) as is_player,
+       (select p.token_hash from players p where p.lobby_code = l.code and p.name = $2) as player_token_hash,
+       exists(select 1 from submissions s where s.lobby_code = l.code and s.player_name = $2
+              and s.decision_id = l.decision_id) as has_submitted
      from lobbies l where l.code = $1`,
     [code, playerName ?? ""],
   );
   return rows[0] ?? null;
+}
+
+export async function getSubmission(code: string, playerName: string, decisionId: string): Promise<Submission | null> {
+  const rows = await query<{ row: Submission }>(
+    `select ${SUBMISSION_JSON} as row from submissions s
+     where s.lobby_code = $1 and s.player_name = $2 and s.decision_id = $3`,
+    [code, playerName, decisionId],
+  );
+  return rows[0]?.row ?? null;
 }
 
 // Compare-and-set so two hosts clicking at once cannot skip a phase.
@@ -175,13 +297,41 @@ export interface MuseCallLog {
   latency_ms: number;
 }
 
-export async function logMuseCall(c: MuseCallLog): Promise<void> {
+// Atomic budget reservation: under one advisory lock, a 'reserved' row priced at the worst case is inserted
+// only if total spend plus that worst case stays within the budget and the lobby is under its call cap.
+// Returns the row id, or null when the call must not be made.
+export async function reserveMuseCall(r: {
+  purpose: string;
+  lobby_code: string | null;
+  decision_id: string | null;
+  model: string;
+  worst_cost_usd: number;
+  budget_usd: number;
+  lobby_max_calls: number;
+}): Promise<number | null> {
+  const results = (await sql().transaction([
+    sql().query(`select pg_advisory_xact_lock(4242)`),
+    sql().query(
+      `insert into muse_calls (purpose, lobby_code, decision_id, model, ok, status, cost_usd)
+       select $1, $2, $3, $4, false, 'reserved', $5
+       where (select coalesce(sum(cost_usd), 0) from muse_calls) + $5::numeric <= $6::numeric
+         and ($2::text is null or (select count(*) from muse_calls where lobby_code = $2) < $7::int)
+       returning id`,
+      [r.purpose, r.lobby_code, r.decision_id, r.model, r.worst_cost_usd, r.budget_usd, r.lobby_max_calls],
+    ),
+  ])) as unknown as [unknown, { id: string | number }[]];
+  const row = results[1][0];
+  return row ? Number(row.id) : null;
+}
+
+// Replaces the reservation with the call's real usage and cost.
+export async function finishMuseCall(id: number, c: MuseCallLog): Promise<void> {
   await query(
-    `insert into muse_calls (purpose, lobby_code, decision_id, model, ok, status, error,
-       input_tokens, cached_tokens, output_tokens, reasoning_tokens, cost_usd, latency_ms)
-     values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+    `update muse_calls set ok = $2, status = $3, error = $4, input_tokens = $5, cached_tokens = $6,
+       output_tokens = $7, reasoning_tokens = $8, cost_usd = $9, latency_ms = $10
+     where id = $1`,
     [
-      c.purpose, c.lobby_code, c.decision_id, c.model, c.ok, c.status, c.error?.slice(0, 500) ?? null,
+      id, c.ok, c.status, c.error?.slice(0, 500) ?? null,
       c.input_tokens, c.cached_tokens, c.output_tokens, c.reasoning_tokens, c.cost_usd, c.latency_ms,
     ],
   );

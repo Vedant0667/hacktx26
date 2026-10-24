@@ -2,12 +2,12 @@
 // `/play/[code]`: the phone controller. Join with nickname and consent, wait, make the call, see your result.
 import { useEffect, useState, useSyncExternalStore, type FormEvent } from "react";
 import { COPY } from "@/lib/copy";
-import { ApiError, api, data, type LobbyStateResponse } from "@/lib/client/api";
-import { noopSubscribe, recallName, rememberName } from "@/lib/client/identity";
+import { ApiError, api, data, type BlindDecision, type JoinResponse, type LobbyStateResponse } from "@/lib/client/api";
+import { noopSubscribe, recallName, recallPlayerToken, rememberName, rememberPlayerToken } from "@/lib/client/identity";
 import { callMomentFrames, frameAt, replayLap, tla } from "@/lib/client/race";
-import { useLobby, useTicker } from "@/lib/client/useLobby";
-import { useDataMode, type DataMode, type GroundTruthFile } from "@/lib/client/mode";
-import type { DecisionPoint, LapFrame } from "@/lib/types";
+import { useLobby, useReveal, useTicker } from "@/lib/client/useLobby";
+import { useDataMode, type DataMode } from "@/lib/client/mode";
+import type { LapFrame } from "@/lib/types";
 import { Tower } from "../Tower";
 import { Button, ConnNotice, Label, ModeToggle, StatusStrip } from "../ui";
 import { CallPad } from "./CallPad";
@@ -19,11 +19,14 @@ export function PlayScreen({ code }: { code: string }) {
   const stored = useSyncExternalStore(noopSubscribe, () => recallName(code), () => null);
   const [joinedAs, setMe] = useState<string | null>(null);
   const me = joinedAs ?? stored;
-  const [decision, setDecision] = useState<DecisionPoint | null>(null);
+  // This device's token for `me`; without it the server refuses submits, so the phone is not joined.
+  const token = useSyncExternalStore(noopSubscribe, () => (me ? recallPlayerToken(code, me) : null), () => null);
+  // Blind decision and frames until the reveal; the full set arrives from the reveal route.
+  const [decision, setDecision] = useState<BlindDecision | null>(null);
   const [frames, setFrames] = useState<LapFrame[] | null>(null);
   const t = useTicker(serverNow, 200);
   const [mode, setMode] = useDataMode(code, "play");
-  const [gt, setGt] = useState<GroundTruthFile | null>(null);
+  const reveal = useReveal(code, lobby?.phase);
 
   const decisionId = lobby?.decision_id;
   useEffect(() => {
@@ -34,10 +37,9 @@ export function PlayScreen({ code }: { code: string }) {
         setFrames(f);
       })
       .catch(() => {});
-    data.groundTruth(decisionId).then(setGt).catch(() => {});
   }, [decisionId]);
 
-  const joined = !!me && !!lobby?.players.some((p) => p.name === me);
+  const joined = !!me && !!token && !!lobby?.players.some((p) => p.name === me);
 
   if (conn === "not_found") return <Shell><p className="text-24 text-flag-red">{COPY.home.codeNotFound(code)}</p></Shell>;
   if (!lobby) return <Shell><ConnNotice conn={conn} code={code} /></Shell>;
@@ -50,6 +52,8 @@ export function PlayScreen({ code }: { code: string }) {
           code={code}
           initialName={me ?? ""}
           onJoined={(name, state) => {
+            // A rejoin returns null and the stored token stays valid.
+            if (state.player_token) rememberPlayerToken(code, name, state.player_token);
             rememberName(code, name);
             setMe(name);
             apply(state, Date.now());
@@ -76,8 +80,8 @@ export function PlayScreen({ code }: { code: string }) {
 
       {lobby.phase === "decision" && decision && (
         <CallPad
-          situation={frames && <Situation decision={decision} frames={frames} mode={mode} gt={gt} />}
-          details={frames && <Situation decision={decision} frames={frames} mode={mode} gt={gt} part="bottom" />}
+          situation={frames && <Situation decision={decision} frames={frames} mode={mode} />}
+          details={frames && <Situation decision={decision} frames={frames} mode={mode} part="bottom" />}
           code={code}
           me={me!}
           decision={decision}
@@ -87,8 +91,8 @@ export function PlayScreen({ code }: { code: string }) {
         />
       )}
 
-      {(lobby.phase === "reveal" || lobby.phase === "done") && decision && (
-        <PlayerResult code={code} me={me!} decision={decision} lobby={lobby} mode={mode} gt={gt} />
+      {(lobby.phase === "reveal" || lobby.phase === "done") && reveal && (
+        <PlayerResult code={code} me={me!} decision={reveal.decision} lobby={lobby} mode={mode} gt={reveal.ground_truth} />
       )}
     </Shell>
   );
@@ -98,7 +102,7 @@ function Shell({ children }: { children: React.ReactNode }) {
   return <main className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col gap-6 px-4 py-6">{children}</main>;
 }
 
-function Waiting({ lobby, decision, me }: { lobby: LobbyStateResponse; decision: DecisionPoint | null; me: string }) {
+function Waiting({ lobby, decision, me }: { lobby: LobbyStateResponse; decision: BlindDecision | null; me: string }) {
   const r = decision?.player_role;
   return (
     <section className="flex flex-col gap-6">
@@ -124,10 +128,10 @@ function Waiting({ lobby, decision, me }: { lobby: LobbyStateResponse; decision:
   );
 }
 
-function ReplayMini({ decision, frames, elapsed, mode }: { decision: DecisionPoint; frames: LapFrame[]; elapsed: number; mode: DataMode }) {
+function ReplayMini({ decision, frames, elapsed, mode }: { decision: BlindDecision; frames: LapFrame[]; elapsed: number; mode: DataMode }) {
   const lap = replayLap(decision, elapsed);
   const f = frameAt(callMomentFrames(frames, decision), lap);
-  const total = frames[frames.length - 1]?.lap ?? lap;
+  const total = decision.total_laps;
   if (!f) return null;
   return (
     <section className="flex flex-col gap-4">
@@ -148,7 +152,7 @@ function JoinForm({
 }: {
   code: string;
   initialName: string;
-  onJoined: (name: string, state: LobbyStateResponse) => void;
+  onJoined: (name: string, state: JoinResponse) => void;
 }) {
   const [name, setName] = useState(initialName);
   const [consent, setConsent] = useState(false);
@@ -165,24 +169,24 @@ function JoinForm({
     setTaken(null);
     setBusy(true);
     try {
-      onJoined(n, await api.join(code, n));
+      // A held token for this name makes it a rejoin; the server checks it.
+      onJoined(n, await api.join(code, n, true, recallPlayerToken(code, n)));
     } catch (e2) {
-      if (e2 instanceof ApiError && e2.status === 409) {
-        setErr(COPY.error.nameTaken(n));
-        setTaken(n);
-      } else if (e2 instanceof ApiError && e2.status === 404) setErr(COPY.home.codeNotFound(code));
-      else setErr(COPY.error.connectionLost);
+      setErr(joinError(e2, code, n));
+      if (e2 instanceof ApiError && e2.status === 409 && !isFull(e2)) setTaken(n);
     } finally {
       setBusy(false);
     }
   }
 
+  // Only offered when this device holds the name's token (it joined as that name before).
+  const rejoinToken = taken ? recallPlayerToken(code, taken) : null;
   async function rejoin() {
-    if (!taken) return;
+    if (!taken || !rejoinToken || !consent) return;
     try {
-      onJoined(taken, await api.lobby(code));
-    } catch {
-      setErr(COPY.error.connectionLost);
+      onJoined(taken, await api.join(code, taken, true, rejoinToken));
+    } catch (e2) {
+      setErr(joinError(e2, code, taken));
     }
   }
 
@@ -226,11 +230,22 @@ function JoinForm({
       <p id="join-err" className="min-h-7 text-20 text-flag-red" role="alert">
         {err}
       </p>
-      {taken && (
+      {taken && rejoinToken && (
         <Button type="button" variant="secondary" className="h-14 text-20" onClick={rejoin}>
           {COPY.play.rejoin(taken)}
         </Button>
       )}
     </form>
   );
+}
+
+const isFull = (e: ApiError) => /full/i.test(e.message);
+
+function joinError(e: unknown, code: string, name: string): string {
+  if (!(e instanceof ApiError)) return COPY.error.connectionLost;
+  if (e.status === 409) return isFull(e) ? COPY.error.lobbyFull : COPY.error.nameTaken(name);
+  if (e.status === 404) return COPY.home.codeNotFound(code);
+  if (e.status === 429) return COPY.error.rateLimited(e.retryAfter);
+  if (e.status === 400) return COPY.play.consentMissing;
+  return COPY.error.connectionLost;
 }

@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { COPY, factorLabel } from "@/lib/copy";
-import { api, type CampsResponse, type LeaderboardResponse, type LobbyStateResponse } from "@/lib/client/api";
+import { api, type CampsResponse, type LeaderboardResponse, type LobbyStateResponse, type RevealDecision } from "@/lib/client/api";
 import {
   MAX_TOTAL,
   PLAYED_OUT_MS,
@@ -21,14 +21,15 @@ import type { DataMode, GroundTruthFile } from "@/lib/client/mode";
 
 const STEP_AT = [0, 7000, 13000, 13000 + PLAYED_OUT_MS + 800];
 
-function useLeaderboard(decisionId: string, when: boolean) {
+// `code` is this lobby: the route fills the team and engine rows only once it has revealed.
+function useLeaderboard(decisionId: string, code: string, when: boolean) {
   const [lb, setLb] = useState<LeaderboardResponse | null>(null);
   useEffect(() => {
     if (!when) return;
     let alive = true;
     const load = () =>
       api
-        .leaderboard(decisionId)
+        .leaderboard(decisionId, code)
         .then((r) => alive && setLb(r))
         .catch(() => {});
     load();
@@ -37,7 +38,7 @@ function useLeaderboard(decisionId: string, when: boolean) {
       alive = false;
       clearInterval(id);
     };
-  }, [decisionId, when]);
+  }, [decisionId, code, when]);
   return lb;
 }
 
@@ -53,7 +54,8 @@ export function HostReveal({
   gt,
 }: {
   code: string;
-  decision: DecisionPoint;
+  // From GET /api/lobby/[code]/reveal: the full decision and every lap.
+  decision: RevealDecision;
   frames: LapFrame[];
   lobby: LobbyStateResponse;
   elapsed: number;
@@ -76,7 +78,7 @@ export function HostReveal({
     return () => window.removeEventListener("keydown", onKey);
   }, [at]);
 
-  const lb = useLeaderboard(decision.id, step >= 1);
+  const lb = useLeaderboard(decision.id, code, step >= 1);
   const [camps, setCamps] = useState<CampsResponse | null>(null);
   useEffect(() => {
     api.camps(code).then(setCamps).catch(() => {});
@@ -89,7 +91,7 @@ export function HostReveal({
 
   const lap = step < 2 ? decision.lap : step === 2 ? playedOutLap(decision, at - STEP_AT[2]) : decision.reveal_to_lap;
   const frame = frameAt(frames, lap);
-  const total = frames[frames.length - 1]?.lap ?? lap;
+  const total = decision.total_laps;
 
   // Cars that took the winning option at the call carry "{option} L{lap}" in their PIT cell.
   const pitTags = useMemo(() => {
@@ -286,7 +288,7 @@ function Verdict({
   type Row = { key: string; label: React.ReactNode; call: Call | null; named: string[]; time: number | null; total: number; kind: "player" | "team" | "engine" };
   const rows: Row[] = [
     ...subs.map((s) => ({ key: s.player_name, label: tla(s.player_name), call: s.call, named: s.factors_named, time: s.seconds_to_call, total: s.total, kind: "player" as const })),
-    ...(lb
+    ...(lb?.team && lb.engine
       ? [
           { key: "team", label: decision.player_role.team, call: lb.team.call, named: lb.team.factors_named, time: null, total: lb.team.total, kind: "team" as const },
           { key: "engine", label: COPY.reveal.engine, call: lb.engine.call, named: lb.engine.factors_named, time: null, total: lb.engine.total, kind: "engine" as const },
@@ -409,20 +411,20 @@ function Verdict({
 
 export function HostScoreboard({ code, decision, lobby }: { code: string; decision: DecisionPoint; lobby: LobbyStateResponse }) {
   const router = useRouter();
-  const lb = useLeaderboard(decision.id, true);
+  const lb = useLeaderboard(decision.id, code, true);
   const [selected, setSelected] = useState<string | null>(null);
 
-  const teamTotal = lb?.team.total ?? null;
-  const engineTotal = lb?.engine.total ?? null;
+  const teamTotal = lb?.team?.total ?? null;
+  const engineTotal = lb?.engine?.total ?? null;
   const pctOf = (name: string) => lb?.rows.find((r) => r.kind === "player" && r.name === name && r.lobby_code === code)?.percentile ?? null;
 
   type Row = { key: string; kind: "player" | "team" | "engine"; label: string; name: string; total: number; c: number; r: number; sub?: Submission };
   const unsorted: Row[] = [
     ...lobby.submissions.map((s) => ({ key: s.player_name, kind: "player" as const, label: tla(s.player_name), name: s.player_name, total: s.total, c: s.score_call, r: s.score_reasoning, sub: s })),
-    ...(lb
+    ...(lb?.team && lb.engine
       ? [
-          { key: "team", kind: "team" as const, label: decision.player_role.team, name: COPY.leaderboard.teamRow(decision.player_role.team), total: lb.team.total, c: lb.team.score_call, r: lb.team.score_reasoning },
-          { key: "engine", kind: "engine" as const, label: COPY.reveal.engine, name: COPY.leaderboard.engineRow, total: lb.engine.total, c: lb.engine.score_call, r: lb.engine.score_reasoning },
+          { key: "team", kind: "team" as const, label: decision.player_role.team, name: COPY.leaderboard.teamRow(decision.player_role.team), total: lb.team.total, c: lb.team.score_call ?? 0, r: lb.team.score_reasoning ?? 0 },
+          { key: "engine", kind: "engine" as const, label: COPY.reveal.engine, name: COPY.leaderboard.engineRow, total: lb.engine.total, c: lb.engine.score_call ?? 0, r: lb.engine.score_reasoning ?? 0 },
         ]
       : []),
   ];

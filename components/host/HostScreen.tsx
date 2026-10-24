@@ -2,25 +2,27 @@
 // `/host/[code]`: the laptop shared screen. Driven by lobby phase; the host clicks advance it.
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { COPY } from "@/lib/copy";
-import { data } from "@/lib/client/api";
-import { noopSubscribe, rememberHost } from "@/lib/client/identity";
+import { data, type BlindDecision } from "@/lib/client/api";
+import { noopSubscribe, recallHostToken, rememberHost } from "@/lib/client/identity";
 import { CALL_WINDOW_S, callMomentFrames, frameAt, raceControl, replayDoneMs, replayLap, tla } from "@/lib/client/race";
-import { useLobby, useTicker } from "@/lib/client/useLobby";
+import { useLobby, useReveal, useTicker } from "@/lib/client/useLobby";
 import { playFreezeTone } from "@/lib/client/cue";
-import { useDataMode, type DataMode, type GroundTruthFile } from "@/lib/client/mode";
-import { GapLine, StoryFacts, TradeOff, getBrief } from "../DecisionBrief";
-import type { DecisionPoint, LapFrame } from "@/lib/types";
+import { useDataMode, type DataMode } from "@/lib/client/mode";
+import { GapLine, RejoinCaveat, StoryFacts, TradeOff, getBrief } from "../DecisionBrief";
+import type { LapFrame } from "@/lib/types";
 import { QrCode } from "../QrCode";
 import { Tower } from "../Tower";
 import { Button, ConnNotice, Label, ModeToggle, StatusStrip } from "../ui";
 import { HostReveal, HostScoreboard } from "./HostReveal";
 
 export function HostScreen({ code }: { code: string }) {
-  const { lobby, conn, serverNow, setPhase } = useLobby(code);
-  const [decision, setDecision] = useState<DecisionPoint | null>(null);
+  const { lobby, conn, serverNow, setPhase, phaseErr } = useLobby(code);
+  // Blind decision and frames until the reveal; the full set arrives from the reveal route.
+  const [decision, setDecision] = useState<BlindDecision | null>(null);
   const [frames, setFrames] = useState<LapFrame[] | null>(null);
   const [dataErr, setDataErr] = useState(false);
-  const [gt, setGt] = useState<GroundTruthFile | null>(null);
+  const reveal = useReveal(code, lobby?.phase);
+  const hostToken = useSyncExternalStore(noopSubscribe, () => recallHostToken(code), () => null);
   const [mode, setMode] = useDataMode(code, "host");
   const t = useTicker(serverNow, 100);
   const origin = useSyncExternalStore(noopSubscribe, () => window.location.origin, () => "");
@@ -38,8 +40,6 @@ export function HostScreen({ code }: { code: string }) {
         setFrames(f);
       })
       .catch(() => setDataErr(true));
-    // Optional: only the Advanced pit-loss figures and post-reveal numbers need it.
-    data.groundTruth(decisionId).then(setGt).catch(() => {});
   }, [decisionId]);
 
   const phase = lobby?.phase;
@@ -81,6 +81,11 @@ export function HostScreen({ code }: { code: string }) {
   return (
     <>
       <ConnNotice conn={conn} code={code} />
+      {(!hostToken || phaseErr === "forbidden") && (
+        <p role="alert" className="fixed inset-x-0 bottom-0 z-40 bg-flag-red px-4 py-2 text-center text-20 font-semibold text-bg">
+          {COPY.error.notHost(code)}
+        </p>
+      )}
       {phase === "waiting" && (
         <Waiting code={code} joinUrl={joinUrl} joinHref={joinHref} decision={decision} players={lobby.players} onStart={() => setPhase("replay")} modeToggle={<ModeToggle mode={mode} onChange={setMode} />} />
       )}
@@ -97,13 +102,23 @@ export function HostScreen({ code }: { code: string }) {
           onAdvance={() => setPhase(phase === "replay" ? "decision" : "reveal")}
           mode={mode}
           modeToggle={<span className="flex items-center gap-4"><ModeToggle mode={mode} onChange={setMode} size="sm" /><Button variant="secondary" className="h-9 px-3 text-14" aria-pressed={muted} onClick={() => setMuted((m) => !m)}>{muted ? COPY.cue.unmute : COPY.cue.mute}</Button></span>}
-          gt={gt}
         />
       )}
-      {phase === "reveal" && (
-        <HostReveal code={code} decision={decision} frames={frames} lobby={lobby} elapsed={elapsed} onNext={() => setPhase("done")} mode={mode} modeToggle={<ModeToggle mode={mode} onChange={setMode} size="sm" />} gt={gt} />
+      {(phase === "reveal" || phase === "done") && !reveal && <Centered text="" />}
+      {phase === "reveal" && reveal && (
+        <HostReveal
+          code={code}
+          decision={reveal.decision}
+          frames={reveal.frames}
+          lobby={lobby}
+          elapsed={elapsed}
+          onNext={() => setPhase("done")}
+          mode={mode}
+          modeToggle={<ModeToggle mode={mode} onChange={setMode} size="sm" />}
+          gt={reveal.ground_truth}
+        />
       )}
-      {phase === "done" && <HostScoreboard code={code} decision={decision} lobby={lobby} />}
+      {phase === "done" && reveal && <HostScoreboard code={code} decision={reveal.decision} lobby={lobby} />}
     </>
   );
 }
@@ -124,7 +139,7 @@ function Waiting({
   code: string;
   joinUrl: string;
   joinHref: string;
-  decision: DecisionPoint;
+  decision: BlindDecision;
   players: { name: string; joined_at: number }[];
   onStart: () => void;
   modeToggle: React.ReactNode;
@@ -202,10 +217,9 @@ function RaceView({
   onAdvance,
   mode,
   modeToggle,
-  gt,
 }: {
   code: string;
-  decision: DecisionPoint;
+  decision: BlindDecision;
   frames: LapFrame[];
   lap: number;
   frozen: boolean;
@@ -215,13 +229,12 @@ function RaceView({
   onAdvance: () => void;
   mode: DataMode;
   modeToggle: React.ReactNode;
-  gt: GroundTruthFile | null;
 }) {
   const seen = callMomentFrames(frames, decision);
   const frame = frameAt(seen, lap);
-  const total = frames[frames.length - 1]?.lap ?? lap;
+  const total = decision.total_laps;
   const msgs = raceControl(seen, lap, decision.replay_from_lap).slice(0, 8);
-  const brief = getBrief(decision, frames, gt);
+  const brief = getBrief(decision, frames);
   const left = Math.max(0, Math.ceil(CALL_WINDOW_S - elapsed / 1000));
   const r = decision.player_role;
 
@@ -291,6 +304,7 @@ function RaceView({
                   <span className="normal-case tracking-normal">{COPY.rejoin.assumption}</span>
                 </span>
                 <GapLine frame={brief.frame} playerNumber={r.number} rejoin={brief.rejoin} />
+                {brief.rejoin && <RejoinCaveat frame={brief.frame} lap={decision.lap} className="text-16" />}
               </div>
             )}
             <TradeOff brief={brief} mode={mode} />

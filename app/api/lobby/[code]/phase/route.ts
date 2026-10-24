@@ -1,17 +1,21 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
 import { advancePhase, getLobbyMeta, getLobbyState, PHASES } from "@/lib/db";
-import { handle, HttpError, normalizeCode, readBody } from "../../../_lib/http";
+import { handle, HttpError, normalizeCode, readBody, tokenMatches } from "../../../_lib/http";
 import { redactForPhase } from "../../../_lib/redact";
 
 const Body = z.object({ phase: z.enum(["waiting", "replay", "decision", "reveal", "done"]) });
 
-// Phases only move forward one step. Re-sending the current phase is a no-op (double clicks).
+// Host only: requires x-host-token (returned once by POST /api/lobby). Phases only move forward one step.
+// Re-sending the current phase is a no-op (double clicks).
 export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobby/[code]/phase">) => {
   const code = normalizeCode((await ctx.params).code);
   const { phase } = await readBody(req, Body);
   const meta = await getLobbyMeta(code);
   if (!meta) throw new HttpError(404, "Lobby not found");
+  if (!tokenMatches(req.headers.get("x-host-token"), meta.host_token_hash)) {
+    throw new HttpError(403, "Only the host screen can change the phase");
+  }
   if (meta.phase !== phase) {
     const next = PHASES[PHASES.indexOf(meta.phase) + 1];
     if (phase !== next) {

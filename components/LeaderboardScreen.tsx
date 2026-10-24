@@ -1,5 +1,6 @@
 "use client";
-// `/leaderboard`: global standings per decision point, with the real team and the engine pinned at their rank.
+// `/leaderboard`: global standings per decision point. The real team, the engine and everyone's calls show only when
+// this browser played in a lobby that has revealed the decision (the route checks); otherwise names and totals.
 import Link from "next/link";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { COPY, factorLabel } from "@/lib/copy";
@@ -19,12 +20,13 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
   const [factorsById, setFactorsById] = useState<Record<string, string[]>>({});
   const youRaw = useSyncExternalStore(noopSubscribe, () => recallPlayedRaw(active), () => null);
   const you = parsePlayed(youRaw);
+  const youLobby = you?.lobby ?? null;
 
   useEffect(() => {
     if (!active) return;
     let alive = true;
     api
-      .leaderboard(active)
+      .leaderboard(active, youLobby)
       .then((r) => alive && setResults((m) => ({ ...m, [active]: r })))
       .catch(() => alive && setResults((m) => ({ ...m, [active]: "error" })));
     data
@@ -34,7 +36,7 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
     return () => {
       alive = false;
     };
-  }, [active]);
+  }, [active, youLobby]);
 
   const res = results[active];
   const lb = res && res !== "error" ? res : null;
@@ -51,12 +53,14 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
   const youIdx = you && lb ? lb.rows.findIndex((r) => r.kind === "player" && r.name === you.name && r.lobby_code === you.lobby) : -1;
   const youRow = youIdx >= 0 ? lb!.rows[youIdx] : null;
   const youRank = youRow ? players.indexOf(youRow) + 1 : 0;
-  const shown = lb ? lb.rows.slice(0, TOP) : [];
+  const revealed = !!lb?.revealed;
+  // Before a reveal the route sends no team or engine; drop any non-player row to be safe.
+  const shown = lb ? (revealed ? lb.rows : players).slice(0, TOP) : [];
 
   const markers: { key: string; total: number; label: string; cls: string }[] = lb
     ? [
-        { key: "team", total: lb.team.total, label: lb.team.name, cls: "bg-ink-2 text-ink-2" },
-        { key: "engine", total: lb.engine.total, label: COPY.reveal.engine, cls: "bg-engine text-engine" },
+        ...(revealed && lb.team ? [{ key: "team", total: lb.team.total, label: lb.team.name, cls: "bg-ink-2 text-ink-2" }] : []),
+        ...(revealed && lb.engine ? [{ key: "engine", total: lb.engine.total, label: COPY.reveal.engine, cls: "bg-engine text-engine" }] : []),
         ...(youRow ? [{ key: "you", total: youRow.total, label: COPY.leaderboard.youMarker, cls: "bg-ink text-ink" }] : []),
       ]
     : [];
@@ -132,7 +136,8 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
             <p className="text-20 text-ink-3">{COPY.leaderboard.first}</p>
           ) : null}
 
-          <Table rows={shown} factors={factors} youRow={youRow} youRank={youRank} youBelow={youIdx >= TOP} />
+          {!revealed && players.length > 0 && <p className="text-20 text-ink-2">{COPY.leaderboard.hidden}</p>}
+          <Table rows={shown} factors={factors} youRow={youRow} youRank={youRank} youBelow={youIdx >= TOP} revealed={revealed} />
           <p className="nums text-16 text-ink-3">{COPY.leaderboard.footer(lb.total_players)}</p>
         </>
       )}
@@ -150,12 +155,15 @@ function Table({
   youRow,
   youRank,
   youBelow,
+  revealed,
 }: {
   rows: LeaderboardRow[];
   factors: string[];
   youRow: LeaderboardRow | null;
   youRank: number;
   youBelow: boolean;
+  // False: calls and factors are withheld, so those cells stay empty instead of reading "No call".
+  revealed: boolean;
 }) {
   let rank = 0;
   const line = (r: LeaderboardRow, shownRank: number | null, inverted: boolean) => (
@@ -167,9 +175,9 @@ function Table({
       <span role="cell" className="nums text-right font-semibold">{shownRank ?? ""}</span>
       <span role="cell" className="font-bold uppercase stretch-75">{r.kind === "player" ? tla(r.name) : r.kind === "engine" ? COPY.reveal.engine : COPY.reveal.team}</span>
       <span role="cell" className={`truncate ${WIDE}`}>{r.kind === "team" ? COPY.leaderboard.teamRow(r.name) : r.kind === "engine" ? "" : r.name}</span>
-      <span role="cell" className="whitespace-nowrap"><CallWord call={r.call} className="text-20" /></span>
+      <span role="cell" className="whitespace-nowrap">{revealed && <CallWord call={r.call} className="text-20" />}</span>
       <span role="cell" className="hidden gap-2 md:flex" aria-label={r.factors_named.map(factorLabel).join(", ")}>
-        {factors.map((f) => (
+        {revealed && factors.map((f) => (
           <span key={f} className={r.factors_named.includes(f) || r.kind === "engine" || inverted ? "" : "text-ink-3"}>
             {r.factors_named.includes(f) ? COPY.reveal.named : COPY.reveal.notNamed}
           </span>

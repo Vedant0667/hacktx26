@@ -1,11 +1,12 @@
-// The phone's read of the call moment, from call-moment frames only (nothing from the engine or ground truth's answer).
+// The phone's read of the call moment, from the blind decision and call-moment frames only.
 import { COPY } from "@/lib/copy";
-import type { DataMode, GroundTruthFile } from "@/lib/client/mode";
-import type { DecisionPoint, LapFrame } from "@/lib/types";
-import { GapLine, StoryFacts, TradeOff, getBrief } from "../DecisionBrief";
+import type { BlindDecision } from "@/lib/client/api";
+import type { DataMode } from "@/lib/client/mode";
+import type { LapFrame } from "@/lib/types";
+import { GapLine, RejoinCaveat, StoryFacts, TradeOff, getBrief } from "../DecisionBrief";
 
-export function Situation({ decision, frames, mode, gt, part = "top" }: { decision: DecisionPoint; frames: LapFrame[]; mode: DataMode; gt: GroundTruthFile | null; part?: "top" | "bottom" }) {
-  const brief = getBrief(decision, frames, gt);
+export function Situation({ decision, frames, mode, part = "top" }: { decision: BlindDecision; frames: LapFrame[]; mode: DataMode; part?: "top" | "bottom" }) {
+  const brief = getBrief(decision, frames);
   // Below the call controls: the trade-off and the race story, so the buttons stay near the thumb.
   if (part === "bottom")
     return (
@@ -38,6 +39,7 @@ export function Situation({ decision, frames, mode, gt, part = "top" }: { decisi
           <span className="font-normal text-ink-2">{COPY.rejoin.assumption}</span>
         </p>
       )}
+      {rejoin && <RejoinCaveat frame={brief.frame} lap={decision.lap} className="text-16" />}
     </section>
   );
 }

@@ -128,10 +128,11 @@ export function Label({ children, className = "" }: { children: ReactNode; class
   return <span className={`text-14 font-semibold uppercase tracking-label text-ink-3 ${className}`}>{children}</span>;
 }
 
-export function CallWord({ call, className = "" }: { call: "BOX" | "STAY" | null; className?: string }) {
+// MIXED is a Muse camp whose members made different calls.
+export function CallWord({ call, className = "" }: { call: "BOX" | "STAY" | "MIXED" | null; className?: string }) {
   return (
     <span className={`font-extrabold uppercase stretch-125 tracking-hero leading-hero ${className}`}>
-      {call ? COPY.freeze.options[call] : COPY.reveal.noCall}
+      {call === "MIXED" ? COPY.reveal.mixed : call ? COPY.freeze.options[call] : COPY.reveal.noCall}
     </span>
   );
 }

@@ -14,31 +14,16 @@
   "STAY"
  ],
  "replay_from_lap": 1,
- "reveal_to_lap": 26,
- "ground_truth": {
-  "correct": "BOX",
-  "swing_s": 15.6
- },
  "factors": [
   "tyre_age",
   "cheap_stop_under_sc",
   "similar_cars_pitted",
   "track_position"
  ],
- "team": {
-  "call": "STAY",
-  "reasons": [
-   "Kept track position: P1 and P3 on the road at the SC.",
-   "Stella after the race: \"it wasn't the correct decision.\""
-  ]
- },
- "engine": {
-  "call": "BOX",
-  "confidence": 0.95,
-  "reasons": [
-   "Leading under the SC. 9 of 9 cars within 14.2 s behind expected to pit.",
-   "SC stop costs 14.2 s, green-flag stop 28.3 s.",
-   "Tyres 7 laps old, 50 laps left, 25-lap cap: 2 more stops owed."
-  ]
+ "total_laps": 57,
+ "pit_loss": {
+  "normal_s": 28.3,
+  "n_stops": 7,
+  "from": "2024-qatar"
  }
 }

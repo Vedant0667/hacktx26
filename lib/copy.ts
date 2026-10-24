@@ -9,6 +9,8 @@ const callWord = (c: Call) => (c === "BOX" ? "Box" : "Stay out");
 const callPast = (c: Call) => (c === "BOX" ? "Boxed" : "Stayed out");
 const callGerund = (c: Call) => (c === "BOX" ? "Pitting" : "Staying out");
 
+// "40 s" under a minute, "12 min" above.
+const waitText = (s: number) => (s < 60 ? `${Math.ceil(s)} s` : `${Math.ceil(s / 60)} min`);
 const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 const signed = (n: number) => `${n > 0 ? "+" : ""}${n.toFixed(1)}`;
 
@@ -35,6 +37,9 @@ export const COPY = {
     create: "Create lobby",
     creating: "Creating lobby",
     createFailed: "Couldn't create the lobby. Try again.", // added
+    // added: 429 on create (hourly lobby cap); s from Retry-After
+    createLimited: (s: number | null) =>
+      `Lobby limit reached for this hour. Try again in ${s ? waitText(s) : "a few minutes"}.`,
     decisionLabel: "Race moment", // added
     joinLabel: "Room code",
     join: "Join lobby", // docs/06 3.1 button; verb plus object
@@ -137,11 +142,12 @@ export const COPY = {
     bestReason: (tla: string, k: number, n: number) => `Best reason: ${tla}, ${k} of ${n} factors`,
     resume: (s: number) => `Replay resumes in ${s} s`,
     noCall: "No call",
+    mixed: "Mixed", // added: a camp whose members made different calls
     camps: "Reasons in the room", // added
     camp: (n: number, total: number, factor: string) => `${n} of ${total}: ${factor}`, // added
     noFactor: "No factor named", // added
     campsByMuse: "Grouped by Muse Spark from what you said.", // added: source line under Muse camp labels
-    credit: "Reasons graded and grouped by Muse Spark. Speech to text runs in your browser. Engine: offline model on Jolpica and OpenF1 lap data.",
+    credit: "Reasons graded and grouped by Muse Spark. Speech to text by your browser's recognizer (Chrome uses Google). Engine: offline model on Jolpica and OpenF1 lap data.",
     showScores: "Show scores", // added: host button
     who: "Who", // added: column header
     call: "Call",
@@ -187,12 +193,15 @@ export const COPY = {
     first: "No other scores on this call yet.",
     loading: "Loading scores", // added
     back: "Back to start", // added
+    hidden: "Calls and reasons show here after your lobby's reveal. Until then: names and scores only.", // added
   },
   play: {
     join: "Join lobby",
     joining: "Joining lobby",
     tla: "Code on the tower", // added: TLA label
-    consent: "Show my name and spoken reasons to the room.", // added: consent checkbox (docs/05 logistics)
+    // added: consent checkbox (docs/05 logistics; audit M6). The server rejects a join without it.
+    consent:
+      "Show my nickname and spoken reasons to the room and on the public leaderboard. Your browser's speech recognizer turns your voice into text. In Chrome, that sends the audio to Google. Lobbies, names and calls are deleted after 24 hours.",
     consentMissing: "Tick the box to join.", // added
     rejoin: (name: string) => `Rejoin as ${name}`, // added
     youAre: (tla: string) => `You are ${tla}`, // added
@@ -209,6 +218,10 @@ export const COPY = {
     reconnected: (lap: number) => `Back. Replay synced to lap ${lap}.`,
     gaveUp: "Can't reach the lobby. Check your connection and reload.",
     nameTaken: (name: string) => `${name} is taken in this lobby. Pick another.`,
+    lobbyFull: "Lobby is full: 12 players. Ask the host to start a new one.", // added: 409 on join
+    rateLimited: (s: number | null) => `Too many requests from this network. Try again in ${s ? waitText(s) : "a few seconds"}.`, // added: 429
+    notHost: (code: string) => `This screen can't run room ${code}. Use the screen that created the lobby.`, // added: 403 on phase
+    notYou: (name: string) => `This phone isn't signed in as ${name}. Send the call from the phone you joined on.`, // added: 403 on submit
     generic: (code: string) => `Something broke on our side. Reload to rejoin ${code}.`,
     data: "Race data is missing. Reload to try again.", // added
   },
@@ -280,6 +293,11 @@ export const COPY = {
     traffic: (code: string) => `Traffic: ${code}`,
     loss: (s: number) => `Stop costs ${s.toFixed(1)} s`,
     ghost: "Box",
+    // added: the projection uses end-of-lap gaps; a neutralisation changes them
+    caveat: (status: "SC" | "VSC", lap: number) =>
+      status === "SC"
+        ? `Gaps from the end of lap ${lap}. The safety car will close them up.`
+        : `Gaps from the end of lap ${lap}. They will shift under the VSC.`,
   },
   story: {
     stay: "Stay out",

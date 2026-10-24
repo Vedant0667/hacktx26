@@ -1,6 +1,11 @@
 """Build replay frames, ground truth and engine calls for each decision point.
 
-Reads data/jolpica/, data/manual/ and (if present) data/openf1/. Writes public/data/.
+Reads data/jolpica/, data/manual/ and (if present) data/openf1/.
+Writes two trees (docs/audits/security.md M2):
+- server-data/: full decisions (team, engine, ground truth), every lap of frames, ground_truth.json and
+  engine_calls.json. Not served; lib/data.ts reads it and GET /api/lobby/[code]/reveal hands it out after the reveal.
+- public/data/: what a player may see before the reveal. Blind decision.json (no team, engine, ground truth
+  or reveal lap) and frames.json cut at the decision: laps 1..L-1 plus a lap-L call-moment frame.
 Run: python3 engine/build.py
 """
 import json
@@ -13,7 +18,10 @@ ROOT = Path(__file__).resolve().parent.parent
 JOL = ROOT / "data" / "jolpica"
 MAN = ROOT / "data" / "manual"
 OF1 = ROOT / "data" / "openf1"
-OUT = ROOT / "public" / "data"
+OUT = ROOT / "server-data"
+PUB = ROOT / "public" / "data"
+BLIND_KEYS = ("id", "race", "blind_title", "lap", "trigger", "player_role", "options", "replay_from_lap", "factors",
+              "total_laps", "pit_loss")
 
 DECISIONS = [
     {
@@ -270,8 +278,23 @@ def blind_title(frames, dp):
     return f"Lap {L}. {trig}. You're in P{prev['position']}, tyres {me['tyre_age']} laps old."
 
 
+def call_moment_frame(clean, dp):
+    """What the pit wall sees when the call is due (same rule as lib/client/race.ts callMomentFrames):
+    the order and gaps at the end of lap L-1, tyre ages +1, lap L's track status, and stops on lap L only by
+    cars ahead of the player. Lap L's real frame would show whether the player's team pitted."""
+    L = dp["lap"]
+    prev, now = clean[L - 2], clean[L - 1]
+    me = next(d for d in prev["drivers"] if d["number"] == dp["player"]["number"])
+    pitted_now = {d["code"] for d in now["drivers"] if d["pitted_this_lap"]}
+    return {"lap": L, "track_status": now["track_status"],
+            "drivers": [{**d, "tyre_age": None if d["tyre_age"] is None else d["tyre_age"] + 1,
+                         "pitted_this_lap": d["position"] < me["position"] and d["code"] in pitted_now}
+                        for d in prev["drivers"]]}
+
+
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
+    PUB.mkdir(parents=True, exist_ok=True)
     index, engine_calls = [], {}
     for dp in DECISIONS:
         key = dp["race_key"]
@@ -314,6 +337,7 @@ def main():
             "team": {"call": team.get("call"), "reasons": team.get("reasons", [])},
             "engine": {"call": e["call"], "confidence": e["confidence"], "reasons": e["reasons"]},
         }
+        pit_loss = {"normal_s": loss, "n_stops": n_loss, "from": src_key}
         d = OUT / dp["id"]
         d.mkdir(parents=True, exist_ok=True)
         (d / "decision.json").write_text(json.dumps(decision, indent=1))
@@ -324,7 +348,15 @@ def main():
                  for f in frames]
         (d / "frames.json").write_text(json.dumps(clean, separators=(",", ":")))
         (d / "ground_truth.json").write_text(json.dumps({"seconds": tg, "positions_reference": gt,
-                                                          "pit_loss": {"normal_s": loss, "n_stops": n_loss, "from": src_key}}, indent=1))
+                                                          "pit_loss": pit_loss}, indent=1))
+        # Public, pre-reveal copies: no answer, no laps after the call.
+        pd = PUB / dp["id"]
+        pd.mkdir(parents=True, exist_ok=True)
+        public = {**decision, "total_laps": race["n_laps"], "pit_loss": pit_loss}
+        (pd / "decision.json").write_text(json.dumps({k: public[k] for k in BLIND_KEYS}, indent=1))
+        blind = clean[:dp["lap"] - 1] + [call_moment_frame(clean, dp)]
+        (pd / "frames.json").write_text(json.dumps(blind, separators=(",", ":")))
+        (pd / "ground_truth.json").unlink(missing_ok=True)
         engine_calls[dp["id"]] = {**decision["engine"], "inputs": e["inputs"]}
         index.append({"id": dp["id"], "race": dp["race"], "lap": dp["lap"], "title": dp["title"]})
 
@@ -348,7 +380,9 @@ def main():
             print(f"    - {r}")
 
     (OUT / "index.json").write_text(json.dumps(index, indent=1))
+    (PUB / "index.json").write_text(json.dumps(index, indent=1))
     (OUT / "engine_calls.json").write_text(json.dumps(engine_calls, indent=1))
+    (PUB / "engine_calls.json").unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

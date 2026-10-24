@@ -1,18 +1,19 @@
-// Server-only loader for decision data written by engine/build.py into public/data.
+// Server-only loader for the full decision data (answers included) written by engine/build.py into
+// server-data/, which is never served. public/data holds only the blind pre-reveal copies.
 // DATA_DIR overrides the directory (absolute, or relative to the project root).
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import type { DecisionIndexEntry, DecisionPoint, LapFrame } from "./types";
 
 // Each readFile spells its path inline: the default one is statically scoped so the bundler traces
-// only public/data into the server output (on Vercel, public/ is otherwise CDN-only); the
+// server-data into the server output (next.config.ts outputFileTracingIncludes also lists it); the
 // DATA_DIR one is a dev/test override the tracer is told to ignore.
 function readData(rel: string): Promise<string> {
   const override = process.env.DATA_DIR;
   if (override) {
     return readFile(path.resolve(/*turbopackIgnore: true*/ process.cwd(), override, rel), "utf8");
   }
-  return readFile(path.join(process.cwd(), "public", "data", rel), "utf8");
+  return readFile(path.join(process.cwd(), "server-data", rel), "utf8");
 }
 
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
@@ -45,6 +46,12 @@ export async function getIndex(): Promise<DecisionIndexEntry[] | null> {
 export async function getDecision(id: string): Promise<DecisionPoint | null> {
   if (!ID_RE.test(id)) return null;
   return readJson<DecisionPoint>(path.join(id, "decision.json"));
+}
+
+// ground_truth.json: the measured outcome behind decision.ground_truth (seconds method, positions reference, pit loss).
+export async function getGroundTruth(id: string): Promise<Record<string, unknown> | null> {
+  if (!ID_RE.test(id)) return null;
+  return readJson<Record<string, unknown>>(path.join(id, "ground_truth.json"));
 }
 
 export async function getFrames(id: string): Promise<LapFrame[] | null> {

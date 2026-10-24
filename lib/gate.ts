@@ -1,5 +1,6 @@
-// Shared-password gate for test deployments. Off when SITE_PASSWORD is unset (local dev).
-import { createHmac, timingSafeEqual } from "node:crypto";
+// Shared-password gate for test deployments. Off when SITE_PASSWORD is unset, but only off Vercel:
+// on Vercel (VERCEL_ENV set) a missing password means a misconfigured deployment, and the gate refuses.
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 export const GATE_COOKIE = "site_gate";
 export const GATE_MAX_AGE_S = 60 * 60 * 24 * 7;
@@ -9,19 +10,48 @@ export function gatePassword(): string | null {
   return p && p.length > 0 ? p : null;
 }
 
-// The cookie holds an HMAC of the password, never the password, so rotating SITE_PASSWORD logs everyone out.
-export function gateToken(password: string): string {
-  return createHmac("sha256", password).update("site-gate-v1").digest("hex");
+// True when the gate should refuse everything: deployed on Vercel without a password.
+export function gateMisconfigured(): boolean {
+  return !gatePassword() && Boolean(process.env.VERCEL_ENV);
 }
 
+function sign(password: string, exp: number): string {
+  return createHmac("sha256", password).update(`site-gate-v2:${exp}`).digest("base64url");
+}
+
+// Cookie value `${exp}.${hmac}`: exp is epoch seconds, signed with the password, so rotating SITE_PASSWORD
+// logs everyone out and the server enforces the 7-day expiry itself.
+export function gateToken(password: string, nowS = Math.floor(Date.now() / 1000)): string {
+  const exp = nowS + GATE_MAX_AGE_S;
+  return `${exp}.${sign(password, exp)}`;
+}
+
+export function verifyGateToken(cookie: string, password: string, nowS = Math.floor(Date.now() / 1000)): boolean {
+  const m = /^(\d{1,12})\.([A-Za-z0-9_-]{43})$/.exec(cookie);
+  if (!m) return false;
+  const exp = Number(m[1]);
+  if (exp <= nowS || exp > nowS + GATE_MAX_AGE_S + 60) return false;
+  return safeEqual(m[2], sign(password, exp));
+}
+
+// Constant time and length-independent: both sides are hashed to 32 bytes before comparing.
 export function safeEqual(a: string, b: string): boolean {
-  const x = Buffer.from(a);
-  const y = Buffer.from(b);
-  return x.length === y.length && timingSafeEqual(x, y);
+  const x = createHash("sha256").update(a).digest();
+  const y = createHash("sha256").update(b).digest();
+  return timingSafeEqual(x, y);
 }
 
-// Only same-site relative paths, so /unlock?next= can't redirect off the site.
+// Only same-site paths, so /unlock?next= can't redirect off the site. Resolve the way the browser will
+// (URL parsing strips tabs and newlines, so "/\t/evil.com" becomes "//evil.com") and require our origin.
 export function safeNext(next: string | null | undefined): string {
-  if (!next || !next.startsWith("/") || next.startsWith("//") || next.startsWith("/\\")) return "/";
-  return next;
+  if (!next || !next.startsWith("/") || /[\u0000-\u001f\u007f\\]/.test(next)) return "/";
+  const base = "https://gate.invalid";
+  let url: URL;
+  try {
+    url = new URL(next, base);
+  } catch {
+    return "/";
+  }
+  if (url.origin !== base) return "/";
+  return url.pathname + url.search + url.hash;
 }

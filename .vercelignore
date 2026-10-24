@@ -6,3 +6,5 @@ tasks/
 .claude/
 certificates/
 ideas.md
+.env*
+!.env.example

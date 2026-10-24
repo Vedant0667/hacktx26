@@ -2,7 +2,8 @@
 // plus the pre-reveal figures Advanced shows. Nothing here reads decision.engine or ground_truth.correct.
 import { useCallback, useSyncExternalStore } from "react";
 import { COPY } from "@/lib/copy";
-import type { DecisionPoint, LapFrame } from "@/lib/types";
+import type { LapFrame } from "@/lib/types";
+import type { BlindDecision, PitLoss } from "./api";
 
 export type DataMode = "simple" | "advanced";
 export type ModeRole = "play" | "host";
@@ -42,7 +43,7 @@ export function useDataMode(code: string, role: ModeRole): [DataMode, (m: DataMo
   return [mode, set];
 }
 
-// public/data/<id>/ground_truth.json, the parts the UI reads. Only pit_loss is shown before the reveal.
+// ground_truth from GET /api/lobby/[code]/reveal, the parts the UI reads. Before the reveal, pit loss comes from the blind decision.
 export interface GroundTruthFile {
   pit_loss?: { normal_s: number; n_stops: number; from: string };
   seconds?: {
@@ -69,20 +70,21 @@ export interface PlacesSplit {
 // Share of a green-flag stop that a stop costs under each neutralisation.
 export const PIT_FACTOR = { SC: 0.5, VSC: 0.75 } as const;
 
-export function pitLoss(gt: GroundTruthFile | null, trigger: "SC" | "VSC"): { normal: number; under: number } | null {
-  const normal = gt?.pit_loss?.normal_s;
+export function pitLoss(pl: PitLoss | null | undefined, trigger: "SC" | "VSC"): { normal: number; under: number } | null {
+  const normal = pl?.normal_s;
   if (normal == null) return null;
   return { normal, under: Math.round(normal * PIT_FACTOR[trigger] * 10) / 10 };
 }
 
 // Advanced freeze figures from the call-moment frame (pass callMomentFrames output).
-export function advancedFigures(d: DecisionPoint, seen: LapFrame[], totalLaps: number, gt: GroundTruthFile | null) {
+export function advancedFigures(d: BlindDecision, seen: LapFrame[]) {
+  const totalLaps = d.total_laps;
   const f = seen.find((x) => x.lap === d.lap) ?? seen[seen.length - 1];
   const me = f?.drivers.find((x) => x.number === d.player_role.number);
   if (!f || !me) return null;
   const ages = f.drivers.map((x) => x.tyre_age).filter((a): a is number => a != null).sort((a, b) => a - b);
   const median = ages.length ? (ages.length % 2 ? ages[(ages.length - 1) / 2] : Math.round((ages[ages.length / 2 - 1] + ages[ages.length / 2]) / 2)) : null;
-  const loss = pitLoss(gt, d.trigger);
+  const loss = pitLoss(d.pit_loss, d.trigger);
   let within: number | null = null;
   if (loss && me.gap_to_leader_s != null) {
     within = f.drivers.filter(
@@ -103,7 +105,7 @@ export function intervals(drivers: { number: number; position: number; gap_to_le
   return m;
 }
 
-// Advanced freeze figures. Pit loss comes from ground_truth.json pit_loss.normal_s times the SC/VSC factor.
+// Advanced freeze figures. Pit loss is the blind decision's pit_loss.normal_s times the SC/VSC factor.
 export function advRows(trigger: "SC" | "VSC", a: NonNullable<ReturnType<typeof advancedFigures>>) {
   const rows: { label: string; value: string; wide?: boolean }[] = [];
   if (a.loss) rows.push({ label: COPY.mode.pitLossLabel(trigger), value: COPY.mode.pitLoss(a.loss.under, a.loss.normal), wide: true });

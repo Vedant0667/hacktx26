@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { COPY } from "@/lib/copy";
 import { ApiError, api } from "@/lib/client/api";
-import { rememberName } from "@/lib/client/identity";
+import { rememberHost, rememberHostToken, rememberName } from "@/lib/client/identity";
 import type { DecisionIndexEntry } from "@/lib/types";
 import { Button, Label } from "./ui";
 
@@ -30,10 +30,20 @@ export function HomeScreen({ index }: { index: DecisionIndexEntry[] }) {
     try {
       const lobby = await api.createLobby(decision, n);
       rememberName(lobby.code, n);
+      rememberHost(lobby.code);
+      // Shown once by the server; without it this browser can't advance the lobby's phases.
+      rememberHostToken(lobby.code, lobby.host_token);
       router.push(`/host/${lobby.code}`);
     } catch (err) {
       setBusy(null);
-      setCreateErr(err instanceof ApiError && err.status === 0 ? COPY.error.connectionLost : COPY.home.createFailed);
+      const status = err instanceof ApiError ? err.status : -1;
+      setCreateErr(
+        status === 0
+          ? COPY.error.connectionLost
+          : status === 429
+            ? COPY.home.createLimited((err as ApiError).retryAfter)
+            : COPY.home.createFailed,
+      );
     }
   }
 
@@ -48,7 +58,13 @@ export function HomeScreen({ index }: { index: DecisionIndexEntry[] }) {
       router.push(`/play/${c}`);
     } catch (err) {
       setBusy(null);
-      setJoinErr(err instanceof ApiError && err.status === 404 ? COPY.home.codeNotFound(c) : COPY.error.connectionLost);
+      setJoinErr(
+        err instanceof ApiError && err.status === 404
+          ? COPY.home.codeNotFound(c)
+          : err instanceof ApiError && err.status === 429
+            ? COPY.error.rateLimited(err.retryAfter)
+            : COPY.error.connectionLost,
+      );
     }
   }
 

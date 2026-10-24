@@ -1,4 +1,4 @@
-"""Run: python3 engine/test_engine.py  (needs public/data built by engine/build.py)."""
+"""Run: python3 engine/test_engine.py  (needs server-data built by engine/build.py)."""
 import copy
 import json
 import sys
@@ -7,7 +7,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import engine as eng  # noqa: E402
 
-DATA = Path(__file__).resolve().parent.parent / "public" / "data"
+DATA = Path(__file__).resolve().parent.parent / "server-data"
 QATAR_TRACK = {"normal_pit_loss_s": 28.3, "total_laps": 57, "max_stint_laps": 25}
 
 

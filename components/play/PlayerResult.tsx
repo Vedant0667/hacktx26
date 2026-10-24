@@ -2,10 +2,9 @@
 // The player's own result on the phone: verdict, percentile, score, badges, their row, then friends, team and engine.
 import { useEffect, useState } from "react";
 import { COPY, factorLabel } from "@/lib/copy";
-import { api, type LeaderboardResponse, type LobbyStateResponse } from "@/lib/client/api";
+import { api, type LeaderboardResponse, type LobbyStateResponse, type RevealDecision } from "@/lib/client/api";
 import { recallResult } from "@/lib/client/identity";
 import { MAX_TOTAL, badgesFor, tla } from "@/lib/client/race";
-import type { DecisionPoint } from "@/lib/types";
 import { BadgeTags, CallWord, Label } from "../ui";
 import { Measured } from "../host/HostReveal";
 import type { DataMode, GroundTruthFile } from "@/lib/client/mode";
@@ -20,7 +19,8 @@ export function PlayerResult({
 }: {
   code: string;
   me: string;
-  decision: DecisionPoint;
+  // From GET /api/lobby/[code]/reveal.
+  decision: RevealDecision;
   lobby: LobbyStateResponse;
   mode: DataMode;
   gt: GroundTruthFile | null;
@@ -29,8 +29,8 @@ export function PlayerResult({
   const [stored] = useState(() => recallResult(code, decision.id));
 
   useEffect(() => {
-    api.leaderboard(decision.id).then(setLb).catch(() => {});
-  }, [decision.id, lobby.phase]);
+    api.leaderboard(decision.id, code).then(setLb).catch(() => {});
+  }, [decision.id, code, lobby.phase]);
 
   const correct = decision.ground_truth.correct;
   const mine = lobby.submissions.find((s) => s.player_name === me) ?? stored?.submission ?? null;
@@ -39,7 +39,7 @@ export function PlayerResult({
   const ranked = [...lobby.submissions].sort((a, b) => b.total - a.total);
   const rank = mine ? ranked.findIndex((s) => s.player_name === me) + 1 || stored?.lobby_rank || 0 : 0;
   const friends = lobby.submissions.filter((s) => s.player_name !== me);
-  const badges = mine ? badgesFor(mine, decision, lb?.team.total ?? null, lb?.engine.total ?? null) : null;
+  const badges = mine ? badgesFor(mine, decision, lb?.team?.total ?? null, lb?.engine?.total ?? null) : null;
   const anyBadge = badges && (badges.team || badges.engine || badges.winning);
 
   return (

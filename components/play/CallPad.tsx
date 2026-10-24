@@ -2,12 +2,12 @@
 // Freeze screen on the phone: countdown, hold-to-talk (Web Speech API), and the typed fallback, always visible.
 import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { COPY } from "@/lib/copy";
-import { api } from "@/lib/client/api";
-import { recallResult, rememberResult } from "@/lib/client/identity";
+import { ApiError, api, type BlindDecision } from "@/lib/client/api";
+import { recallPlayerToken, recallResult, rememberResult } from "@/lib/client/identity";
 import { CALL_WINDOW_S, VOICE_NOTE_MAX_S } from "@/lib/client/race";
 import { buzzFreeze } from "@/lib/client/cue";
 import { METER_SEGMENTS, useSpeech } from "@/lib/client/useSpeech";
-import type { Call, DecisionPoint } from "@/lib/types";
+import type { Call } from "@/lib/types";
 import { Button } from "../ui";
 
 const SLOW_MS = 4000;
@@ -33,7 +33,7 @@ export function CallPad({
 }: {
   code: string;
   me: string;
-  decision: DecisionPoint;
+  decision: BlindDecision;
   elapsed: number;
   players: number;
   submittedNames: string[];
@@ -106,11 +106,21 @@ export function CallPad({
     const transcript = call && !text.toLowerCase().startsWith(word.toLowerCase()) ? `${word}. ${text}`.trim() : text;
     const seconds = Math.min(CALL_WINDOW_S, Math.max(0, elapsed / 1000));
     try {
-      const r = await api.submit(code, { player_name: me, transcript, seconds_to_call: Math.round(seconds * 10) / 10, call });
+      const r = await api.submit(
+        code,
+        { player_name: me, transcript, seconds_to_call: Math.round(seconds * 10) / 10, call },
+        recallPlayerToken(code, me),
+      );
       rememberResult(code, decision.id, r);
       setLocked({ call: r.submission.call ?? call, t: r.submission.seconds_to_call });
-    } catch {
-      setErr(COPY.error.connectionLost);
+    } catch (e) {
+      setErr(
+        e instanceof ApiError && e.status === 403
+          ? COPY.error.notYou(me)
+          : e instanceof ApiError && e.status === 429
+            ? COPY.error.rateLimited(e.retryAfter)
+            : COPY.error.connectionLost,
+      );
     } finally {
       setSending(false);
     }
