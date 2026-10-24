@@ -138,3 +138,62 @@ export function splitCalls(subs: { call: Call | null }[]) {
   }
   return { box, stay };
 }
+
+// Pit rejoin projector: where the car comes out if it boxes now and no one else stops.
+// Uses the call-moment frame only (callMomentFrames output) plus the pit loss under the current flag.
+export const REJOIN_CLEAR_S = 1.5;
+export interface Rejoin {
+  pos: number;
+  loss: number;
+  ahead: { code: string; gap: number } | null;
+  behind: { code: string; gap: number } | null;
+  clean: boolean;
+  traffic: string | null;
+  // Projected gap to the leader after the stop, for the ghost marker.
+  gapToLeader: number;
+}
+export function projectRejoin(seen: LapFrame[], d: DecisionPoint, normalLoss: number | null | undefined): Rejoin | null {
+  if (normalLoss == null) return null;
+  const f = seen.find((x) => x.lap === d.lap) ?? seen[seen.length - 1];
+  const me = f?.drivers.find((x) => x.number === d.player_role.number);
+  if (!f || !me || me.gap_to_leader_s == null) return null;
+  const factor = f.track_status === "SC" ? 0.5 : f.track_status === "VSC" ? 0.75 : 1;
+  const loss = Math.round(normalLoss * factor * 10) / 10;
+  const out = me.gap_to_leader_s + loss;
+  const others = f.drivers
+    .filter((x) => x.number !== me.number && x.gap_to_leader_s != null)
+    .map((x) => ({ code: x.code, g: x.gap_to_leader_s as number }))
+    .sort((a, b) => a.g - b.g);
+  const aheadList = others.filter((x) => x.g <= out);
+  const behindList = others.filter((x) => x.g > out);
+  const a = aheadList[aheadList.length - 1];
+  const b = behindList[0];
+  const ahead = a ? { code: a.code, gap: Math.round((out - a.g) * 10) / 10 } : null;
+  const behind = b ? { code: b.code, gap: Math.round((b.g - out) * 10) / 10 } : null;
+  const tA = ahead && ahead.gap < REJOIN_CLEAR_S ? ahead.code : null;
+  const tB = behind && behind.gap < REJOIN_CLEAR_S ? behind.code : null;
+  return { pos: aheadList.length + 1, loss, ahead, behind, clean: !tA && !tB, traffic: tA ?? tB, gapToLeader: out };
+}
+
+// Plain race-story numbers for Simple mode, from visible info only.
+export function raceStory(seen: LapFrame[], d: DecisionPoint, totalLaps: number) {
+  const f = seen.find((x) => x.lap === d.lap) ?? seen[seen.length - 1];
+  const me = f?.drivers.find((x) => x.number === d.player_role.number);
+  if (!f || !me) return null;
+  const ages = f.drivers.map((x) => x.tyre_age).filter((a): a is number => a != null);
+  const older = me.tyre_age == null ? null : ages.filter((a) => a < me.tyre_age!).length;
+  const ahead = f.drivers.filter((x) => x.position < me.position);
+  const pittedAhead = ahead.filter((x) => x.pitted_this_lap).length;
+  // Stops by cars within 3 places, earlier in this replay (already on screen).
+  const near = new Set(f.drivers.filter((x) => Math.abs(x.position - me.position) <= 3 && x.number !== me.number).map((x) => x.number));
+  const nearStops = new Set(seen.filter((x) => x.lap < d.lap && x.lap >= d.replay_from_lap).flatMap((x) => x.drivers.filter((y) => y.pitted_this_lap && near.has(y.number)).map((y) => y.number))).size;
+  return {
+    lapsLeft: Math.max(0, totalLaps - d.lap),
+    fieldSize: f.drivers.length,
+    newerThanMe: older,
+    aheadCount: ahead.length,
+    pittedAhead,
+    nearCount: near.size,
+    nearStops,
+  };
+}

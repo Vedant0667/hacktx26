@@ -192,3 +192,71 @@ body {
     display: none;
   }
 }
+
+/* Last 5 s on the phone: each second lands with a short scale pulse. */
+@keyframes tick-pulse {
+  from {
+    transform: scale(1.14);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+.tick-pulse {
+  display: inline-block;
+  transform-origin: right center;
+  animation: tick-pulse 320ms var(--ease-quart) both;
+}
+/* Rejoin ghost settles into its slot. */
+@keyframes ghost-in {
+  from {
+    opacity: 0;
+    translate: -24px 0;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+.ghost-in {
+  animation: ghost-in 480ms var(--ease-quart) 200ms both;
+}
+@keyframes grid-in {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.grid-in {
+  animation: grid-in 320ms var(--ease-quart) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tick-pulse,
+  .ghost-in,
+  .grid-in {
+    animation: fade-in 120ms linear both;
+  }
+}
+/* Reveal split bar grows from the middle line. */
+@keyframes split-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.split-grow {
+  flex-basis: 0;
+  transform-origin: center;
+  animation: split-grow 480ms var(--ease-quart) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .split-grow {
+    animation: fade-in 120ms linear both;
+  }
+}

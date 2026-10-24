@@ -4,13 +4,15 @@ import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { COPY } from "@/lib/copy";
 import { data } from "@/lib/client/api";
 import { noopSubscribe, rememberHost } from "@/lib/client/identity";
-import { CALL_WINDOW_S, callMomentFrames, contextAt, frameAt, raceControl, replayDoneMs, replayLap, tla } from "@/lib/client/race";
+import { CALL_WINDOW_S, callMomentFrames, frameAt, raceControl, replayDoneMs, replayLap, tla } from "@/lib/client/race";
 import { useLobby, useTicker } from "@/lib/client/useLobby";
-import { advRows, advancedFigures, useDataMode, type DataMode, type GroundTruthFile } from "@/lib/client/mode";
+import { playFreezeTone } from "@/lib/client/cue";
+import { useDataMode, type DataMode, type GroundTruthFile } from "@/lib/client/mode";
+import { GapLine, StoryFacts, TradeOff, getBrief } from "../DecisionBrief";
 import type { DecisionPoint, LapFrame } from "@/lib/types";
 import { QrCode } from "../QrCode";
 import { Tower } from "../Tower";
-import { Button, ConnNotice, Figures, Label, ModeToggle, StatusStrip } from "../ui";
+import { Button, ConnNotice, Label, ModeToggle, StatusStrip } from "../ui";
 import { HostReveal, HostScoreboard } from "./HostReveal";
 
 export function HostScreen({ code }: { code: string }) {
@@ -41,6 +43,15 @@ export function HostScreen({ code }: { code: string }) {
   }, [decisionId]);
 
   const phase = lobby?.phase;
+  const [muted, setMuted] = useState(false);
+  const cued = useRef("");
+  useEffect(() => {
+    if (!lobby || lobby.phase !== "decision") return;
+    const k = `${lobby.phase_started_at}`;
+    if (cued.current === k) return;
+    cued.current = k;
+    if (!muted) playFreezeTone();
+  }, [lobby, muted]);
   const elapsed = lobby ? t - lobby.phase_started_at : 0;
 
   // Auto-advance: replay freezes on the decision lap; the call window closes after CALL_WINDOW_S, 40 s (or when everyone is in).
@@ -85,7 +96,7 @@ export function HostScreen({ code }: { code: string }) {
           submitted={new Set(lobby.submissions.map((s) => s.player_name))}
           onAdvance={() => setPhase(phase === "replay" ? "decision" : "reveal")}
           mode={mode}
-          modeToggle={<ModeToggle mode={mode} onChange={setMode} size="sm" />}
+          modeToggle={<span className="flex items-center gap-4"><ModeToggle mode={mode} onChange={setMode} size="sm" /><Button variant="secondary" className="h-9 px-3 text-14" aria-pressed={muted} onClick={() => setMuted((m) => !m)}>{muted ? COPY.cue.unmute : COPY.cue.mute}</Button></span>}
           gt={gt}
         />
       )}
@@ -152,14 +163,26 @@ function Waiting({
 
       <section className="col-span-5 flex min-h-0 flex-col gap-4">
         <h2 className="nums text-40 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.waiting.count(players.length)}</h2>
-        <ol className="flex min-h-0 flex-col gap-0.5 overflow-hidden">
-          {players.map((p, i) => (
-            <li key={p.name} className="slide-in grid h-16 grid-cols-[40px_96px_1fr] items-center gap-x-4 bg-surface px-4">
-              <span className="nums text-right text-24 font-semibold text-ink-3">{i + 1}</span>
-              <span className="text-40 font-bold uppercase stretch-75 leading-hero">{tla(p.name)}</span>
-              <span className="truncate text-24">{p.name}</span>
-            </li>
-          ))}
+        {/* The lobby is a starting grid: each phone takes the next slot, staggered two by two. */}
+        <ol className="grid min-h-0 grid-cols-2 gap-x-6 overflow-hidden pb-16 pt-2">
+          {Array.from({ length: Math.min(10, Math.max(6, players.length + (players.length % 2 ? 1 : 2))) }, (_, i) => {
+            const p = players[i];
+            return (
+              <li key={p?.name ?? `open-${i}`} className={`h-[104px] ${i % 2 ? "translate-y-[52px]" : ""}`}>
+                <div className={`flex h-[88px] flex-col justify-between border-x-2 border-t-2 px-4 pt-2 ${p ? "grid-in border-ink" : "border-rule"}`}>
+                  <span className={`nums text-16 font-semibold uppercase tracking-label ${p ? "text-ink-2" : "text-ink-3"}`}>{COPY.play.gridSlot(i + 1)}</span>
+                  {p ? (
+                    <span className="flex items-baseline gap-3 pb-2">
+                      <span className="text-56 font-extrabold uppercase stretch-75 leading-hero">{tla(p.name)}</span>
+                      <span className="truncate text-20 text-ink-2">{p.name}</span>
+                    </span>
+                  ) : (
+                    <span className="pb-3 text-20 text-ink-3">{COPY.play.open}</span>
+                  )}
+                </div>
+              </li>
+            );
+          })}
         </ol>
         {players.length <= 1 && <p className="text-24 text-ink-2">{COPY.waiting.alone(code)}</p>}
       </section>
@@ -198,8 +221,7 @@ function RaceView({
   const frame = frameAt(seen, lap);
   const total = frames[frames.length - 1]?.lap ?? lap;
   const msgs = raceControl(seen, lap, decision.replay_from_lap).slice(0, 8);
-  const ctx = contextAt(decision, seen);
-  const adv = frozen && mode === "advanced" ? advancedFigures(decision, seen, total, gt) : null;
+  const brief = getBrief(decision, frames, gt);
   const left = Math.max(0, Math.ceil(CALL_WINDOW_S - elapsed / 1000));
   const r = decision.player_role;
 
@@ -208,11 +230,11 @@ function RaceView({
       <section className="min-h-0">
         {frame && <Tower drivers={frame.drivers} playerNumber={r.number} dim={frozen} mode={mode} />}
       </section>
-      <section className={`flex min-h-0 flex-col ${frozen && mode === "advanced" ? "gap-4" : "gap-6"}`}>
+      <section className={`flex min-h-0 flex-col ${frozen ? "gap-3" : "gap-6"}`}>
         <div className="flex items-end justify-between gap-6">
           <div className="flex min-w-0 flex-col gap-1">
             <span className="text-24 font-semibold">{decision.race}</span>
-            <span className="text-20 text-ink-2">
+            <span className="truncate whitespace-nowrap text-20 text-ink-2">
               {r.team}, {r.driver} #{r.number} · {COPY.room.heading(code)}
             </span>
           </div>
@@ -261,31 +283,28 @@ function RaceView({
                 style={{ animationDuration: `${CALL_WINDOW_S}s`, animationDelay: `-${elapsed / 1000}s` }}
               />
             </div>
-            <h2 className="text-72 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.freeze.question}</h2>
-            {ctx && mode === "simple" && (
-              <p className="text-24 text-ink-2">{COPY.mode.hostLine(r.driver, ctx.pos, ctx.age, decision.trigger)}</p>
+            <h2 className="text-56 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.freeze.question}</h2>
+            {brief.frame && (
+              <div className="flex flex-col gap-1">
+                <span className="flex items-baseline justify-between gap-4 text-14 font-semibold uppercase tracking-label text-ink-3">
+                  <span>{COPY.rejoin.title}</span>
+                  <span className="normal-case tracking-normal">{COPY.rejoin.assumption}</span>
+                </span>
+                <GapLine frame={brief.frame} playerNumber={r.number} rejoin={brief.rejoin} />
+              </div>
             )}
-            {ctx && mode === "advanced" && (
-              <p className="text-24 text-ink-2">
-                {COPY.freeze.context({
-                  driver: r.driver,
-                  pos: ctx.pos,
-                  compound: ctx.compound ? (COPY.compounds[ctx.compound] ?? ctx.compound) : null,
-                  age: ctx.age,
-                  ahead: ctx.ahead,
-                  behind: ctx.behind,
-                })}
-              </p>
-            )}
-            {mode === "advanced" && adv && <Figures cols={2} rows={advRows(decision.trigger, adv)} />}
-            <p className="nums text-24 font-semibold">{left === 0 ? COPY.freeze.timeUp : COPY.freeze.waitingOn(Math.max(0, players.length - submitted.size))}</p>
-            <div className="mt-auto flex flex-col gap-4">
-              <LobbyStrip players={players} submitted={submitted} />
-              <div className="flex items-center gap-8">
+            <TradeOff brief={brief} mode={mode} />
+            <StoryFacts decision={decision} brief={brief} mode={mode} />
+            <div className="mt-auto flex items-end justify-between gap-6">
+              <div className="flex min-w-0 flex-col gap-2">
+                <p className="nums text-20 font-semibold">{left === 0 ? COPY.freeze.timeUp : COPY.freeze.waitingOn(Math.max(0, players.length - submitted.size))}</p>
+                <LobbyStrip players={players} submitted={submitted} />
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-3">
+                {modeToggle}
                 <Button variant="secondary" className="h-14 text-20" onClick={onAdvance}>
                   {COPY.freeze.showCalls}
                 </Button>
-                {modeToggle}
               </div>
             </div>
           </>
@@ -301,7 +320,7 @@ function LobbyStrip({ players, submitted }: { players: { name: string }[]; submi
       {players.map((p) => {
         const inn = submitted.has(p.name);
         return (
-          <li key={p.name} className="flex h-24 min-w-28 flex-col justify-center gap-1 bg-surface px-4">
+          <li key={p.name} className={`flex h-20 min-w-28 flex-col justify-center gap-1 px-4 transition-colors duration-200 ${inn ? "bg-ink text-bg" : "bg-surface"}`}>
             <span className="text-40 font-bold uppercase stretch-75 leading-hero">{tla(p.name)}</span>
             <span
               className={`self-start px-1 text-20 font-semibold uppercase tracking-label ${inn ? "bg-flag-green text-bg" : "text-ink-3"}`}

@@ -79,9 +79,8 @@ export function HostReveal({
   const lb = useLeaderboard(decision.id, step >= 1);
   const [camps, setCamps] = useState<CampsResponse | null>(null);
   useEffect(() => {
-    if (step < 3) return;
     api.camps(code).then(setCamps).catch(() => {});
-  }, [code, step, lobby.submissions.length]);
+  }, [code, lobby.submissions.length]);
 
   const subs = lobby.submissions;
   const byName = new Map(subs.map((s) => [s.player_name, s]));
@@ -121,21 +120,57 @@ export function HostReveal({
 
   // Step 1: the lobby's calls get the whole screen (docs/06 3.4: the biggest social moment). The tower returns at step 2.
   if (step === 0) {
-    const cols = Math.min(players.length, 6) || 1;
-    const quoteCls = cols > 4 ? "text-24" : "text-32";
+    // The room split: box on the left, stay out on the right, each player's own words under their call.
+    const sides: { call: Call | null; list: typeof players }[] = [
+      { call: "BOX", list: players.filter((p) => p.sub?.call === "BOX") },
+      { call: "STAY", list: players.filter((p) => p.sub?.call === "STAY") },
+    ];
+    const none = players.filter((p) => !p.sub?.call);
+    const n = Math.max(1, box + stay);
+    const labelFor = (name: string) => camps?.labels?.find((c) => c.players.includes(name))?.label ?? null;
     return (
       <main className="flex h-dvh flex-col gap-6 overflow-hidden p-12">
-        <span className="text-24 font-semibold">{COPY.reveal.heading(decision.lap)}</span>
-        <h2 className="nums text-40 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.reveal.split(box, stay)}</h2>
-        <ol className="grid min-h-0 content-start gap-0.5" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
-          {players.map((p, i) => (
-            <li key={p.name} className="row-in flex min-h-0 flex-col gap-4 bg-surface p-6" style={{ animationDelay: `${i * 600}ms` }}>
-              <span className="text-40 font-bold uppercase stretch-75 leading-hero">{tla(p.name)}</span>
-              <CallWord call={p.sub?.call ?? null} className={`text-56 stretch-75! ${p.sub?.call ? "" : "text-ink-3"}`} />
-              {p.sub?.transcript ? <q className={`line-clamp-6 ${quoteCls} leading-body text-ink`}>{p.sub.transcript}</q> : null}
-            </li>
+        <div className="flex items-baseline justify-between gap-6">
+          <span className="text-24 font-semibold">{COPY.reveal.heading(decision.lap)}</span>
+          <span className="nums text-40 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.reveal.split(box, stay)}</span>
+        </div>
+        <div className="flex h-16 gap-0.5" aria-hidden>
+          {box > 0 && (
+            <div className="split-grow flex items-center bg-ink px-6 text-40 font-extrabold uppercase stretch-125 leading-hero text-bg" style={{ flexGrow: box / n }}>
+              <span className="nums">{box}</span>
+            </div>
+          )}
+          {stay > 0 && (
+            <div className="split-grow flex items-center justify-end border-2 border-ink px-6 text-40 font-extrabold uppercase stretch-125 leading-hero" style={{ flexGrow: stay / n }}>
+              <span className="nums">{stay}</span>
+            </div>
+          )}
+          {box + stay === 0 && <div className="flex-1 bg-surface" />}
+        </div>
+        <div className="grid min-h-0 flex-1 grid-cols-2 gap-8">
+          {sides.map((side) => (
+            <section key={side.call} className="flex min-h-0 flex-col gap-3">
+              <CallWord call={side.call} className={`text-72 ${side.call === "STAY" ? "stretch-100!" : ""}`} />
+              <ol className="flex min-h-0 flex-col gap-0.5 overflow-hidden">
+                {side.list.map((p, i) => (
+                  <li key={p.name} className="row-in flex flex-col gap-2 bg-surface px-6 py-4" style={{ animationDelay: `${300 + i * 500}ms` }}>
+                    <span className="flex items-baseline gap-4">
+                      <span className="text-40 font-bold uppercase stretch-75 leading-hero">{tla(p.name)}</span>
+                      {labelFor(p.name) && <span className="truncate text-20 text-ink-2">{labelFor(p.name)}</span>}
+                    </span>
+                    {p.sub?.transcript ? <q className={`line-clamp-3 ${side.list.length > 2 ? "text-24" : "text-32"} leading-body text-ink`}>{p.sub.transcript}</q> : null}
+                  </li>
+                ))}
+              </ol>
+            </section>
           ))}
-        </ol>
+        </div>
+        {none.length > 0 && (
+          <p className="text-24 text-ink-3">
+            {COPY.reveal.noCall}: <span className="font-bold uppercase stretch-75">{none.map((p) => tla(p.name)).join("  ")}</span>
+          </p>
+        )}
+        {camps?.labels_source === "muse" && camps.labels?.length ? <p className="text-16 text-ink-3">{COPY.reveal.campsByMuse}</p> : null}
       </main>
     );
   }

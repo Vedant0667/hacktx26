@@ -5,6 +5,7 @@ import { COPY } from "@/lib/copy";
 import { api } from "@/lib/client/api";
 import { recallResult, rememberResult } from "@/lib/client/identity";
 import { CALL_WINDOW_S, VOICE_NOTE_MAX_S } from "@/lib/client/race";
+import { buzzFreeze } from "@/lib/client/cue";
 import { METER_SEGMENTS, useSpeech } from "@/lib/client/useSpeech";
 import type { Call, DecisionPoint } from "@/lib/types";
 import { Button } from "../ui";
@@ -28,6 +29,7 @@ export function CallPad({
   players,
   submittedNames,
   situation,
+  details,
 }: {
   code: string;
   me: string;
@@ -37,6 +39,7 @@ export function CallPad({
   submittedNames: string[];
   // Position, gap, tyres and track state for the current data mode (components/play/Situation.tsx).
   situation?: React.ReactNode;
+  details?: React.ReactNode;
 }) {
   const [call, setCall] = useState<Call | null>(null);
   const [why, setWhy] = useState("");
@@ -52,6 +55,10 @@ export function CallPad({
   const [now, setNow] = useState(() => Date.now());
 
   const left = Math.max(0, Math.ceil(CALL_WINDOW_S - elapsed / 1000));
+  // Buzz once when the freeze lands (skipped under reduced motion).
+  useEffect(() => {
+    buzzFreeze();
+  }, []);
   const alreadyIn = submittedNames.includes(me);
 
   const speech = useSpeech(async (text) => {
@@ -147,7 +154,7 @@ export function CallPad({
       className={`relative flex h-24 items-center justify-between gap-6 px-4 text-bg transition-colors duration-200 ${left <= 5 ? "bg-flag-red" : "on-yellow bg-flag-yellow"}`}
     >
       <span className="nums text-24 font-extrabold uppercase stretch-125 leading-hero">{decision.trigger} · L{decision.lap}</span>
-      <span className="nums w-[120px] shrink-0 text-right text-72 font-extrabold stretch-125 leading-hero" aria-live="polite">
+      <span key={left <= 5 ? left : "n"} className={`nums w-[120px] shrink-0 text-right text-72 font-extrabold stretch-125 leading-hero ${left <= 5 && left > 0 ? "tick-pulse" : ""}`} aria-live="polite">
         {left}
       </span>
       <span
@@ -260,6 +267,7 @@ export function CallPad({
           </p>
         )}
       </form>
+      {details}
     </section>
   );
 }

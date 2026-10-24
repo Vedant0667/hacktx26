@@ -196,6 +196,8 @@ export const COPY = {
     consentMissing: "Tick the box to join.", // added
     rejoin: (name: string) => `Rejoin as ${name}`, // added
     youAre: (tla: string) => `You are ${tla}`, // added
+    gridSlot: (n: number) => `P${n}`, // added: lobby grid slot
+    open: "Open", // added: empty grid slot
   },
   error: {
     micDenied: "Mic blocked. Allow it in your browser's site settings, or type your call.",
@@ -261,6 +263,37 @@ export const COPY = {
     field: "Whole field",
     cohort: "Cars on similar tyres",
   },
+  // added: pit rejoin projector (pre-call info only) and the Simple race story
+  rejoin: {
+    title: "If you box now",
+    assumption: "If no one else stops.",
+    line: (pos: number, ahead: { code: string; gap: number } | null, behind: { code: string; gap: number } | null, clean: boolean) => {
+      const a = ahead ? `, ${ahead.gap.toFixed(1)} s behind ${ahead.code}` : ", in the lead";
+      const b = behind ? (clean ? `, clean air behind` : `, ${behind.code} ${behind.gap.toFixed(1)} s behind`) : "";
+      return `Box now: out P${pos}${a}${b}.`;
+    },
+    out: (pos: number) => `Out P${pos}`,
+    ahead: "Ahead",
+    behind: "Behind",
+    none: "Nobody",
+    clean: "Clean air",
+    traffic: (code: string) => `Traffic: ${code}`,
+    loss: (s: number) => `Stop costs ${s.toFixed(1)} s`,
+    ghost: "Box",
+  },
+  story: {
+    stay: "Stay out",
+    box: "Box",
+    stayKeep: (pos: number) => `Keep P${pos}`,
+    stayTyres: (age: number) => `Tyres stay ${age} laps old`,
+    boxTyres: "New tyres",
+    lapsLeft: (n: number) => `${n} laps left`,
+    tyreRank: (newer: number, field: number) => `${newer} of ${field} cars on newer tyres`,
+    pittedAhead: (n: number, of: number) => `${n} of ${of} cars ahead pitted this lap`,
+    nearStops: (n: number, of: number) => `${n} of ${of} cars around you stopped earlier`,
+    scSaves: (under: number, normal: number) => `Stop costs ${under.toFixed(1)} s now, ${normal.toFixed(1)} s at green`,
+  },
+  cue: { mute: "Mute sound", unmute: "Sound on" },
   compounds: { SOFT: "Soft", MEDIUM: "Medium", HARD: "Hard", INTERMEDIATE: "Inter", WET: "Wet" } as Record<string, string>,
 } as const;
 

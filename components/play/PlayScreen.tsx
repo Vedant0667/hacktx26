@@ -77,6 +77,7 @@ export function PlayScreen({ code }: { code: string }) {
       {lobby.phase === "decision" && decision && (
         <CallPad
           situation={frames && <Situation decision={decision} frames={frames} mode={mode} gt={gt} />}
+          details={frames && <Situation decision={decision} frames={frames} mode={mode} gt={gt} part="bottom" />}
           code={code}
           me={me!}
           decision={decision}
@@ -101,7 +102,12 @@ function Waiting({ lobby, decision, me }: { lobby: LobbyStateResponse; decision:
   const r = decision?.player_role;
   return (
     <section className="flex flex-col gap-6">
-      <h1 className="text-56 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.play.youAre(tla(me))}</h1>
+      <div className="flex items-end justify-between gap-4 border-x-2 border-t-2 border-ink px-4 pt-3 pb-4">
+        <h1 className="text-40 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.play.youAre(tla(me))}</h1>
+        <span className="nums text-40 font-extrabold uppercase stretch-75 leading-hero text-ink-2">
+          {COPY.play.gridSlot(Math.max(1, lobby.players.findIndex((p) => p.name === me) + 1))}
+        </span>
+      </div>
       <p className="text-24 font-semibold">{COPY.waiting.playerView}</p>
       {decision && r && <p className="text-20 text-ink-2">{COPY.waiting.race(decision.race, r.team, r.driver, r.number)}</p>}
       <div className="flex flex-col gap-2">
