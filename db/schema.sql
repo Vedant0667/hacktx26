@@ -206,3 +206,69 @@ create table if not exists duel_votes (
   created_at timestamptz not null default now(),
   primary key (lobby_code, decision_id, player_name)
 );
+
+-- Round 6: race mode (docs/09-race-mode.md). Loaded by scripts/seed-db.mjs from engine/triggers.py export().
+-- race_drivers: the picker (cars with at least one freeze). race_freezes: one row per car per freeze lap. blind is
+-- served at the freeze, full (answer, team call, engine call, comparison cars) only by the race reveal route.
+-- race_audibles: the seconds answer for a BOX audible by that car on that lap, for server-side scoring only.
+create table if not exists race_drivers (
+  race_key text not null references races(key) on delete cascade,
+  driver_code text not null,
+  driver_number int not null,
+  driver_name text not null,
+  team text not null,
+  team_colour text,
+  start_position int not null,
+  freeze_count int not null,
+  primary key (race_key, driver_code)
+);
+
+create table if not exists race_freezes (
+  race_key text not null references races(key) on delete cascade,
+  driver_code text not null,
+  lap int not null,
+  triggers jsonb not null,
+  blind jsonb not null,
+  "full" jsonb not null,
+  primary key (race_key, driver_code, lap)
+);
+
+create table if not exists race_audibles (
+  race_key text not null references races(key) on delete cascade,
+  driver_code text not null,
+  lap int not null,
+  truth jsonb not null,
+  primary key (race_key, driver_code, lap)
+);
+
+-- Race lobbies: mode 'race', decision_id 'race:<race_key>'. freeze_plan is fixed at waiting -> replay:
+-- [{ lap, drivers: [codes with a call at that lap] }], the union over the lobby's cars. freeze_index is the
+-- current (freeze, reveal_freeze) or next (replay) entry.
+alter table lobbies add column if not exists mode text not null default 'moment';
+alter table lobbies add column if not exists race_key text;
+alter table lobbies add column if not exists freeze_plan jsonb;
+alter table lobbies add column if not exists freeze_index int not null default 0;
+
+-- Calls in a race lobby: one per player per freeze (kind 'freeze', lap = freeze lap) and audibles (kind
+-- 'audible', lap = server lap when it landed). Scores are stored at insert and redacted until revealed.
+create table if not exists race_calls (
+  id bigserial primary key,
+  lobby_code text not null references lobbies(code) on delete cascade,
+  player_name text not null,
+  kind text not null check (kind in ('freeze', 'audible')),
+  lap int not null,
+  driver_code text not null,
+  call text,
+  reasons jsonb not null default '[]',
+  factors_named jsonb not null default '[]',
+  transcript text not null default '',
+  seconds_to_call real,
+  status text not null default 'scored',
+  score_call int not null default 0,
+  score_reasoning int not null default 0,
+  total int not null default 0,
+  created_at timestamptz not null default now(),
+  unique (lobby_code, player_name, kind, lap)
+);
+
+create index if not exists race_calls_lobby on race_calls (lobby_code, kind, lap);

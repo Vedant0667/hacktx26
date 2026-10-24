@@ -1,4 +1,4 @@
-"""Race mode, step 1: candidate freezes per team (docs/09-race-mode.md).
+"""Race mode: freezes per driver (docs/09-race-mode.md).
 
 Run: python3 engine/triggers.py
 
@@ -17,7 +17,8 @@ Build-time only (never shown to players, never used to pick the lap):
 Triggers (end of lap L-1)
 1. SC/VSC deployed: race-control "SAFETY CAR DEPLOYED"/"VSC DEPLOYED" with lap_number L. The pit wall hears this
    before the car reaches pit entry on lap L, same as the existing qatar-2025-l7 decision. Both cars.
-2. Rival stop: a car within one green pit loss ahead or behind (gap at end of L-1) pitted on lap L-1.
+2. Rival stop: a car within one green pit loss and within +/-3 positions, ahead or behind (gap and positions at
+   the end of lap L-2, before the rival's in-lap), pitted on lap L-1.
 3. Undercut window: gap to the car ahead < 2 x fresh-tyre gain per lap, and that car's tyres are older.
 4. Fast degradation: mean fuel-corrected time of the car's last 3 laps minus its stint baseline (median of the
    stint's first 3 clean laps) is above the fast-deg threshold.
@@ -46,6 +47,9 @@ SPLIT_POS = 3            # comparison cars: within +/-3 positions at end of lap 
 SPLIT_AGE = 3            # ... or tyre age within +/-3 laps (hand-set, mirrors the position band)
 MIN_GAP_LAPS = 5
 MIN_FREEZES, MAX_FREEZES = 3, 6
+MIN_SWING_S = 2.0        # a freeze needs a measured swing of at least 2 s, or the "right" call is noise
+RIVAL_POS = 3            # rival-stop trigger: only rivals within +/-3 positions count
+AUDIBLE_WINDOW = 3       # audible at visible lap A: comparison cars that stop on A+1..A+3 vs stay out
 # Hand-set, documented: stints this short, or ending on laps 1-2, are damage/penalty stops, not tyre wear.
 MIN_WEAR_STINT = 5
 DEG_MIN_STOPS = 5        # stops needed before the stop-based fast-deg threshold is used
@@ -401,9 +405,11 @@ def _conditions(ctx, L):
                 f0 = {x["id"]: x for x in frames[L - 3]["drivers"]} if L >= 3 else {}
                 if d in f0 and o["id"] in f0:
                     g = f0[o["id"]]["gap_to_leader_s"] - f0[d]["gap_to_leader_s"]
+                    dpos = f0[o["id"]]["position"] - f0[d]["position"]
                 else:
                     g = o["gap_to_leader_s"] - r["gap_to_leader_s"]
-                if abs(g) < loss:
+                    dpos = o["position"] - r["position"]
+                if abs(g) < loss and abs(dpos) <= RIVAL_POS:
                     near.append(f"{ctx['code'][o['id']]} {'+' if g > 0 else ''}{g:.1f}s")
         if near and green_prev:
             trig.append({"type": "RIVAL_STOP", "info": f"pitted lap {L-1}: {', '.join(near)} (pit loss {loss:.1f}s, {loss_src})"})
@@ -458,18 +464,20 @@ def gt_window(ctx, L):
     return [L, L + GT_WINDOW], None
 
 
-def judge(ctx, frames, L, d):
-    """Split check and seconds ground truth for car d at lap L. Build-time only (looks at laps L-2..end)."""
+def judge(ctx, frames, L, d, window=None):
+    """Split check and seconds ground truth for car d at lap L. Build-time only (looks at laps L-2..end).
+    window: [w0, w1] override (audibles use a plain green window even under SC)."""
     race = ctx["race"]
-    (w0, w1), _ = gt_window(ctx, L)
+    (w0, w1) = window if window else gt_window(ctx, L)[0]
     stops = lambda x: race["stops"].get(x, [])
     boxed = lambda x: any(w0 <= p <= w1 for p in stops(x))
     already = lambda x: any(L - GT_WINDOW <= p <= L - 1 for p in stops(x))   # made their call before L
     start = frames[L - 2]
-    me = next(x for x in start["drivers"] if x["id"] == d)
     running = {x["id"] for x in frames[L - 1]["drivers"]}
-    if d not in running:   # retired during lap L: nothing to score
-        return {"split": False, "n_box": 0, "n_stay": 0, "real": "DNF", "note": "retired on lap L"}
+    if d not in running or d not in {x["id"] for x in start["drivers"]}:   # retired: nothing to score
+        return {"split": False, "n_box": 0, "n_stay": 0, "real": "DNF", "note": "not running on lap L"}
+    me = next(x for x in start["drivers"] if x["id"] == d)
+
     def age(x):
         s0, i = stint_start(race, x, L)
         return ctx["tyres"].get((x, i), (None, 0))[1] + (L - 1) - s0 + 1
@@ -501,14 +509,16 @@ def judge(ctx, frames, L, d):
     tg = B.time_ground_truth(race, fr, {"lap": L, "window": [w0, w1], "player": {"id": d}})
     if not tg["pairs"]:
         return {"split": False, "n_box": nb, "n_stay": ns, "real": real, "note": "no complete pairs"}
+    others = [x["id"] for x in S if x["id"] != d]
     return {"split": True, "n_box": nb, "n_stay": ns, "real": real, "correct": tg["correct"],
-            "swing_s": tg["swing_s"], "end_lap": tg["end_lap"], "window": [w0, w1], "widened": widened}
+            "swing_s": tg["swing_s"], "end_lap": tg["end_lap"], "window": [w0, w1], "widened": widened,
+            "boxed": [x for x in others if boxed(x)], "stayed": [x for x in others if not boxed(x)], "tg": tg}
 
 
 # ---------------------------------------------------------------- filters
 
 def select(cands):
-    """cands: list of {lap, swing, ...} for one team, already split-eligible. 5-lap spacing, keep largest swing, max 6."""
+    """cands: list of {lap, swing, ...} for one driver, already eligible. 5-lap spacing, keep largest swing, max 6."""
     keep = []
     for c in sorted(cands, key=lambda c: -c["swing"]):
         if len(keep) < MAX_FREEZES and all(abs(c["lap"] - k["lap"]) >= MIN_GAP_LAPS for k in keep):
@@ -535,42 +545,162 @@ def prepare():
 
 
 def run_race(ctx, verbose=True):
-    race = ctx["race"]
+    """Per driver: every detected trigger with its split check, then the freeze filters (split, swing >= 2 s,
+    5-lap spacing, at most 6 by largest swing). Returns (final {driverId: [cand]}, trigger counts, all cands)."""
     n = ctx["n_laps"]
-    frames = B.build_frames(race, ctx["results"], {}, set(), set())
-    teams = sorted(set(ctx["team"].values()))
-    cands = {t: [] for t in teams}
+    frames = B.build_frames(ctx["race"], ctx["results"], {}, set(), set())
+    cands = {d: [] for d in ctx["code"]}
     counts = {}
     for L in range(2, n - GT_WINDOW):
-        det = detect(ctx, L)
-        by_team = {}
-        for d, v in det.items():
-            by_team.setdefault(ctx["team"][d], {})[d] = v
-        for t, cars in by_team.items():
-            rows = []
-            for d, v in cars.items():
-                j = judge(ctx, frames, L, d)
-                rows.append((d, v, j))
-                for tr in v["triggers"]:
-                    counts.setdefault(tr["type"], [0, 0])
-                    counts[tr["type"]][0] += 1
-                    counts[tr["type"]][1] += 1 if j["split"] else 0
-            elig = [(d, v, j) for d, v, j in rows if j["split"]]
-            c = {"lap": L, "rows": rows, "elig": elig,
-                 "swing": max((j["swing_s"] for _, _, j in elig), default=0.0)}
-            cands[t].append(c)
+        for d, v in detect(ctx, L).items():
+            j = judge(ctx, frames, L, d)
+            ok = j["split"] and j["swing_s"] >= MIN_SWING_S
+            for tr in v["triggers"]:
+                counts.setdefault(tr["type"], [0, 0])
+                counts[tr["type"]][0] += 1
+                counts[tr["type"]][1] += 1 if ok else 0
+            cands[d].append({"lap": L, "d": d, "v": v, "j": j, "ok": ok, "swing": j.get("swing_s", 0.0)})
             if verbose:
-                for d, v, j in rows:
-                    types = "+".join(sorted({x["type"] for x in v["triggers"]}))
-                    gt = (f"correct {j['correct']} swing {j['swing_s']:.1f}s (box {j['n_box']} v stay {j['n_stay']}"
-                          f"{', +age-matched' if j['widened'] else ''}; win {j['window']}, to L{j['end_lap']})"
-                          if j["split"] else f"no split (box {j['n_box']}, stay {j['n_stay']})")
-                    print(f"  {ctx['spec']['key']} | {t} | {ctx['code'][d]} P{v['pos']} {v['compound'] or '?'} {v['age']}L "
-                          f"| L{L} | {types} | split={'Y' if j['split'] else 'N'} | {gt} | real {j['real']}")
-                    for x in v["triggers"]:
-                        print(f"      {x['type']}: {x['info']}")
-    final = {t: select([c for c in cs if c["elig"]]) for t, cs in cands.items()}
-    return final, counts, cands
+                types = "+".join(sorted({x["type"] for x in v["triggers"]}))
+                gt = (f"correct {j['correct']} swing {j['swing_s']:.1f}s (box {j['n_box']} v stay {j['n_stay']}"
+                      f"{', +age-matched' if j['widened'] else ''}; win {j['window']}, to L{j['end_lap']})"
+                      if j["split"] else f"no split (box {j['n_box']}, stay {j['n_stay']})")
+                print(f"  {ctx['spec']['key']} | {ctx['code'][d]} P{v['pos']} {v['compound'] or '?'} {v['age']}L "
+                      f"| L{L} | {types} | eligible={'Y' if ok else 'N'} | {gt} | real {j['real']}")
+                for x in v["triggers"]:
+                    print(f"      {x['type']}: {x['info']}")
+    final = {d: select([c for c in cs if c["ok"]]) for d, cs in cands.items()}
+    return {d: fl for d, fl in final.items() if fl}, counts, cands
+
+
+# ---------------------------------------------------------------- race-mode export (rows for scripts/seed-db.mjs)
+
+TRIGGER_WORDS = {"SC": "Safety car", "VSC": "Virtual safety car", "RIVAL_STOP": "Rival stop",
+                 "UNDERCUT": "Undercut window", "FAST_DEG": "Tyres fading", "TYRE_WINDOW": "Tyre window",
+                 "RAIN": "Rain"}
+TRIGGER_ORDER = ["SC", "VSC", "RAIN", "RIVAL_STOP", "UNDERCUT", "FAST_DEG", "TYRE_WINDOW"]
+
+
+def freeze_title(L, types, pos, comp, age):
+    words = [TRIGGER_WORDS[t] for t in TRIGGER_ORDER if t in types]
+    phrase = words[0] if len(words) == 1 else ", ".join(words[:-1]) + " and " + words[-1]
+    phrase = phrase[0] + phrase[1:].lower()
+    tyres = f"on {age}-lap-old {comp.lower()}s" if comp else f"tyres {age} laps old"
+    return f"Lap {L}. {phrase}. You're in P{pos} {tyres}."
+
+
+def freeze_factors(types):
+    f = []
+    if "SC" in types:
+        f.append("cheap_stop_under_sc")
+    elif "VSC" in types:
+        f.append("cheap_stop_under_vsc")
+    return f + ["tyre_age", "similar_cars_pitted", "track_position"]
+
+
+def engine_frames(ctx):
+    """Frames with compounds and SC/VSC track status, as engine/build.py builds them for the engine."""
+    key = ctx["spec"]["key"]
+    comps, man = B.manual_compounds(key)
+    of1 = B.openf1_dir(key)
+    if of1:
+        comps = {**comps, **B.openf1_compounds(of1, ctx["results"])}
+    ts = man.get("track_status", {})
+    return B.build_frames(ctx["race"], ctx["results"], comps, set(ts.get("SC", {}).get("laps", [])),
+                          set(ts.get("VSC", {}).get("laps", [])))
+
+
+def call_moment(frames, L):
+    """Laps 1..L-1 plus the lap-L call-moment frame: end of lap L-1 order and gaps, tyre ages +1, lap L's track
+    status, and no lap-L stop for any car (security-contract Round 4.8 / Round 6). The engine sees nothing else."""
+    prev = frames[L - 2]
+    cm = {"lap": L, "track_status": frames[L - 1]["track_status"],
+          "drivers": [{**x, "tyre_age": x["tyre_age"] + 1, "pitted_this_lap": False} for x in prev["drivers"]]}
+    return frames[:L - 1] + [cm]
+
+
+def engine_call(ctx, eframes, L, d):
+    view = truncate(ctx["race"], L - 1)
+    loss, _ = pit_loss(ctx, L, view)
+    track = {"normal_pit_loss_s": loss, "total_laps": ctx["n_laps"], "max_stint_laps": ctx["cap"]}
+    e = B.eng.decide(call_moment(eframes, L), L, ctx["code"][d], track)
+    return {"call": e["call"], "confidence": e["confidence"], "reasons": e["reasons"]}, e["inputs"]
+
+
+def race_mode(ctx, final):
+    """Rows for race mode: drivers (picker), freezes (blind + full per driver and lap) and audible truth
+    (per driver and lap, the seconds answer for a BOX audible). Answers live only in `full` / `truth`."""
+    key = ctx["spec"]["key"]
+    eframes = engine_frames(ctx)
+    frames = B.build_frames(ctx["race"], ctx["results"], {}, set(), set())
+    code = ctx["code"]
+    res = {r["Driver"]["driverId"]: r for r in ctx["results"]}
+    colour = lambda d: B.TEAM_COLOURS.get(ctx["team"][d])
+    start_pos = {x["id"]: x["position"] for x in frames[0]["drivers"]}
+    ident = lambda d: {"code": code[d], "number": int(res[d]["number"]),
+                       "name": res[d]["Driver"].get("familyName") or code[d], "team": ctx["team"][d],
+                       "team_colour": colour(d)}
+    freezes, drivers = [], []
+    for d, fl in final.items():
+        drivers.append({"race_key": key, **ident(d), "start_position": start_pos.get(d, 99), "freeze_count": len(fl)})
+        for c in fl:
+            L, v, j = c["lap"], c["v"], c["j"]
+            types = sorted({t["type"] for t in v["triggers"]}, key=TRIGGER_ORDER.index)
+            view = truncate(ctx["race"], L - 1)
+            loss, loss_src = pit_loss(ctx, L, view)
+            blind = {"driver_code": code[d], "lap": L, "blind_title": freeze_title(L, types, v["pos"], v["compound"], v["age"]),
+                     "triggers": [{"type": t["type"], "info": t["info"]} for t in v["triggers"]],
+                     "position": v["pos"], "compound": v["compound"], "tyre_age": v["age"],
+                     "pit_loss": {"normal_s": loss, "source": loss_src}, "options": ["BOX", "STAY"],
+                     "factors": freeze_factors(types)}
+            eng_call, eng_inputs = engine_call(ctx, eframes, L, d)
+            real_box = j["real"].startswith("BOX")
+            real_lap = int(j["real"][5:]) if real_box else None
+            w0, w1 = j["window"]
+            tg = {**j["tg"], "group_player_call": [code[x] for x in j["tg"]["group_player_call"]],
+                  "group_other_call": [code[x] for x in j["tg"]["group_other_call"]],
+                  "pairs": [{**pr, "a": code[pr["a"]], "b": code[pr["b"]]} for pr in j["tg"]["pairs"]],
+                  "pairs_missing_laps": [[code[a], code[b]] for a, b in j["tg"]["pairs_missing_laps"]]}
+            full = {"correct": j["correct"], "swing_s": j["swing_s"], "window": [w0, w1],
+                    "comparison": {"boxed": [code[x] for x in j["boxed"]], "stayed": [code[x] for x in j["stayed"]],
+                                   "widened_by_tyre_age": j["widened"]},
+                    "team_call": {"call": "BOX" if real_box else "STAY", "lap": real_lap,
+                                  "reasons": [f"Pitted on lap {real_lap}."] if real_box else [f"Stayed out on laps {w0}-{w1}."]},
+                    "engine": eng_call, "engine_inputs": eng_inputs, "detail": tg}
+            freezes.append({"race_key": key, "driver_code": code[d], "lap": L, "triggers": types, "blind": blind, "full": full})
+    # Audible truth for every car on every lap it could press "box now" (visible lap A): the stop happens
+    # after what the player has seen, so judge at L' = A+1 with the window A+1..A+3; the baseline is the
+    # end of lap A and cars that stopped on or before lap A don't count as comparisons.
+    audibles = []
+    n = ctx["n_laps"]
+    for d in code:
+        for A in range(2, n - AUDIBLE_WINDOW):
+            Lp = A + 1
+            win = [A + 1, A + AUDIBLE_WINDOW]
+            j = judge(ctx, frames, Lp, d, window=win)
+            if j.get("note", "").startswith("not running"):
+                continue
+            scorable = j["split"] and j["swing_s"] >= MIN_SWING_S
+            truth = {"scorable": scorable, "correct": j.get("correct"), "swing_s": j.get("swing_s"),
+                     "window": win, "n_box": j["n_box"], "n_stay": j["n_stay"],
+                     "reason": None if scorable else ("no comparison cars on both calls" if not j["split"] else "swing under 2.0 s")}
+            if j["split"]:
+                truth["comparison"] = {"boxed": [code[x] for x in j["boxed"]], "stayed": [code[x] for x in j["stayed"]]}
+            audibles.append({"race_key": key, "driver_code": code[d], "lap": A, "truth": truth})
+    drivers.sort(key=lambda r: r["start_position"])
+    return {"drivers": drivers, "freezes": freezes, "audibles": audibles}
+
+
+def export(verbose=False):
+    """Race-mode rows for every cached race (engine/build.py adds them to load.json)."""
+    out = {"race_drivers": [], "race_freezes": [], "race_audibles": []}
+    for ctx in prepare():
+        final, _, _ = run_race(ctx, verbose=False)
+        rows = race_mode(ctx, final)
+        out["race_drivers"] += rows["drivers"]
+        out["race_freezes"] += rows["freezes"]
+        out["race_audibles"] += rows["audibles"]
+    return out
 
 
 def print_header(ctx):
@@ -605,27 +735,24 @@ def main():
     summary = []
     for ctx in ctxs:
         print_header(ctx)
-        print("Candidates (car | lap | triggers | split | seconds ground truth | real team):")
-        final, counts, cands = run_race(ctx)
-        print(f"\nTrigger counts {ctx['spec']['key']} (car-laps fired, of which split-eligible): "
+        print("Candidates (car | lap | triggers | eligible | seconds ground truth | real team):")
+        final, counts, cands = run_race(ctx, verbose="-v" in sys.argv)
+        print(f"\nTrigger counts {ctx['spec']['key']} (car-laps fired, of which eligible): "
               + ", ".join(f"{k} {v[0]}/{v[1]}" for k, v in sorted(counts.items())))
         for t in ("SC", "VSC", "RIVAL_STOP", "UNDERCUT", "FAST_DEG", "TYRE_WINDOW", "RAIN"):
             if t not in counts:
                 print(f"  {t}: never fired")
-        print(f"\nFINAL freezes {ctx['spec']['key']}:")
+        print(f"\nFINAL freezes per driver {ctx['spec']['key']}:")
         nbox = nstay = 0
-        for t, fl in final.items():
+        for d, fl in sorted(final.items(), key=lambda kv: ctx["code"][kv[0]]):
             flag = "" if len(fl) >= MIN_FREEZES else f"   (only {len(fl)}: below the {MIN_FREEZES} minimum)"
-            print(f" {t}{flag}")
+            print(f" {ctx['code'][d]} ({ctx['team'][d]}){flag}")
             for c in fl:
-                for d, v, j in c["elig"]:
-                    types = "+".join(sorted({x["type"] for x in v["triggers"]}))
-                    print(f"   L{c['lap']:>2} {ctx['code'][d]} {types:24s} correct {j['correct']:4s} swing {j['swing_s']:5.1f}s  real {j['real']}")
-                    nbox += j["correct"] == "BOX"
-                    nstay += j["correct"] == "STAY"
-                others = [ctx["code"][d] for d in ctx["team"] if ctx["team"][d] == t and d not in {e[0] for e in c["elig"]}]
-                if others:
-                    print(f"        {', '.join(others)}: no call needed")
+                j, v = c["j"], c["v"]
+                types = "+".join(sorted({x["type"] for x in v["triggers"]}))
+                print(f"   L{c['lap']:>2} {types:24s} correct {j['correct']:4s} swing {j['swing_s']:5.1f}s  real {j['real']}")
+                nbox += j["correct"] == "BOX"
+                nstay += j["correct"] == "STAY"
         print(f" Correct-answer distribution {ctx['spec']['key']}: BOX {nbox}, STAY {nstay}")
         summary.append((ctx["spec"]["key"], nbox, nstay))
     print("\nSUMMARY BOX/STAY per race:", summary)

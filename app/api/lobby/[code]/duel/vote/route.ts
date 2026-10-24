@@ -18,6 +18,7 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
   const denied = "Only players in this lobby can vote";
   const { meta, player } = await lobbyMetaGuarded(req, code, undefined, denied);
   if (!player) throw new HttpError(403, denied);
+  if (meta.mode === "race") throw new HttpError(409, "Not available in race mode");
   if (!isRevealed(meta.phase)) throw new HttpError(409, "The duel opens at the reveal");
   const tally = await castDuelVote(code, meta.decision_id, player, choice as 0 | 1);
   if (!tally) throw new HttpError(409, "No duel to vote on yet");

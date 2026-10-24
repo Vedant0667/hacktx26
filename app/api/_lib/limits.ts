@@ -2,8 +2,9 @@
 import { guardedLobbyRead, hitRateLimit, type LobbyReadGuard } from "@/lib/db";
 import { clientIp, HttpError } from "./http";
 
-// A room of 13 phones behind one NAT, polling every second, makes about 780 reads a minute.
-export const LOBBY_READ_LIMIT = 1200;
+// A race room of 13 phones behind one NAT makes about 1,430 reads a minute (lobby poll every second plus
+// frames about once a lap), before freeze and reveal fetches; this leaves headroom for those.
+export const LOBBY_READ_LIMIT = 2400;
 export const LOBBY_READ_WINDOW_S = 60;
 // Codes that do not exist: legit players mistype a few; guessing 1 of 279,841 codes needs thousands.
 export const LOBBY_MISS_LIMIT = 20;

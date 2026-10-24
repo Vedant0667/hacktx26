@@ -257,7 +257,7 @@ export const COPY = {
         trigger === "SC" ? "safety car costs about half" : "virtual safety car costs about three quarters of"
       } the usual time.`,
     // Advanced figures, label then value.
-    pitLossLabel: (trigger: "SC" | "VSC") => `Pit loss under ${trigger}`,
+    pitLossLabel: (trigger: TrackStatus) => (trigger === "GREEN" ? "Pit loss at green" : `Pit loss under ${trigger}`),
     pitLoss: (under: number, normal: number) => `${under.toFixed(1)} s (normal ${normal.toFixed(1)} s)`,
     lapsLeft: "Laps left",
     medianAge: "Field median tyre age",
@@ -310,7 +310,8 @@ export const COPY = {
     tyreRank: (newer: number, field: number) => `${newer} of ${field} cars on newer tyres`,
     pittedAhead: (n: number, of: number) => `${n} of ${of} cars ahead pitted this lap`,
     nearStops: (n: number, of: number) => `${n} of ${of} cars around you stopped earlier`,
-    scSaves: (under: number, normal: number) => `Stop costs ${under.toFixed(1)} s now, ${normal.toFixed(1)} s at green`,
+    scSaves: (under: number, normal: number) =>
+      under === normal ? `Stop costs ${normal.toFixed(1)} s at green` : `Stop costs ${under.toFixed(1)} s now, ${normal.toFixed(1)} s at green`,
   },
   // added: telemetry around the player's car at the call moment (lib/client/telemetry.ts)
   tele: {
@@ -355,10 +356,12 @@ export const COPY = {
     stopped: (n: number) => `${n} ${n === 1 ? "car has" : "cars have"} stopped.`,
     pitLoss: "Pit loss",
     pitMeta: "pit lane + stationary",
-    pitNow: (t: "SC" | "VSC") => `${t} now`,
+    pitNow: (t: TrackStatus) => (t === "GREEN" ? "Now" : `${t} now`),
     pitGreen: "Green",
-    pitNote: (t: "SC" | "VSC", saved: number) =>
-      `${t === "SC" ? "The safety car halves the stop" : "The VSC cuts the stop by a quarter"}: ${saved.toFixed(1)} s cheaper than at green.`,
+    pitNote: (t: TrackStatus, saved: number) =>
+      t === "GREEN"
+        ? "Green flag: the stop costs the full time."
+        : `${t === "SC" ? "The safety car halves the stop" : "The VSC cuts the stop by a quarter"}: ${saved.toFixed(1)} s cheaper than at green.`,
     stint: "Stint",
     stintMeta: (code: string, number: number) => `${code} #${number}`,
     stintCols: { stint: "Stint", tyre: "Tyre", laps: "Laps", best: "Best", trend: "Trend" },
@@ -430,13 +433,14 @@ export const COPY = {
     keep: (pos: number) => `keep P${pos}`,
     out: (pos: number) => `out P${pos}`,
     you: (tla: string, driver: string, pos: number) => `${tla} · ${driver.slice(0, 3).toUpperCase()} P${pos}`,
-    status: (trigger: "SC" | "VSC", lap: number, total: number) => `${trigger} · L${lap}/${total}`,
+    status: (trigger: TrackStatus, lap: number, total: number) => `${trigger === "GREEN" ? "Green" : trigger} · L${lap}/${total}`,
     boxNow: "Box now:",
     inLead: ", in the lead",
     behindCar: (gap: number, code: string) => `, ${gap.toFixed(1)} s behind ${code}`,
     onTyres: (age: number, compound: string) => `on ${age}-lap ${compound.toLowerCase()}s`,
     lapTyres: (age: number, compound: string | null) => `${age}-lap ${compound ? `${compound.toLowerCase()}s` : "tyres"}`,
-    stopCost: (under: number, normal: number) => `Stop costs ${under.toFixed(1)} s now, ${normal.toFixed(1)} s at green.`,
+    stopCost: (under: number, normal: number) =>
+      under === normal ? `Stop costs ${normal.toFixed(1)} s at green.` : `Stop costs ${under.toFixed(1)} s now, ${normal.toFixed(1)} s at green.`,
     lapsLeftOn: (n: number, age: number | null, compound: string | null) =>
       `${n} laps left${age != null ? ` on ${age}-lap ${compound ? compound.toLowerCase() + "s" : "tyres"}` : ""}.`,
     lockedTitle: (c: Call) => `${callWord(c)}.`,
@@ -477,8 +481,8 @@ export const COPY = {
     joinAt: (url: string) => `Friends join at ${url}`,
     // Before the reveal: driver code only, no race or team name.
     lead: (code: string, pos: number) => (pos === 1 ? `${code} leads.` : `${code} is P${pos}.`),
-    statusLong: (trigger: "SC" | "VSC", lap: number, total: number) =>
-      `${trigger === "SC" ? "Safety car" : "Virtual safety car"} · Lap ${lap}/${total}`,
+    statusLong: (trigger: TrackStatus, lap: number, total: number) =>
+      `${trigger === "SC" ? "Safety car" : trigger === "VSC" ? "Virtual safety car" : "Green flag"} · Lap ${lap}/${total}`,
     remove: (name: string) => `Remove ${name}`,
     removeShort: "Remove",
     confirmRemove: "Tap again to remove",
@@ -571,8 +575,10 @@ export const COPY = {
     noTimes: "No clean green-flag laps yet.",
     boxNowSentence: (pos: number, ahead: { code: string; gap: number } | null) =>
       `Box now and ${pos === 1 ? "you stay in front" : `you come out P${pos}`}${ahead ? `, ${ahead.gap.toFixed(1)} s behind ${ahead.code}` : ""}.`,
-    stopCost: (t: "SC" | "VSC", under: number, normal: number) =>
-      `The stop costs ${under.toFixed(1)} s under the ${t === "SC" ? "safety car" : "VSC"}, ${normal.toFixed(1)} s at green.`,
+    stopCost: (t: TrackStatus, under: number, normal: number) =>
+      t === "GREEN"
+        ? `The stop costs ${normal.toFixed(1)} s at green.`
+        : `The stop costs ${under.toFixed(1)} s under the ${t === "SC" ? "safety car" : "VSC"}, ${normal.toFixed(1)} s at green.`,
     lapsLeftOn: (n: number, age: number | null, compound: string | null) =>
       `${n} laps left${age != null ? ` on ${age}-lap ${compound ? `${compound.toLowerCase()}s` : "tyres"}` : ""}.`,
     rejoinBoth: (pos: number, ahead: { code: string; gap: number } | null, behind: { code: string; gap: number } | null) =>
@@ -594,6 +600,33 @@ export const COPY = {
     calls: (n: number) => `${n.toLocaleString("en-US")} ${n === 1 ? "call" : "calls"}`,
     yourMark: "Square = your room",
     distribution: "Every score on this call, 0 to 150",
+    // Host builder (home redesign, race mode)
+    joinSub: "Four letters, on the host's screen.",
+    hostSub: "Runs on a laptop everyone can see. Phones join by QR code.",
+    stepMode: "Mode",
+    stepMoment: "Moment",
+    stepRace: "Race",
+    stepDrivers: "Drivers",
+    modes: {
+      moment: { name: "Moment", hint: "One pit call under a safety car. About 2 minutes." },
+      race: { name: "Race", hint: "Lap 1 to the flag. A call at every freeze, audibles in between." },
+    },
+    momentCard: (lap: number, total: number) => `Lap ${lap} of ${total}`,
+    raceCard: (laps: number) => `${laps} laps`,
+    raceCars: (n: number) => `${n} drivers get calls`,
+    preview: "Your lobby",
+    previewRaceStatus: (laps: number) => `Race · ${laps} laps`,
+    previewRaceLead: (code: string) => `${code}, lap 1 to the flag.`,
+    previewRaceSub: (n: number) => `${n} ${n === 1 ? "freeze" : "freezes"}. Audibles any time in between.`,
+    previewMomentLead: (code: string, pos: number | null) => (pos == null ? `${code} at the call.` : pos === 1 ? `${code} leads.` : `${code} is P${pos}.`),
+    previewChoose: "Each player picks a driver on join.",
+    previewChooseSub: "The field turns each player's team colour at the freeze.",
+    summary: { mode: "Mode", race: "Race", moment: "Moment", drivers: "Drivers", players: "Players" },
+    driversSame: (code: string) => `Everyone drives ${code}`,
+    driversChoose: "Each player picks",
+    choosePool: (n: number) => `Phones pick from these ${n} drivers. Several players can share one.`,
+    playersMax: "Up to 12 phones",
+    racesLoading: "Loading races",
   },
   // added: per-driver play (Round 4)
   drivers: {
@@ -624,6 +657,96 @@ export const COPY = {
     museCredit: "Pair picked by Muse Spark",
     next: "See your result",
     failed: "Vote didn't go through. Try again.",
+  },
+  // added: race mode (Round 6). Freeze laps come from race state only; nothing here names the team's call before a reveal.
+  race: {
+    triggers: {
+      SC: "Safety car",
+      VSC: "VSC",
+      RIVAL_STOP: "Rival stopped nearby",
+      UNDERCUT: "Undercut window",
+      FAST_DEG: "Tyres fading",
+      TYRE_WINDOW: "Tyre window",
+      RAIN: "Rain",
+    } as Record<string, string>,
+    whyTitle: "Why it froze",
+    freezeTag: (i: number, n: number | null) => (n ? `Freeze ${i} of ${n}` : `Freeze ${i}`),
+    lapTag: (lap: number, total: number) => `L${lap}/${total}`,
+    replayTag: "Race",
+    progress: "Race",
+    freezeMark: (lap: number) => `L${lap}`,
+    flag: "Flag",
+    noCallTitle: (code: string) => `No call needed for ${code}.`,
+    noCallSub: "Watch this one. Audibles open again when the replay restarts.",
+    noCallHost: (codes: string[]) => `No call needed: ${codes.join(", ")}`,
+    callFor: (codes: string[]) => `Call for ${codes.join(" and ")}`,
+    watching: "Watching",
+    noCar: "You joined after the start, so you watch this race without a car.",
+    scoreTitle: "Race score",
+    scoreAfter: (n: number) => (n === 0 ? "Scores show after the first reveal." : `After ${n} ${n === 1 ? "freeze" : "freezes"}`),
+    pts: (n: number) => `${n > 0 ? "+" : ""}${n}`,
+    lobbyNote: "The replay runs the whole race and freezes when race state calls for a pit decision. Some freezes have stay out as the right call.",
+    pickWait: "Waiting for a player to pick a driver.",
+    lobbyCar: "Everyone drives",
+    lobbyChoose: "Each player picks a driver",
+    follows: (code: string) => `Screen follows ${code}`,
+    raceLine: (name: string, laps: number) => `${name} · ${laps} laps`,
+    // Audible: a "box now" call between freezes.
+    audible: {
+      title: "Audible",
+      button: "Box now",
+      hint: "Call a stop for your car while the replay runs. One every 5 laps. A wrong one costs 50.",
+      why: "Add why",
+      whyClose: "Close",
+      whyLabel: "Why? (optional)",
+      whyPlaceholder: "tyres are going and the gap behind is big",
+      sending: "Sending",
+      sent: (lap: number) => `Audible in on lap ${lap}. Scored at the flag.`,
+      cooldown: (lap: number) => `Next audible on lap ${lap}`,
+      lapsLeft: (n: number) => `${n} ${n === 1 ? "lap" : "laps"} to go`,
+      ready: "Ready",
+      closed: "Audibles are closed during a freeze.",
+      failed: "Audible didn't go through. Try again.",
+      notYou: "This phone isn't signed in for this car.",
+    },
+    // Per-freeze reveal.
+    revealTag: (i: number, n: number | null, lap: number) => `Reveal ${i}${n ? `/${n}` : ""} · L${lap}`,
+    roomOn: (code: string) => `The room on ${code}`,
+    nobodyCalled: "Nobody called this one.",
+    winning: (c: Call) => `${callWord(c)} was right`,
+    worth: (s: number) => `+${s.toFixed(1)} s`,
+    worthDeferred: "Worth: revealed at the flag",
+    worthLabel: "What it was worth",
+    window: (a: number, b: number) => (a === b ? `A stop on lap ${a} counts as box.` : `A stop on laps ${a} to ${b} counts as box.`),
+    comparison: (boxed: string[], stayed: string[]) =>
+      `Measured against ${boxed.length} ${boxed.length === 1 ? "car" : "cars"} that boxed${boxed.length ? ` (${boxed.join(", ")})` : ""} and ${stayed.length} that stayed out${stayed.length ? ` (${stayed.join(", ")})` : ""}.`,
+    teamDid: (team: string, c: Call, lap: number | null) => `${team}: ${c === "BOX" && lap != null ? `boxed on lap ${lap}` : callPast(c).toLowerCase()}`,
+    engineSaid: (c: Call, pct: number) => `Engine: ${callWord(c).toLowerCase()}, ${pct}%`,
+    resumeIn: (s: number) => `Replay resumes in ${s} s`,
+    resumeNow: "Resume the race",
+    yourCall: "Your call",
+    noCall: "No call",
+    scoreLine: (c: number, r: number, t: number) => `Call ${c} + reasoning ${r} = ${t}`,
+    runningTotal: (n: number) => `Race score ${n}`,
+    noCallHere: (code: string) => `No call for ${code} at this freeze.`,
+    // Race end.
+    flagTitle: "Chequered flag.",
+    scoreboardTag: (race: string) => `Scoreboard · ${race}`,
+    cols: { rank: "#", player: "Player", car: "Car", audibles: "Audibles", total: "Total" },
+    rank: (r: number, n: number) => `P${r} of ${n} in this lobby`,
+    audiblesTitle: "Audibles",
+    noAudibles: "No audibles this race.",
+    audibleRow: (who: string, code: string, lap: number) => `${who} · ${code} · box on lap ${lap}`,
+    audibleStatus: {
+      pending: "Pending",
+      scored: "Scored",
+      unscored: "Unscored: no comparison cars",
+      cancelled: "Cancelled: a freeze made that call",
+    } as Record<string, string>,
+    breakdown: "Freeze by freeze",
+    freezeCol: (lap: number) => `L${lap}`,
+    newLobby: "Create new lobby",
+    loading: "Loading the race",
   },
   tyreLabel: (compound: string, age: number | null) => `${compound}${age != null ? `, ${age} laps` : ""}`, // added: tyre chip label
   cue: { mute: "Mute sound", unmute: "Sound on" },

@@ -54,6 +54,7 @@ async function campLabels(state: LobbyStateResponse): Promise<CampLabel[] | null
 export const GET = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobby/[code]/camps">) => {
   const code = normalizeCode((await ctx.params).code);
   const { meta } = await requireLobbyMember(req, code);
+  if (meta.mode === "race") throw new HttpError(409, "Not available in race mode");
   if (!isRevealed(meta.phase)) throw new HttpError(409, "Camps open at the reveal");
   const state = await getLobbyState(code);
   if (!state) throw new HttpError(404, "Lobby not found");

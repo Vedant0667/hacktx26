@@ -1,12 +1,13 @@
 import { connection, type NextRequest } from "next/server";
-import { getDecisionTotals, getLobbyDriverCodes, topSubmissions, type LobbyMeta } from "@/lib/db";
-import { decisionForDriver, getDriverAnswers } from "@/lib/data";
+import { getDecisionTotals, getLobbyDriverCodes, getLobbyState, getRaceCalls, raceGlobalTotals, topSubmissions, type LobbyMeta } from "@/lib/db";
+import { decisionForDriver, getDriverAnswers, getRaceEntry, getRaceFreezes, type RaceEntry } from "@/lib/data";
 import { parseCallLocal } from "@/lib/muse";
 import { percentile, scoreCall } from "@/lib/scoring";
 import type { Call, DecisionPoint, Score } from "@/lib/types";
 import { requireLobbyMember } from "../_lib/access";
 import { handle, HttpError, normalizeCode, requireDecision } from "../_lib/http";
 import { isRevealed } from "../_lib/redact";
+import { benchmarkScore, clockOf, freezeDecision, revealedLaps } from "../_lib/race";
 
 type Row = Omit<Score, "score_call" | "score_reasoning"> & {
   score_call: number | null; // null unless revealed
@@ -69,8 +70,84 @@ async function lobbyRevealed(req: NextRequest, raw: string | null, decisionId: s
 // GET /api/leaderboard?decision_id=<id>&lobby=<CODE> (+ x-host-token or x-player-token for that lobby).
 // Unless that lobby has revealed this decision, the
 // answer stays out: team and engine are null, and player rows carry no call, reasons, factors or part scores.
+interface RaceRow {
+  kind: "player" | "team" | "engine";
+  name: string;
+  driver_code: string | null;
+  lobby_code: string | null;
+  total: number;
+  freezes: { lap: number; call: Call | null; score_call: number; score_reasoning: number; total: number }[];
+  audibles: { lap: number; status: string; total: number }[];
+}
+
+// Round 6, 6.11: race leaderboard. With lobby= (and that lobby's token): its players plus team and engine rows
+// for each car played, counting revealed freezes and, at done, audibles. Without: finished lobbies' totals only.
+async function raceLeaderboard(req: NextRequest, race: RaceEntry): Promise<Response> {
+  const headers = { "Cache-Control": "no-store" };
+  const raw = req.nextUrl.searchParams.get("lobby");
+  if (!raw) {
+    const rows: RaceRow[] = (await raceGlobalTotals(race.race_key)).map((r) => ({
+      kind: "player", name: r.name, driver_code: r.driver_code, lobby_code: null, total: r.total, freezes: [], audibles: [],
+    }));
+    return Response.json({ race_key: race.race_key, revealed_laps: [], done: false, rows }, { headers });
+  }
+  const denied = "Only players in this lobby and its host can see its reveal";
+  let code: string;
+  try {
+    code = normalizeCode(raw);
+  } catch {
+    throw new HttpError(403, denied);
+  }
+  const { meta } = await requireLobbyMember(req, code, denied);
+  if (meta.mode !== "race" || meta.race_key !== race.race_key) throw new HttpError(409, "That lobby is not on this race");
+  const clock = clockOf(meta);
+  const revealed = revealedLaps(clock);
+  const done = meta.phase === "done";
+  const [calls, state, cars, freezes] = await Promise.all([getRaceCalls(code), getLobbyState(code), getLobbyDriverCodes(code), getRaceFreezes(race.race_key)]);
+  const byName = new Map<string, RaceRow>();
+  for (const p of state?.players ?? []) {
+    byName.set(p.name, { kind: "player", name: p.name, driver_code: p.driver_code, lobby_code: code, total: 0, freezes: [], audibles: [] });
+  }
+  for (const c of calls) {
+    const row = byName.get(c.player_name) ?? { kind: "player" as const, name: c.player_name, driver_code: c.driver_code, lobby_code: code, total: 0, freezes: [], audibles: [] };
+    byName.set(c.player_name, row);
+    if (c.kind === "freeze" && revealed.includes(c.lap)) {
+      row.freezes.push({ lap: c.lap, call: c.call, score_call: c.score_call, score_reasoning: c.score_reasoning, total: c.total });
+      row.total += c.total;
+    } else if (c.kind === "audible" && done) {
+      row.audibles.push({ lap: c.lap, status: c.status, total: c.total });
+      row.total += c.total;
+    }
+  }
+  const benchmarks: RaceRow[] = [];
+  for (const car of cars) {
+    const info = race.drivers.find((d) => d.code === car);
+    const team: RaceRow = { kind: "team", name: `${info?.team ?? car} (${car})`, driver_code: car, lobby_code: null, total: 0, freezes: [], audibles: [] };
+    const engine: RaceRow = { kind: "engine", name: `Engine (${car})`, driver_code: car, lobby_code: null, total: 0, freezes: [], audibles: [] };
+    for (const entry of (meta.freeze_plan ?? []).filter((e) => revealed.includes(e.lap) && e.drivers.includes(car))) {
+      const f = freezes.find((x) => x.lap === entry.lap && x.driver_code === car);
+      if (!f) continue;
+      const decision = freezeDecision(race.race_key, race.name, f);
+      for (const [row, call, reasons] of [[team, f.full.team_call.call, f.full.team_call.reasons], [engine, f.full.engine.call, f.full.engine.reasons]] as const) {
+        const sc = benchmarkScore(decision, call, [...reasons]);
+        row.freezes.push({ lap: entry.lap, call, ...sc });
+        row.total += sc.total;
+      }
+    }
+    benchmarks.push(team, engine);
+  }
+  const rows = [...byName.values(), ...benchmarks].sort((a, b) => b.total - a.total);
+  return Response.json({ race_key: race.race_key, revealed_laps: revealed, done, rows }, { headers });
+}
+
 export const GET = handle(async (req: NextRequest) => {
   await connection(); // always per request; skips the build-time prerender attempt
+  const raceKey = req.nextUrl.searchParams.get("race_key");
+  if (raceKey) {
+    const race = await getRaceEntry(raceKey);
+    if (!race) throw new HttpError(404, "Race not found");
+    return raceLeaderboard(req, race);
+  }
   const decisionId = req.nextUrl.searchParams.get("decision_id");
   if (!decisionId) throw new HttpError(400, "decision_id is required");
   const decision = await requireDecision(decisionId);

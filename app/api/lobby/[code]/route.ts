@@ -12,12 +12,14 @@ export const GET = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobby
   const code = normalizeCode((await ctx.params).code);
   const { state } = await guardLobbyRead(req, code, true);
   if (!state) throw new HttpError(404, "Lobby not found");
-  if (isRevealed(state.phase)) {
-    const t = tokenHeaders(req);
-    const meta = t.host || t.player ? await getLobbyMeta(code, undefined, t.player ? hashToken(t.player) : null) : null;
-    if (!meta || !roleFor(meta, req)) {
-      return Response.json(redactSubmissions(state), { headers: { "Cache-Control": "no-store" } });
-    }
+  // The role matters after the reveal (calls) and in a race lobby (the host sees segment_end_lap).
+  const t = tokenHeaders(req);
+  const meta = (isRevealed(state.phase) || state.mode === "race") && (t.host || t.player)
+    ? await getLobbyMeta(code, undefined, t.player ? hashToken(t.player) : null)
+    : null;
+  const role = meta ? roleFor(meta, req) : null;
+  if (isRevealed(state.phase) && !role) {
+    return Response.json(redactSubmissions(state), { headers: { "Cache-Control": "no-store" } });
   }
-  return Response.json(redactForPhase(state), { headers: { "Cache-Control": "no-store" } });
+  return Response.json(redactForPhase(state, role === "host"), { headers: { "Cache-Control": "no-store" } });
 });

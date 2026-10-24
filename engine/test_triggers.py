@@ -107,8 +107,82 @@ def test_filters():
 def test_both_answers_exist():
     for ctx in CTXS:
         final, _, _ = T.run_race(ctx, verbose=False)
-        answers = {j["correct"] for fl in final.values() for c in fl for _, _, j in c["elig"]}
+        answers = {c["j"]["correct"] for fl in final.values() for c in fl}
         assert answers == {"BOX", "STAY"}, (ctx["spec"]["key"], answers)
+
+
+def test_freeze_filters_per_driver():
+    """Per driver: split, swing >= 2 s, >= 5 laps apart, at most 6; rival stops only within +/-3 places."""
+    for ctx in CTXS:
+        final, _, _ = T.run_race(ctx, verbose=False)
+        assert final, ctx["spec"]["key"]
+        for d, fl in final.items():
+            laps = [c["lap"] for c in fl]
+            assert len(fl) <= T.MAX_FREEZES and laps == sorted(laps), (d, laps)
+            assert all(b - a >= T.MIN_GAP_LAPS for a, b in zip(laps, laps[1:])), (d, laps)
+            for c in fl:
+                assert c["j"]["split"] and c["j"]["swing_s"] >= T.MIN_SWING_S, (d, c["lap"], c["j"])
+
+
+def test_rival_stop_within_three_places():
+    """Every rival named by a RIVAL_STOP trigger was within 3 places of the car at the end of lap L-2."""
+    for ctx in CTXS:
+        frames = T.B.build_frames(ctx["race"], ctx["results"], {}, set(), set())
+        by_code = {v: k for k, v in ctx["code"].items()}
+        for L in range(4, ctx["n_laps"] - T.GT_WINDOW):
+            f0 = {x["id"]: x["position"] for x in frames[L - 3]["drivers"]}
+            for d, v in T.detect(ctx, L).items():
+                for t in v["triggers"]:
+                    if t["type"] != "RIVAL_STOP":
+                        continue
+                    named = t["info"].split(": ", 1)[1].split(" (pit loss")[0].split(", ")
+                    for n in named:
+                        o = by_code[n.split(" ")[0]]
+                        assert abs(f0[o] - f0[d]) <= T.RIVAL_POS, (ctx["spec"]["key"], L, ctx["code"][d], n)
+
+
+def test_export_blind_has_no_answer_and_engine_has_no_lookahead():
+    """Race-mode export: blind rows hold no answer, team call or engine call; the engine call for a freeze is
+    the same when everything from lap L on is scrambled (it sees laps 1..L-1 and lap L's track status only)."""
+    answer_keys = {"correct", "swing_s", "team_call", "engine", "comparison", "detail", "window", "real"}
+    for ctx in CTXS:
+        final, _, _ = T.run_race(ctx, verbose=False)
+        rows = T.race_mode(ctx, final)
+        assert rows["freezes"] and rows["drivers"] and rows["audibles"]
+        eframes = T.engine_frames(ctx)
+        for f in rows["freezes"]:
+            assert not answer_keys & set(f["blind"]), f["blind"]
+            assert f["full"]["swing_s"] >= T.MIN_SWING_S
+            assert f["full"]["correct"] in ("BOX", "STAY")
+            L = f["lap"]
+            d = next(k for k, v in ctx["code"].items() if v == f["driver_code"])
+            fr = T.call_moment(eframes, L)
+            assert len(fr) == L and not any(x["pitted_this_lap"] for x in fr[-1]["drivers"])
+            # scramble every frame from lap L on: the engine never reads them
+            noisy = copy.deepcopy(eframes)
+            for k in range(L - 1, len(noisy)):
+                for x in noisy[k]["drivers"]:
+                    x["pitted_this_lap"] = not x["pitted_this_lap"]
+                    x["gap_to_leader_s"] = (x["gap_to_leader_s"] or 0) + 99
+                    x["tyre_age"] = 0
+            a, _ = T.engine_call(ctx, eframes, L, d)
+            b, _ = T.engine_call(ctx, noisy, L, d)
+            assert a == b, (ctx["spec"]["key"], L, f["driver_code"], a, b)
+        for a in rows["audibles"][:200]:
+            assert a["truth"]["scorable"] in (True, False)
+            if a["truth"]["scorable"]:
+                assert a["truth"]["swing_s"] >= T.MIN_SWING_S and a["truth"]["correct"] in ("BOX", "STAY")
+
+
+def test_freeze_detection_matches_scrambled_future_for_exported_freezes():
+    """For each exported freeze lap, detect() at that lap is unchanged when laps >= L are scrambled."""
+    for ctx in CTXS:
+        final, _, _ = T.run_race(ctx, verbose=False)
+        laps = sorted({c["lap"] for fl in final.values() for c in fl})
+        for L in laps:
+            if L < 3:
+                continue
+            assert strip(T.detect(ctx, L)) == strip(T.detect(scrambled(ctx, L, 7 + L), L)), (ctx["spec"]["key"], L)
 
 
 if __name__ == "__main__":

@@ -43,6 +43,7 @@ async function duelFor(code: string, meta: LobbyMeta): Promise<DuelState> {
 export const GET = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobby/[code]/duel">) => {
   const code = normalizeCode((await ctx.params).code);
   const { meta, player } = await requireLobbyMember(req, code);
+  if (meta.mode === "race") throw new HttpError(409, "Not available in race mode");
   if (!isRevealed(meta.phase)) throw new HttpError(409, "The duel opens at the reveal");
   const duel = await duelFor(code, meta);
   const tally = duel.pair ? await getDuelVotes(code, meta.decision_id, player) : { votes: [0, 0], my_vote: null };

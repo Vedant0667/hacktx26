@@ -47,3 +47,10 @@ export async function requireHost(req: Request, code: string, denied = "Only the
   if (a.role !== "host") throw new HttpError(403, denied);
   return a;
 }
+
+// Host or player of a race lobby (Round 6); 403 like requireLobbyMember, then 409 for a moment lobby.
+export async function requireRaceMember(req: Request, code: string): Promise<LobbyAccess> {
+  const a = await requireLobbyMember(req, code);
+  if (a.meta.mode !== "race" || !a.meta.race_key) throw new HttpError(409, "Not a race lobby");
+  return a;
+}

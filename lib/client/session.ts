@@ -16,9 +16,18 @@ import {
 
 // POST /api/lobby, then keep the host token (shown once) so this browser can advance phases after a reload.
 // driverMode "same": everyone plays `driverCode` (default: the decision's car). "choose": each player picks on join.
-export async function createLobby(decisionId: string, hostName: string, driverMode: DriverMode = "same", driverCode?: string | null): Promise<LobbyStateResponse> {
+// The host runs the shared screen and is not a player, so no name is needed.
+export async function createLobby(decisionId: string, hostName = "", driverMode: DriverMode = "same", driverCode?: string | null): Promise<LobbyStateResponse> {
   const lobby = await api.createLobby(decisionId, hostName, driverMode, driverCode);
-  rememberName(lobby.code, hostName);
+  if (hostName) rememberName(lobby.code, hostName);
+  rememberHost(lobby.code);
+  rememberHostToken(lobby.code, lobby.host_token);
+  return lobby;
+}
+
+// Race mode (Round 6): POST /api/lobby with mode "race", then keep the host token like a moment lobby.
+export async function createRaceLobby(raceKey: string, driverMode: DriverMode = "same", driverCode?: string | null): Promise<LobbyStateResponse> {
+  const lobby = await api.createRaceLobby(raceKey, driverMode, driverCode);
   rememberHost(lobby.code);
   rememberHostToken(lobby.code, lobby.host_token);
   return lobby;

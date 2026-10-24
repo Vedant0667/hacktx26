@@ -1,11 +1,12 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { getSubmission, getTotals, insertSubmission, claimSubmission, type DriverSubmission } from "@/lib/db";
-import { decisionForDriver } from "@/lib/data";
+import { getSubmission, getTotals, insertSubmission, claimSubmission, getRaceCall, insertRaceCall, type DriverSubmission, type LobbyMeta, type RaceCallRow } from "@/lib/db";
+import { decisionForDriver, getRaceEntry, getRaceFreezes } from "@/lib/data";
 import { parseCall } from "@/lib/muse";
 import { CALL_WINDOW_S, percentile, scoreCall } from "@/lib/scoring";
 import { lobbyMetaGuarded } from "../../../_lib/access";
 import { driverFor, handle, HttpError, normalizeCode, readBody, requireDecision, tokenMatches } from "../../../_lib/http";
+import { currentFreeze, freezeDecision, type RacePhase } from "../../../_lib/race";
 
 const REVEAL_GRACE_S = 2;
 
@@ -17,6 +18,44 @@ const Body = z.object({
   // The BOX / STAY OUT button on the phone, when pressed, wins over the parsed transcript.
   call: z.enum(["BOX", "STAY"]).nullable().optional(),
 });
+
+const hidden = (c: RaceCallRow): RaceCallRow => ({ ...c, score_call: 0, score_reasoning: 0, total: 0 });
+
+// Round 6: a call on the current freeze of a race lobby, for the player's own car. Graded like a moment call
+// (Muse with the same budget, lobby cap and grounding; keyword fallback). Scores stay hidden until reveal_freeze.
+async function raceSubmit(code: string, player: string, meta: LobbyMeta, transcript: string, buttonCall: "BOX" | "STAY" | null): Promise<Response> {
+  const lateRace = meta.phase === "reveal_freeze" && meta.phase_elapsed_s < REVEAL_GRACE_S;
+  if (meta.phase !== "freeze" && !lateRace) throw new HttpError(409, "Calls are closed for this moment");
+  const f = currentFreeze({ phase: meta.phase as RacePhase, plan: meta.freeze_plan, freeze_index: meta.freeze_index });
+  const car = meta.player_driver_code;
+  if (!f || !car || !f.drivers.includes(car)) throw new HttpError(409, "No call needed for your car at this lap");
+  const raceKey = meta.race_key!;
+  const existing = await getRaceCall(code, player, "freeze", f.lap);
+  if (existing) return Response.json({ submission: meta.phase === "freeze" ? hidden(existing) : existing, duplicate: true });
+  // Look the freeze up before claiming, so a missing row can't leave the player stuck on "being graded".
+  const [race, freezes] = await Promise.all([getRaceEntry(raceKey), getRaceFreezes(raceKey)]);
+  const freeze = freezes.find((x) => x.lap === f.lap && x.driver_code === car);
+  if (!race || !freeze) throw new HttpError(404, "Freeze data not found");
+  if (!(await claimSubmission(code, player, `race:${raceKey}:L${f.lap}`))) {
+    const stored = await getRaceCall(code, player, "freeze", f.lap);
+    if (!stored) throw new HttpError(409, "Your call is already in and being graded");
+    return Response.json({ submission: hidden(stored), duplicate: true });
+  }
+  const decision = freezeDecision(raceKey, race.name, freeze);
+  const parsed = await parseCall(transcript, decision, { lobbyCode: code });
+  const finalCall = buttonCall ?? parsed.call;
+  const score = scoreCall(decision, finalCall, parsed.factors_named);
+  const seconds_to_call = meta.phase === "freeze" ? Math.min(CALL_WINDOW_S, Math.round(meta.phase_elapsed_s * 10) / 10) : CALL_WINDOW_S;
+  const { call: row, duplicate } = await insertRaceCall(code, {
+    kind: "freeze", lap: f.lap, player_name: player, driver_code: car, call: finalCall,
+    reasons: parsed.reasons, factors_named: parsed.factors_named, transcript: parsed.transcript,
+    seconds_to_call, status: "scored", ...score,
+  });
+  return Response.json(
+    { submission: meta.phase === "freeze" ? hidden(row) : row, duplicate },
+    { status: duplicate ? 200 : 201 },
+  );
+}
 
 // Requires x-player-token (from join) for player_name. Scored against the player's own car (Round 4).
 // Response: { submission, percentile, lobby_rank, lobby_players_submitted, duplicate }.
@@ -30,6 +69,7 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
   if (!meta.is_player || !tokenMatches(req.headers.get("x-player-token"), meta.player_token_hash)) {
     throw new HttpError(403, denied);
   }
+  if (meta.mode === "race") return raceSubmit(code, player_name, meta, transcript, call ?? null);
   // Calls count during the decision, plus a short grace for auto-sends in flight when the host reveals.
   const late = meta.phase === "reveal" && meta.phase_elapsed_s < REVEAL_GRACE_S;
   if (meta.phase !== "decision" && !late) throw new HttpError(409, "Calls are closed for this moment");

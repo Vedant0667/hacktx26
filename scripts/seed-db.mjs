@@ -1,5 +1,5 @@
 // Loads race data into Postgres: runs engine/build.py (data/ -> build/race-data/load.json), then upserts
-// races, race_laps, decision_points and decision_drivers in one transaction and deletes rows the build no longer produces.
+// races, race_laps, decision_points, decision_drivers and the race-mode tables in one transaction and deletes rows the build no longer produces.
 // Idempotent: a second run leaves the same rows. Apply db/schema.sql first (scripts/migrate.mjs).
 // Usage: node --env-file=.env.local scripts/seed-db.mjs [--skip-build]
 import { execFileSync } from "node:child_process";
@@ -18,6 +18,9 @@ const raceKeys = load.races.map((r) => r.key);
 const decisionIds = load.decision_points.map((d) => d.id);
 const driverRows = load.decision_points.flatMap((d) => d.drivers ?? []);
 if (!driverRows.length) throw new Error("load.json has no per-driver rows");
+if (!load.race_freezes?.length || !load.race_drivers?.length || !load.race_audibles?.length) {
+  throw new Error("load.json has no race-mode rows (engine/triggers.py export)");
+}
 
 await sql.transaction([
   sql.query(
@@ -98,6 +101,29 @@ await sql.transaction([
     `update submissions s set driver_code = l.driver_code from lobbies l
      where s.lobby_code = l.code and s.driver_code is null and l.driver_mode = 'same'`,
   ),
+  // Race mode (Round 6): replace each loaded race's picker rows, freezes and audible truth with the build's.
+  sql.query(`delete from race_drivers where race_key = any($1::text[])`, [raceKeys]),
+  sql.query(`delete from race_freezes where race_key = any($1::text[])`, [raceKeys]),
+  sql.query(`delete from race_audibles where race_key = any($1::text[])`, [raceKeys]),
+  sql.query(
+    `insert into race_drivers (race_key, driver_code, driver_number, driver_name, team, team_colour, start_position, freeze_count)
+     select race_key, code, number, name, team, team_colour, start_position, freeze_count
+     from jsonb_to_recordset($1::jsonb) as x(race_key text, code text, number int, name text, team text,
+       team_colour text, start_position int, freeze_count int)`,
+    [JSON.stringify(load.race_drivers)],
+  ),
+  sql.query(
+    `insert into race_freezes (race_key, driver_code, lap, triggers, blind, "full")
+     select race_key, driver_code, lap, triggers, blind, "full"
+     from jsonb_to_recordset($1::jsonb) as x(race_key text, driver_code text, lap int, triggers jsonb, blind jsonb, "full" jsonb)`,
+    [JSON.stringify(load.race_freezes)],
+  ),
+  sql.query(
+    `insert into race_audibles (race_key, driver_code, lap, truth)
+     select race_key, driver_code, lap, truth
+     from jsonb_to_recordset($1::jsonb) as x(race_key text, driver_code text, lap int, truth jsonb)`,
+    [JSON.stringify(load.race_audibles)],
+  ),
   // Decision points and races the build dropped (race_laps follow their race by cascade).
   sql.query(`delete from decision_points where not (id = any($1::text[]))`, [decisionIds]),
   sql.query(`delete from races where not (key = any($1::text[]))`, [raceKeys]),
@@ -119,7 +145,29 @@ console.log(
     `decision_drivers ${counts.decision_drivers} (${counts.scorable_drivers} scorable)`,
 );
 for (const r of perRace) console.log(`  ${r.key}: ${r.total_laps} laps, ${r.drivers} drivers, ${r.lap_rows} lap rows`);
+const raceMode = await sql.query(
+  `select f.race_key, count(*)::int as freezes, count(distinct f.driver_code)::int as drivers,
+     count(*) filter (where f."full"->>'correct' = 'BOX')::int as box,
+     count(*) filter (where f."full"->>'correct' = 'STAY')::int as stay,
+     (select count(*) from race_drivers d where d.race_key = f.race_key and d.freeze_count >= 3)::int as drivers_3plus,
+     (select count(*) from race_audibles a where a.race_key = f.race_key)::int as audible_rows,
+     (select count(*) from race_audibles a where a.race_key = f.race_key and (a.truth->>'scorable')::boolean)::int as audible_scorable
+   from race_freezes f group by f.race_key order by f.race_key`,
+);
+for (const r of raceMode) {
+  console.log(
+    `  race mode ${r.race_key}: ${r.freezes} freezes over ${r.drivers} drivers (${r.drivers_3plus} with 3+), ` +
+      `correct BOX ${r.box} / STAY ${r.stay}; audible truth ${r.audible_rows} car-laps, ${r.audible_scorable} scorable`,
+  );
+}
+const [rm] = await sql.query(
+  `select (select count(*) from race_freezes)::int as f, (select count(*) from race_drivers)::int as d,
+     (select count(*) from race_audibles)::int as a`,
+);
 if (
+  rm.f !== load.race_freezes.length ||
+  rm.d !== load.race_drivers.length ||
+  rm.a !== load.race_audibles.length ||
   counts.race_laps !== load.race_laps.length ||
   counts.decision_points !== load.decision_points.length ||
   counts.decision_drivers !== driverRows.length

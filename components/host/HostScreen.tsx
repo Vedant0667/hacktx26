@@ -23,6 +23,7 @@ import { LineChart } from "./HostCharts";
 import { HostQr } from "./HostQr";
 import { HostReveal, HostScoreboard } from "./HostReveal";
 import { carOf, carsInPlay, driverBy, lobbyCarCode } from "./cars";
+import { RaceHost } from "../race/RaceHost";
 
 const MAX_PLAYERS = 12;
 
@@ -34,7 +35,9 @@ export function HostScreen({ code }: { code: string }) {
   const [dataErr, setDataErr] = useState(false);
   // Round 4: the scorable cars, so the screen can follow the lobby's car and label each player's car.
   const [drivers, setDrivers] = useState<DriversResponse | null>(null);
-  const reveal = useReveal(code, lobby?.phase);
+  // Race lobbies (Round 6) reveal through /race/reveal; the moment reveal route answers 409 for them.
+  const isRace = lobby?.mode === "race";
+  const reveal = useReveal(code, isRace ? undefined : lobby?.phase);
   const hostToken = useSyncExternalStore(noopSubscribe, () => recallHostToken(code), () => null);
   const [mode, setMode] = useDataMode(code, "host");
   const t = useTicker(serverNow, 100);
@@ -46,7 +49,7 @@ export function HostScreen({ code }: { code: string }) {
 
   const decisionId = lobby?.decision_id;
   useEffect(() => {
-    if (!decisionId) return;
+    if (!decisionId || decisionId.startsWith("race:")) return;
     Promise.all([data.decision(decisionId), data.frames(decisionId)])
       .then(([d, f]) => {
         setDecision(d);
@@ -89,6 +92,8 @@ export function HostScreen({ code }: { code: string }) {
     }
   }, [lobby, decision, elapsed, setPhase]);
 
+  if (isRace && lobby)
+    return <RaceHost code={code} lobby={lobby} conn={conn} serverNow={serverNow} setPhase={setPhase} refresh={refresh} hostToken={hostToken} phaseErr={phaseErr} />;
   if (dataErr) return <Centered text={COPY.error.data} />;
   if (!lobby || !decision || !frames)
     return (
@@ -192,11 +197,11 @@ export function HostScreen({ code }: { code: string }) {
   );
 }
 
-function Centered({ text }: { text: string }) {
+export function Centered({ text }: { text: string }) {
   return <main className="grid min-h-dvh place-items-center p-14 text-lg font-bold text-ink-2">{text}</main>;
 }
 
-function Top({ left, right, className = "" }: { left: React.ReactNode; right: React.ReactNode; className?: string }) {
+export function Top({ left, right, className = "" }: { left: React.ReactNode; right: React.ReactNode; className?: string }) {
   return (
     <header className={`flex items-center justify-between gap-6 font-mono text-lg font-bold uppercase ${className}`}>
       <span className="flex items-center gap-3">{left}</span>
@@ -235,12 +240,6 @@ function Lobby({
   setMode: (m: DataMode) => void;
 }) {
   const [busy, setBusy] = useState(false);
-  const [confirm, setConfirm] = useState<string | null>(null);
-  useEffect(() => {
-    if (!confirm) return;
-    const id = setTimeout(() => setConfirm(null), 3000);
-    return () => clearTimeout(id);
-  }, [confirm]);
   const r = decision.player_role;
   return (
     <main className="on-dark grid h-dvh grid-rows-[auto_1fr_auto] overflow-hidden bg-ink px-14 py-10 text-white">
@@ -275,38 +274,7 @@ function Lobby({
 
         <section className="col-span-6 flex min-h-0 flex-col">
           <span className="meta mb-2">{COPY.host.players}</span>
-          <ol className="grid grid-cols-3 border-t-2 border-white">
-            {Array.from({ length: MAX_PLAYERS }, (_, i) => {
-              const p = players[i];
-              return (
-                <li key={p?.name ?? `open-${i}`} className={`flex h-[78px] items-center gap-3 border-b border-[#444] px-3 ${i % 3 !== 2 ? "border-r" : ""} ${p ? "rise" : ""}`}>
-                  <span className="nums text-[15px] text-[#8c8c8c]">{String(i + 1).padStart(2, "0")}</span>
-                  {p ? (
-                    <span className="flex min-w-0 flex-1 flex-col items-start">
-                      <span className="flex items-center gap-2.5">
-                        <span className="text-[2rem] font-black leading-none tracking-[-0.02em]">{tla(p.name)}</span>
-                        <CarTag code={carOf(lobby, p.name)} colour={colourOf(carOf(lobby, p.name))} />
-                      </span>
-                      <button
-                        type="button"
-                        onClick={async () => {
-                          if (confirm !== p.name) return setConfirm(p.name);
-                          setConfirm(null);
-                          await onKick(p.name);
-                        }}
-                        aria-label={confirm === p.name ? COPY.host.confirmRemove : COPY.host.remove(p.name)}
-                        className={`mt-1 font-mono text-[11px] font-bold uppercase leading-none ${confirm === p.name ? "bg-white px-1 py-0.5 text-ink" : "text-[#9a9a9a] underline underline-offset-2 hover:text-white"}`}
-                      >
-                        {confirm === p.name ? COPY.host.confirmShort : COPY.host.removeShort}
-                      </button>
-                    </span>
-                  ) : (
-                    <span className="text-[2rem] font-bold leading-none tracking-[-0.02em] text-[#8c8c8c]">{COPY.play.open.toLowerCase()}</span>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
+          <PlayerSlots players={players} carFor={(name) => carOf(lobby, name)} colourOf={colourOf} onKick={onKick} />
           <div className="mt-7 flex items-center justify-between gap-6 bg-field px-7 py-5 text-on-field">
             <b className="text-[2.125rem] font-black leading-none tracking-[-0.02em]">{COPY.host.carBand(myCode(frames, r.number), r.number)}</b>
             <span className="meta text-[15px]">{COPY.host.yourCar}</span>
@@ -339,8 +307,63 @@ function Lobby({
   );
 }
 
+// The 12 lobby slots on the black lobby screen: code, car tag and a two-tap remove control per player.
+// Shared with the race lobby.
+export function PlayerSlots({
+  players,
+  carFor,
+  colourOf,
+  onKick,
+}: {
+  players: { name: string }[];
+  carFor: (name: string) => string | null;
+  colourOf: (code: string | null) => string | null;
+  onKick: (name: string) => Promise<void>;
+}) {
+  const [confirm, setConfirm] = useState<string | null>(null);
+  useEffect(() => {
+    if (!confirm) return;
+    const id = setTimeout(() => setConfirm(null), 3000);
+    return () => clearTimeout(id);
+  }, [confirm]);
+  return (
+      <ol className="grid grid-cols-3 border-t-2 border-white">
+            {Array.from({ length: MAX_PLAYERS }, (_, i) => {
+              const p = players[i];
+              return (
+                <li key={p?.name ?? `open-${i}`} className={`flex h-[78px] items-center gap-3 border-b border-[#444] px-3 ${i % 3 !== 2 ? "border-r" : ""} ${p ? "rise" : ""}`}>
+                  <span className="nums text-[15px] text-[#8c8c8c]">{String(i + 1).padStart(2, "0")}</span>
+                  {p ? (
+                    <span className="flex min-w-0 flex-1 flex-col items-start">
+                      <span className="flex items-center gap-2.5">
+                        <span className="text-[2rem] font-black leading-none tracking-[-0.02em]">{tla(p.name)}</span>
+                        <CarTag code={carFor(p.name)} colour={colourOf(carFor(p.name))} />
+                      </span>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (confirm !== p.name) return setConfirm(p.name);
+                          setConfirm(null);
+                          await onKick(p.name);
+                        }}
+                        aria-label={confirm === p.name ? COPY.host.confirmRemove : COPY.host.remove(p.name)}
+                        className={`mt-1 font-mono text-[11px] font-bold uppercase leading-none ${confirm === p.name ? "bg-white px-1 py-0.5 text-ink" : "text-[#9a9a9a] underline underline-offset-2 hover:text-white"}`}
+                      >
+                        {confirm === p.name ? COPY.host.confirmShort : COPY.host.removeShort}
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="text-[2rem] font-bold leading-none tracking-[-0.02em] text-[#8c8c8c]">{COPY.play.open.toLowerCase()}</span>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+  );
+}
+
 // A player's car: its code with a small team swatch (a colour, never a logo).
-function CarTag({ code, colour }: { code: string | null; colour: string | null }) {
+export function CarTag({ code, colour }: { code: string | null; colour: string | null }) {
   if (!code) return null;
   return (
     <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold leading-none">
@@ -358,7 +381,7 @@ function carLine(lobby: LobbyStateResponse) {
 }
 
 // The Simple / Advanced control on the black lobby: white border, the active segment white.
-function DarkModeToggle({ mode, onChange }: { mode: DataMode; onChange: (m: DataMode) => void }) {
+export function DarkModeToggle({ mode, onChange }: { mode: DataMode; onChange: (m: DataMode) => void }) {
   return (
     <div role="group" aria-label={COPY.mode.label} className="inline-flex shrink-0 border-2 border-white">
       {(["simple", "advanced"] as const).map((m) => (
@@ -502,7 +525,9 @@ function Replay({
   );
 }
 
-function Freeze({
+// Exported for race mode, which passes the freeze as a blind decision, the players who owe a call, and
+// `why` (trigger chips) plus `label` (the status line) for its own context.
+export function Freeze({
   code,
   decision,
   lobby,
@@ -515,6 +540,9 @@ function Freeze({
   mode,
   setMode,
   mute,
+  why,
+  label,
+  carFor: carForProp,
 }: {
   code: string;
   decision: BlindDecision;
@@ -528,6 +556,9 @@ function Freeze({
   mode: DataMode;
   setMode: (m: DataMode) => void;
   mute: React.ReactNode;
+  why?: React.ReactNode;
+  label?: string;
+  carFor?: (name: string) => string | null;
 }) {
   const brief = getBrief(decision, frames);
   const left = Math.max(0, Math.ceil(CALL_WINDOW_S - elapsed / 1000));
@@ -546,7 +577,7 @@ function Freeze({
       left={left}
       dark={isDarkField(team)}
       compact={compact}
-      carFor={carsInPlay(lobby).length > 1 ? (name) => carOf(lobby, name) : undefined}
+      carFor={carForProp ?? (carsInPlay(lobby).length > 1 ? (name) => carOf(lobby, name) : undefined)}
     >
       <ModeToggle mode={mode} onChange={setMode} size="sm" onField />
       {mute}
@@ -563,7 +594,7 @@ function Freeze({
     </RoomStrip>
   );
   const status = brief.frame?.track_status ?? decision.trigger;
-  const props = { brief, decision, left, urgent, meCode: me?.code ?? "", code, room, mode, status };
+  const props = { brief, decision, left, urgent, meCode: me?.code ?? "", code, room, mode, status, why, label };
   return mode === "advanced" ? <AdvancedFreeze {...props} /> : <SimpleFreeze {...props} />;
 }
 
@@ -622,6 +653,8 @@ type FreezeProps = {
   room: (compact: boolean) => React.ReactNode;
   mode: DataMode;
   status: "GREEN" | "SC" | "VSC";
+  why?: React.ReactNode;
+  label?: string;
 };
 
 function Clock({ left, urgent, className }: { left: number; urgent: boolean; className: string }) {
@@ -669,19 +702,20 @@ function Options({ brief, compact }: { brief: Brief; compact: boolean }) {
   );
 }
 
-function SimpleFreeze({ brief, decision, left, urgent, meCode, code, room, mode, status }: FreezeProps) {
+function SimpleFreeze({ brief, decision, left, urgent, meCode, code, room, mode, status, why, label }: FreezeProps) {
   const t = brief.tele;
   return (
     <main className="flood flex h-dvh flex-col overflow-hidden bg-field text-on-field">
       <TrackStrip status={status} size="host" />
       <div className="grid min-h-0 flex-1 grid-rows-[auto_1fr_auto_auto] gap-y-4 px-14 pb-7 pt-5">
-        <Top left={COPY.host.statusLong(decision.trigger, decision.lap, decision.total_laps)} right={`${COPY.mode.simple} · ${COPY.host.room(code)}`} />
+        <Top left={label ?? COPY.host.statusLong(decision.trigger, decision.lap, decision.total_laps)} right={`${COPY.mode.simple} · ${COPY.host.room(code)}`} />
         <div className="grid min-h-0 grid-cols-12 items-center gap-x-6">
           <section className="col-span-7 flex flex-col">
             <Clock left={left} urgent={urgent} className="text-[4.75rem]" />
-            <h1 className="display mt-3 text-[4.5rem] leading-[0.92]">
+            <h1 className={`display mt-3 leading-[0.92] ${why ? "text-[3.75rem]" : "text-[4.5rem]"}`}>
               {brief.ctx ? COPY.host.lead(meCode, brief.ctx.pos) : ""} {COPY.freeze.question}
             </h1>
+            {why && <div className="mt-4">{why}</div>}
             <Sentence brief={brief} decision={decision} className="mt-4 max-w-[44ch] text-[1.375rem] font-medium leading-[1.3]" />
             {brief.rejoin && <RejoinCaveat frame={brief.frame} lap={decision.lap} className="mt-2 font-mono text-sm" />}
           </section>
@@ -711,7 +745,7 @@ function SimpleFreeze({ brief, decision, left, urgent, meCode, code, room, mode,
   );
 }
 
-function AdvancedFreeze({ brief, decision, left, urgent, meCode, code, room, mode, status }: FreezeProps) {
+function AdvancedFreeze({ brief, decision, left, urgent, meCode, code, room, mode, status, why, label }: FreezeProps) {
   const t = brief.tele;
   const r = decision.player_role;
   const pos = brief.ctx?.pos;
@@ -720,11 +754,12 @@ function AdvancedFreeze({ brief, decision, left, urgent, meCode, code, room, mod
       <TrackStrip status={status} size="host" />
       <div className="grid min-h-0 flex-1 grid-cols-[520px_1fr]">
         <section className="flood flex min-h-0 flex-col bg-field pb-8 pl-14 pr-10 pt-6 text-on-field">
-          <Top className="text-[15px]" left={`${decision.trigger} · L${decision.lap}/${decision.total_laps}`} right={code} />
+          <Top className="text-[15px]" left={label ?? `${decision.trigger} · L${decision.lap}/${decision.total_laps}`} right={code} />
           <Clock left={left} urgent={urgent} className="mt-5 text-[4.5rem]" />
           <h1 className="display mt-3 text-[3.125rem] leading-[0.94]">
             {brief.ctx ? COPY.host.lead(meCode, brief.ctx.pos) : ""} {COPY.freeze.question}
           </h1>
+          {why && <div className="mt-3">{why}</div>}
           {brief.rejoin && (
             <p className="mt-3 text-lg font-medium leading-[1.35]">
               {COPY.host.boxNowLead} <b className="font-black">{COPY.host.boxNowShort(brief.rejoin.pos, brief.rejoin.ahead, brief.rejoin.behind)}</b>{" "}

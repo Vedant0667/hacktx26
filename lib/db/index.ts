@@ -20,15 +20,60 @@ export async function query<T>(text: string, params: unknown[] = []): Promise<T[
 
 export const PHASES: LobbyPhase[] = ["waiting", "replay", "decision", "reveal", "done"];
 
+const CURRENT_FREEZE_LAP = `(l.freeze_plan->l.freeze_index->>'lap')::int`;
+
 export type DriverMode = "same" | "choose";
+export type LobbyMode = "moment" | "race";
+// Race lobby phases (Round 6). A moment lobby uses LobbyPhase.
+export type RacePhase = "waiting" | "replay" | "freeze" | "reveal_freeze" | "done";
+export type AnyPhase = LobbyPhase | RacePhase;
+
+// One entry of a race lobby's freeze plan: the lap and the lobby cars with a call there.
+export interface FreezePlanEntry {
+  lap: number;
+  drivers: string[];
+}
+
+// Raw race fields read with the lobby; app/api/_lib/redact.ts turns them into RaceState for clients.
+export interface RaceLobbyRaw {
+  race_key: string;
+  name: string;
+  total_laps: number;
+  freeze_plan: FreezePlanEntry[] | null;
+  freeze_index: number;
+  phase_elapsed_s: number;
+  called: string[]; // players with a call in on the current freeze
+}
+
+// What clients get (security-contract.md Round 6, 6.3).
+export interface RaceState {
+  race_key: string;
+  name: string;
+  total_laps: number;
+  lap_s: number;
+  freeze_count: number | null;
+  freeze_index: number;
+  freeze_lap: number | null;
+  past_freeze_laps: number[];
+  segment_start_lap: number;
+  visible_lap: number;
+  segment_end_lap: number | null;
+  calls_needed: string[] | null;
+  called: string[];
+}
 
 // A submission and the car it was scored against (Round 4; null only for rows from before per-driver play).
 export type DriverSubmission = Submission & { driver_code: string | null };
 
 // LobbyState plus the server clock (ms), taken from the same now() that sets phase_started_at, and the
 // per-driver fields (docs/audits/security-contract.md Round 4, 4.3).
+// phase: typed LobbyPhase for the existing client code; in a race lobby it holds a RacePhase value
+// ("freeze", "reveal_freeze" included, security-contract.md Round 6, 6.3). Check `mode` before switching on it.
 export type LobbyStateResponse = Omit<LobbyState, "players" | "submissions"> & {
   now: number;
+  mode: LobbyMode;
+  race: RaceState | null; // null in a moment lobby (Round 6)
+  _race?: RaceLobbyRaw | null; // server-only, removed by present() before the response
   driver_mode: DriverMode;
   driver_code: string | null; // the lobby's car in "same" mode; null in "choose"
   players: { name: string; joined_at: number; driver_code: string | null }[];
@@ -62,11 +107,14 @@ export async function createLobby(
   hostTokenHash: string,
   driverMode: DriverMode = "same",
   driverCode: string | null = null,
+  mode: LobbyMode = "moment",
+  raceKey: string | null = null,
 ): Promise<boolean> {
   const rows = await query<{ code: string }>(
-    `insert into lobbies (code, decision_id, host_token_hash, driver_mode, driver_code) values ($1, $2, $3, $4, $5)
+    `insert into lobbies (code, decision_id, host_token_hash, driver_mode, driver_code, mode, race_key)
+     values ($1, $2, $3, $4, $5, $6, $7)
      on conflict (code) do nothing returning code`,
-    [code, decisionId, hostTokenHash, driverMode, driverCode],
+    [code, decisionId, hostTokenHash, driverMode, driverCode, mode, raceKey],
   );
   return rows.length === 1;
 }
@@ -153,9 +201,16 @@ export async function guardedLobbyRead(
 // One round trip: lobby, players, this decision's submissions, and the DB clock.
 export async function getLobbyState(code: string): Promise<LobbyStateResponse | null> {
   const rows = await query<LobbyStateResponse>(
-    `select l.code, l.decision_id, l.phase, l.driver_mode, l.driver_code,
+    `select l.code, l.decision_id, l.phase, l.driver_mode, l.driver_code, l.mode, null::json as race,
        ${ms("l.phase_started_at")} as phase_started_at,
        ${ms("now()")} as now,
+       case when l.mode = 'race' then json_build_object(
+         'race_key', l.race_key, 'name', r.name, 'total_laps', r.total_laps, 'freeze_plan', l.freeze_plan,
+         'freeze_index', l.freeze_index,
+         'phase_elapsed_s', extract(epoch from now() - l.phase_started_at)::float8,
+         'called', coalesce((select json_agg(c.player_name order by c.player_name) from race_calls c
+                             where c.lobby_code = l.code and c.kind = 'freeze' and c.lap = ${CURRENT_FREEZE_LAP}), '[]'::json))
+       end as _race,
        coalesce((select json_agg(json_build_object('name', p.name, 'joined_at', ${ms("p.joined_at")},
                                                    'driver_code', p.driver_code)
                    order by p.joined_at, p.name)
@@ -163,7 +218,7 @@ export async function getLobbyState(code: string): Promise<LobbyStateResponse | 
        coalesce((select json_agg(${SUBMISSION_JSON} order by ${SUBMISSION_ORDER})
                  from submissions s where s.lobby_code = l.code and s.decision_id = l.decision_id),
                 '[]'::json) as submissions
-     from lobbies l where l.code = $1`,
+     from lobbies l left join races r on r.key = l.race_key where l.code = $1`,
     [code],
   );
   return rows[0] ?? null;
@@ -214,7 +269,10 @@ export async function addPlayer(
 // Host removes a player: records the name and device token in kicked_players (so neither can rejoin), and,
 // before the reveal, deletes that player's submission and grading claim. False when no player has that name.
 export async function kickPlayer(code: string, name: string): Promise<boolean> {
-  const beforeReveal = `exists(select 1 from lobbies where code = $1 and phase in ('waiting', 'replay', 'decision'))`;
+  const beforeReveal = `exists(select 1 from lobbies where code = $1 and mode = 'moment' and phase in ('waiting', 'replay', 'decision'))`;
+  // Race lobby: only the call on the current, unrevealed freeze goes (and its grading claim).
+  const raceFreezeOpen = `exists(select 1 from lobbies l where l.code = $1 and l.mode = 'race' and l.phase = 'freeze'
+    and ${CURRENT_FREEZE_LAP} = race_calls.lap)`;
   const results = (await sql().transaction([
     sql().query(`select pg_advisory_xact_lock(hashtext($1))`, [`lobby-join:${code}`]),
     sql().query(
@@ -225,14 +283,26 @@ export async function kickPlayer(code: string, name: string): Promise<boolean> {
     ),
     sql().query(`delete from submissions where lobby_code = $1 and player_name = $2 and ${beforeReveal}`, [code, name]),
     sql().query(`delete from submission_claims where lobby_code = $1 and player_name = $2 and ${beforeReveal}`, [code, name]),
+    sql().query(
+      `delete from submission_claims where lobby_code = $1 and player_name = $2 and decision_id = (
+         select 'race:' || l.race_key || ':L' || ${CURRENT_FREEZE_LAP} from lobbies l
+         where l.code = $1 and l.mode = 'race' and l.phase = 'freeze')`,
+      [code, name],
+    ),
+    sql().query(`delete from race_calls where lobby_code = $1 and player_name = $2 and kind = 'freeze' and ${raceFreezeOpen}`, [code, name]),
     sql().query(`delete from players where lobby_code = $1 and name = $2 returning name`, [code, name]),
-  ])) as unknown as [unknown, unknown, unknown, unknown, { name: string }[]];
-  return results[4].length === 1;
+  ])) as unknown as [unknown, unknown, unknown, unknown, unknown, unknown, { name: string }[]];
+  return results[6].length === 1;
 }
 
 export interface LobbyMeta {
   decision_id: string;
-  phase: LobbyPhase;
+  phase: AnyPhase;
+  mode: LobbyMode;
+  race_key: string | null;
+  freeze_plan: FreezePlanEntry[] | null;
+  freeze_index: number;
+  total_laps: number | null; // race lobbies
   phase_elapsed_s: number;
   host_token_hash: string | null;
   is_player: boolean;
@@ -249,6 +319,8 @@ export interface LobbyMeta {
 export async function getLobbyMeta(code: string, playerName?: string, playerTokenHash?: string | null): Promise<LobbyMeta | null> {
   const rows = await query<LobbyMeta>(
     `select l.decision_id, l.phase, l.host_token_hash, l.driver_mode, l.driver_code,
+       l.mode, l.race_key, l.freeze_plan, l.freeze_index,
+       (select r.total_laps from races r where r.key = l.race_key) as total_laps,
        extract(epoch from now() - l.phase_started_at)::float8 as phase_elapsed_s,
        (select p.driver_code from players p where p.lobby_code = l.code and p.name = $2) as player_driver_code,
        exists(select 1 from players p where p.lobby_code = l.code and p.name = $2) as is_player,
@@ -274,6 +346,131 @@ export async function getSubmission(code: string, playerName: string, decisionId
     [code, playerName, decisionId],
   );
   return rows[0]?.row ?? null;
+}
+
+// ---- Race lobbies (Round 6) ----
+
+// waiting -> replay with the freeze plan fixed (compare-and-set on the phase).
+export async function startRace(code: string, plan: FreezePlanEntry[]): Promise<boolean> {
+  const rows = await query(
+    `update lobbies set phase = 'replay', phase_started_at = now(), freeze_plan = $2::jsonb, freeze_index = 0
+     where code = $1 and mode = 'race' and phase = 'waiting' returning code`,
+    [code, JSON.stringify(plan)],
+  );
+  return rows.length === 1;
+}
+
+// Compare-and-set on phase and freeze index, so a stale click from the previous loop cannot move the lobby.
+export async function advanceRacePhase(code: string, from: RacePhase, to: RacePhase, fromIndex: number, toIndex: number): Promise<boolean> {
+  const rows = await query(
+    `update lobbies set phase = $3, phase_started_at = now(), freeze_index = $5
+     where code = $1 and mode = 'race' and phase = $2 and freeze_index = $4 returning code`,
+    [code, from, to, fromIndex, toIndex],
+  );
+  return rows.length === 1;
+}
+
+export interface RaceCallRow {
+  kind: "freeze" | "audible";
+  lap: number;
+  player_name: string;
+  driver_code: string;
+  call: "BOX" | "STAY" | null;
+  reasons: string[];
+  factors_named: string[];
+  transcript: string;
+  seconds_to_call: number | null;
+  status: "pending" | "scored" | "unscored" | "cancelled";
+  score_call: number;
+  score_reasoning: number;
+  total: number;
+}
+
+const RACE_CALL_COLS = `kind, lap, player_name, driver_code, call, reasons, factors_named, transcript, seconds_to_call,
+  status, score_call, score_reasoning, total`;
+
+export async function getRaceCalls(code: string): Promise<RaceCallRow[]> {
+  return query<RaceCallRow>(
+    `select ${RACE_CALL_COLS} from race_calls where lobby_code = $1 order by lap, kind, created_at, player_name`,
+    [code],
+  );
+}
+
+export async function getRaceCall(code: string, player: string, kind: "freeze" | "audible", lap: number): Promise<RaceCallRow | null> {
+  const rows = await query<RaceCallRow>(
+    `select ${RACE_CALL_COLS} from race_calls where lobby_code = $1 and player_name = $2 and kind = $3 and lap = $4`,
+    [code, player, kind, lap],
+  );
+  return rows[0] ?? null;
+}
+
+// First call per player and freeze wins; a repeat returns the stored row with duplicate = true.
+export async function insertRaceCall(code: string, c: RaceCallRow): Promise<{ call: RaceCallRow; duplicate: boolean }> {
+  const rows = await query<RaceCallRow>(
+    `insert into race_calls (lobby_code, ${RACE_CALL_COLS})
+     values ($1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14)
+     on conflict (lobby_code, player_name, kind, lap) do nothing returning ${RACE_CALL_COLS}`,
+    [code, c.kind, c.lap, c.player_name, c.driver_code, c.call, JSON.stringify(c.reasons), JSON.stringify(c.factors_named),
+      c.transcript, c.seconds_to_call, c.status, c.score_call, c.score_reasoning, c.total],
+  );
+  if (rows[0]) return { call: rows[0], duplicate: false };
+  return { call: (await getRaceCall(code, c.player_name, c.kind, c.lap))!, duplicate: true };
+}
+
+// An audible, only if this player has none within `gap - 1` laps of it. Serialised per player with an
+// advisory lock so two quick taps cannot both pass. Returns the stored row (null when refused) and the laps
+// of this player's audibles after the attempt.
+export async function insertAudible(code: string, c: RaceCallRow, gap: number): Promise<{ call: RaceCallRow | null; laps: number[] }> {
+  const results = (await sql().transaction([
+    sql().query(`select pg_advisory_xact_lock(hashtext($1))`, [`audible:${code}:${c.player_name}`]),
+    sql().query(
+      `insert into race_calls (lobby_code, ${RACE_CALL_COLS})
+       select $1, $2, $3, $4, $5, $6, $7::jsonb, $8::jsonb, $9, $10, $11, $12, $13, $14
+       where not exists(select 1 from race_calls where lobby_code = $1 and player_name = $4 and kind = 'audible'
+                        and abs(lap - $3::int) < $15::int)
+       on conflict (lobby_code, player_name, kind, lap) do nothing returning ${RACE_CALL_COLS}`,
+      [code, c.kind, c.lap, c.player_name, c.driver_code, c.call, JSON.stringify(c.reasons), JSON.stringify(c.factors_named),
+        c.transcript, c.seconds_to_call, c.status, c.score_call, c.score_reasoning, c.total, gap],
+    ),
+    sql().query(
+      `select coalesce(json_agg(lap order by lap), '[]'::json) as laps from race_calls
+       where lobby_code = $1 and player_name = $2 and kind = 'audible'`,
+      [code, c.player_name],
+    ),
+  ])) as unknown as [unknown, RaceCallRow[], { laps: number[] }[]];
+  return { call: results[1][0] ?? null, laps: results[2][0]?.laps ?? [] };
+}
+
+export async function getAudibleLaps(code: string, player: string): Promise<number[]> {
+  const rows = await query<{ laps: number[] }>(
+    `select coalesce(json_agg(lap order by lap), '[]'::json) as laps from race_calls
+     where lobby_code = $1 and player_name = $2 and kind = 'audible'`,
+    [code, player],
+  );
+  return rows[0]?.laps ?? [];
+}
+
+// Players whose car has a call at this freeze, and how many of them have called.
+export async function raceFreezeProgress(code: string, lap: number, drivers: string[]): Promise<{ needed: number; called: number }> {
+  const rows = await query<{ needed: number; called: number }>(
+    `select count(*)::int as needed,
+       count(*) filter (where exists(select 1 from race_calls c where c.lobby_code = p.lobby_code
+         and c.player_name = p.name and c.kind = 'freeze' and c.lap = $2))::int as called
+     from players p where p.lobby_code = $1 and p.driver_code = any($3::text[])`,
+    [code, lap, drivers],
+  );
+  return rows[0] ?? { needed: 0, called: 0 };
+}
+
+// Finished race lobbies on a race: each player's summed score (global race leaderboard, names and totals only).
+export async function raceGlobalTotals(raceKey: string, limit = 50): Promise<{ name: string; driver_code: string | null; total: number }[]> {
+  return query<{ name: string; driver_code: string | null; total: number }>(
+    `select c.player_name as name, max(c.driver_code) as driver_code, sum(c.total)::int as total
+     from race_calls c join lobbies l on l.code = c.lobby_code
+     where l.mode = 'race' and l.race_key = $1 and l.phase = 'done'
+     group by c.lobby_code, c.player_name order by total desc, name limit $2`,
+    [raceKey, limit],
+  );
 }
 
 // Compare-and-set so two hosts clicking at once cannot skip a phase.

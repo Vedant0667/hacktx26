@@ -424,7 +424,7 @@ export function FieldTyres({ t, me, onField = true }: { t: Telemetry; me: number
   );
 }
 
-export function PitLoss({ under, normal, trigger }: { under: number; normal: number; trigger: "SC" | "VSC" }) {
+export function PitLoss({ under, normal, trigger }: { under: number; normal: number; trigger: TrackStatus }) {
   const max = 210;
   return (
     <>

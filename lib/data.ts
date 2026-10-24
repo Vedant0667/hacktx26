@@ -277,3 +277,140 @@ export async function getDriverAnswer(id: string, code: string): Promise<DriverR
 export async function getDefaultDriver(id: string): Promise<string | null> {
   return (await decisionRow(id))?.player_code ?? null;
 }
+
+// ---- Race mode (Round 6): tables race_drivers, race_freezes, race_audibles ----
+// Blind: getRaceList, getRaceEntry (picker), and the `blind` half of a freeze. Full: getRaceFreezes' `full`,
+// getAudibleTruth and getRaceFrames hold answers or future laps; only race lobby routes use them, and only
+// after the server clock or the phase has reached them.
+
+const RACE_KEY_RE = /^[0-9]{4}-[a-z0-9-]{1,40}$/;
+
+export type TriggerType = "SC" | "VSC" | "RIVAL_STOP" | "UNDERCUT" | "FAST_DEG" | "TYRE_WINDOW" | "RAIN";
+
+export interface RaceDriver {
+  code: string;
+  number: number;
+  name: string;
+  team: string;
+  team_colour: string | null;
+  freeze_count: number;
+}
+
+export interface RaceEntry {
+  race_key: string;
+  name: string;
+  total_laps: number;
+  default_driver: string;
+  drivers: RaceDriver[];
+}
+
+export interface BlindFreeze {
+  driver_code: string;
+  lap: number;
+  blind_title: string;
+  triggers: { type: TriggerType; info: string }[];
+  position: number;
+  compound: string | null;
+  tyre_age: number;
+  pit_loss: { normal_s: number; source: string };
+  options: Call[];
+  factors: string[];
+}
+
+export interface FullFreeze {
+  correct: Call;
+  swing_s: number;
+  window: [number, number];
+  comparison: { boxed: string[]; stayed: string[]; widened_by_tyre_age: boolean };
+  team_call: { call: Call; lap: number | null; reasons: string[] };
+  engine: { call: Call; confidence: number; reasons: string[] };
+  engine_inputs: Record<string, unknown>;
+  detail: Record<string, unknown>;
+}
+
+export interface RaceFreeze {
+  driver_code: string;
+  lap: number;
+  blind: BlindFreeze;
+  full: FullFreeze;
+}
+
+export interface AudibleTruth {
+  scorable: boolean;
+  correct: Call | null;
+  swing_s: number | null;
+  window: [number, number];
+  n_box: number;
+  n_stay: number;
+  reason: string | null;
+  comparison?: { boxed: string[]; stayed: string[] };
+}
+
+let raceListCache: { at: number; rows: Promise<RaceEntry[]> } | null = null;
+const raceFreezeCache = new Map<string, Promise<RaceFreeze[]>>();
+
+function loadRaceList(): Promise<RaceEntry[]> {
+  return query<{ race_key: string; name: string; total_laps: number; drivers: (RaceDriver & { start_position: number })[] }>(
+    `select r.key as race_key, r.name, r.total_laps,
+       json_agg(json_build_object('code', d.driver_code, 'number', d.driver_number, 'name', d.driver_name,
+         'team', d.team, 'team_colour', d.team_colour, 'freeze_count', d.freeze_count,
+         'start_position', d.start_position) order by d.start_position) as drivers
+     from races r join race_drivers d on d.race_key = r.key
+     group by r.key, r.name, r.total_laps, r.season, r.round order by r.season, r.round`,
+  ).then((rows) =>
+    rows.map((r) => {
+      const best = [...r.drivers].sort((a, b) => b.freeze_count - a.freeze_count || a.start_position - b.start_position)[0];
+      return {
+        race_key: r.race_key,
+        name: r.name,
+        total_laps: r.total_laps,
+        default_driver: best?.code ?? "",
+        drivers: r.drivers.map(({ code, number, name, team, team_colour, freeze_count }) => ({ code, number, name, team, team_colour, freeze_count })),
+      };
+    }),
+  );
+}
+
+// Races with at least one freeze, for the race picker (blind: no laps, answers or team calls).
+export async function getRaceList(): Promise<RaceEntry[]> {
+  if (!raceListCache || Date.now() - raceListCache.at > LIST_TTL_MS) {
+    const rows = loadRaceList();
+    raceListCache = { at: Date.now(), rows };
+    rows.catch(() => (raceListCache = null));
+  }
+  return raceListCache.rows;
+}
+
+export async function getRaceEntry(key: string): Promise<RaceEntry | null> {
+  if (!RACE_KEY_RE.test(key)) return null;
+  return (await getRaceList()).find((r) => r.race_key === key) ?? null;
+}
+
+// Every freeze of every car in a race (blind and full). Server-side only.
+export async function getRaceFreezes(key: string): Promise<RaceFreeze[]> {
+  if (!(await getRaceEntry(key))) return [];
+  return remember(raceFreezeCache, key, () =>
+    query<RaceFreeze>(
+      `select driver_code, lap, blind, "full" as full from race_freezes where race_key = $1 order by lap, driver_code`,
+      [key],
+    ),
+  );
+}
+
+// The seconds answer for a BOX audible by `code` on `lap`; null when that car was not running then.
+export async function getAudibleTruth(key: string, code: string, lap: number): Promise<AudibleTruth | null> {
+  if (!RACE_KEY_RE.test(key) || !CODE_RE.test(code)) return null;
+  const rows = await query<{ truth: AudibleTruth }>(
+    `select truth from race_audibles where race_key = $1 and driver_code = $2 and lap = $3`,
+    [key, code, lap],
+  );
+  return rows[0]?.truth ?? null;
+}
+
+// Every lap of a race (shares the per-race cache with getFrames).
+export async function getRaceFrames(key: string): Promise<LapFrame[] | null> {
+  if (!(await getRaceEntry(key))) return null;
+  return remember(raceFrames, key, async () =>
+    rowsToFrames(await query<LapRow>(`${LAP_SELECT} where race_key = $1 order by lap, position`, [key])),
+  );
+}

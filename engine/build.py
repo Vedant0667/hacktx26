@@ -3,7 +3,8 @@
 Reads data/jolpica/, data/manual/ and (if present) data/openf1/.
 Writes build/race-data/ (gitignored, never served):
 - load.json: the rows scripts/seed-db.mjs upserts into Postgres (db/schema.sql): races, race_laps (one row per
-  driver per lap) and decision_points (blind decision, full decision, ground truth, engine inputs).
+  driver per lap) and decision_points (blind decision, full decision, ground truth, engine inputs), plus race
+  mode's race_drivers, race_freezes and race_audibles (engine/triggers.py export()).
 - full/<id>/{decision,frames,ground_truth}.json and full/index.json: the same full data as files, for the
   engine tests and for diffing a rebuild.
 - blind/<id>/{decision,frames}.json and blind/index.json: what a player may see before the reveal (no team,
@@ -474,6 +475,15 @@ def main():
     (OUT / "index.json").write_text(json.dumps(index, indent=1))
     (PUB / "index.json").write_text(json.dumps(index, indent=1))
     (OUT / "engine_calls.json").write_text(json.dumps(engine_calls, indent=1))
+    # Race mode (docs/09-race-mode.md): freezes per driver, picker rows and audible truth, from engine/triggers.py.
+    import triggers  # noqa: E402  (imports this module; loaded late to avoid a cycle)
+    load.update(triggers.export())
+    for key in sorted({r["race_key"] for r in load["race_freezes"]}):
+        fz = [r for r in load["race_freezes"] if r["race_key"] == key]
+        nb = sum(r["full"]["correct"] == "BOX" for r in fz)
+        print(f"race mode {key}: {len(fz)} freezes over {len({r['driver_code'] for r in fz})} drivers "
+              f"(BOX {nb}, STAY {len(fz) - nb}), "
+              f"{sum(r['truth']['scorable'] for r in load['race_audibles'] if r['race_key'] == key)} scorable audible laps")
     (BUILD / "load.json").write_text(json.dumps(load, separators=(",", ":")))
     print(f"\nwrote {BUILD.relative_to(ROOT)}/load.json: {len(load['races'])} races, "
           f"{len(load['race_laps'])} lap rows, {len(load['decision_points'])} decision points")

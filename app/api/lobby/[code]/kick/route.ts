@@ -17,5 +17,5 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
   if (!(await kickPlayer(code, name))) throw new HttpError(404, `No player named "${name}" in this lobby`);
   const state = await getLobbyState(code);
   if (!state) throw new HttpError(404, "Lobby not found");
-  return Response.json(redactForPhase(state), { headers: { "Cache-Control": "no-store" } });
+  return Response.json(redactForPhase(state, true), { headers: { "Cache-Control": "no-store" } });
 });

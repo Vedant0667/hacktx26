@@ -14,6 +14,7 @@ import { isRevealed } from "../../../_lib/redact";
 export const GET = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobby/[code]/reveal">) => {
   const code = normalizeCode((await ctx.params).code);
   const { meta } = await requireLobbyMember(req, code);
+  if (meta.mode === "race") throw new HttpError(409, "Race lobbies use /race/reveal");
   if (!isRevealed(meta.phase)) throw new HttpError(409, "The answer opens at the reveal");
 
   const decision = await requireDecision(meta.decision_id);

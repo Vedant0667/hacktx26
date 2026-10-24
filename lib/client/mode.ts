@@ -2,7 +2,7 @@
 // plus the pre-reveal figures Advanced shows. Nothing here reads decision.engine or ground_truth.correct.
 import { useCallback, useSyncExternalStore } from "react";
 import { COPY } from "@/lib/copy";
-import type { LapFrame } from "@/lib/types";
+import type { LapFrame, TrackStatus } from "@/lib/types";
 import type { BlindDecision, PitLoss } from "./api";
 
 export type DataMode = "simple" | "advanced";
@@ -68,9 +68,9 @@ export interface PlacesSplit {
 }
 
 // Share of a green-flag stop that a stop costs under each neutralisation.
-export const PIT_FACTOR = { SC: 0.5, VSC: 0.75 } as const;
+export const PIT_FACTOR = { SC: 0.5, VSC: 0.75, GREEN: 1 } as const;
 
-export function pitLoss(pl: PitLoss | null | undefined, trigger: "SC" | "VSC"): { normal: number; under: number } | null {
+export function pitLoss(pl: PitLoss | null | undefined, trigger: TrackStatus): { normal: number; under: number } | null {
   const normal = pl?.normal_s;
   if (normal == null) return null;
   return { normal, under: Math.round(normal * PIT_FACTOR[trigger] * 10) / 10 };
@@ -106,7 +106,7 @@ export function intervals(drivers: { number: number; position: number; gap_to_le
 }
 
 // Advanced freeze figures. Pit loss is the blind decision's pit_loss.normal_s times the SC/VSC factor.
-export function advRows(trigger: "SC" | "VSC", a: NonNullable<ReturnType<typeof advancedFigures>>) {
+export function advRows(trigger: TrackStatus, a: NonNullable<ReturnType<typeof advancedFigures>>) {
   const rows: { label: string; value: string; wide?: boolean }[] = [];
   if (a.loss) rows.push({ label: COPY.mode.pitLossLabel(trigger), value: COPY.mode.pitLoss(a.loss.under, a.loss.normal), wide: true });
   rows.push({ label: COPY.mode.lapsLeft, value: String(a.lapsLeft) });

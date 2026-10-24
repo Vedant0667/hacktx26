@@ -188,7 +188,7 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
 }
 
 // Ranked rows: two columns on a laptop, one on a phone. Big code, room, call, percentile, score.
-const ROW = "grid grid-cols-[28px_80px_1fr_52px] md:grid-cols-[48px_120px_1fr_96px_72px_104px] items-center gap-x-3 md:gap-x-4";
+const ROW = "grid grid-cols-[40px_80px_1fr_52px] md:grid-cols-[56px_120px_1fr_96px_72px_104px] items-center gap-x-3 md:gap-x-4";
 
 function Board({
   rows,
@@ -220,12 +220,13 @@ function Board({
         key={`${idx}-${r.kind}-${r.name}-${r.lobby_code}-${inverted ? "you" : ""}`}
         className={`${ROW} min-h-[72px] border-b px-2 md:min-h-[88px] ${inverted ? "border-white bg-white text-ink" : "border-[#3a3a3a]"} ${r.kind === "player" ? "" : "text-[#d6d6d6]"}`}
       >
-        <span role="cell" className={`nums text-sm ${inverted ? "" : "text-[#bdbdbd]"}`}>
+        {/* The your-room square sits in the rank cell so it never overlaps the code or the name. */}
+        <span role="cell" className={`nums flex items-center gap-1.5 text-sm ${inverted ? "" : "text-[#bdbdbd]"}`}>
+          {mine && <span role="img" aria-label={COPY.homeUi.yourMark} className="inline-block size-2.5 shrink-0" style={{ backgroundColor: field }} />}
           {shownRank != null ? String(shownRank).padStart(2, "0") : ""}
         </span>
-        <span role="cell" className="flex items-center gap-2 text-2xl font-black tracking-tight md:text-[2.5rem] md:leading-none">
+        <span role="cell" className="truncate text-2xl font-black tracking-tight md:text-[2.5rem] md:leading-none">
           {r.kind === "player" ? tla(r.name) : r.kind === "engine" ? COPY.reveal.engine : COPY.reveal.team}
-          {mine && <span aria-label={COPY.homeUi.yourMark} className="inline-block size-3 shrink-0" style={{ backgroundColor: field }} />}
         </span>
         <span role="cell" className="flex min-w-0 flex-col">
           <span className="truncate text-base md:text-xl">
@@ -264,27 +265,36 @@ function Board({
     return line(r, r.kind === "player" ? rank : null, r === youRow, i);
   });
   const half = Math.ceil(body.length / 2);
+  const cols = body.length > 6 ? [body.slice(0, half), body.slice(half)] : [body];
+  // Each column carries its own header in the same grid as its rows, so headers line up with the values.
+  // On a phone the columns stack, so the second header is hidden there.
+  const head = (second: boolean) => (
+    <div role="row" className={`${ROW} h-9 border-b-2 border-white px-2 ${second ? "hidden md:grid" : ""}`}>
+      <span role="columnheader" className="meta">{COPY.leaderboard.columns.rank}</span>
+      <span role="columnheader" className="meta">{COPY.leaderboard.columns.player}</span>
+      <span role="columnheader" />
+      <span role="columnheader" className="meta hidden md:block">{COPY.leaderboard.columns.call}</span>
+      <span role="columnheader" className="meta hidden text-right md:block">{COPY.leaderboard.columns.pct}</span>
+      <span role="columnheader" className="meta text-right">{COPY.leaderboard.columns.score}</span>
+    </div>
+  );
   return (
     <div role="table" aria-label={COPY.homeUi.leaderboardTitle} className="flex flex-col">
-      <div role="row" className={`${ROW} h-9 border-b-2 border-white px-2`}>
-        <span role="columnheader" className="meta">{COPY.leaderboard.columns.rank}</span>
-        <span role="columnheader" className="meta">{COPY.leaderboard.columns.player}</span>
-        <span role="columnheader" />
-        <span role="columnheader" className="meta hidden md:block">{COPY.leaderboard.columns.call}</span>
-        <span role="columnheader" className="meta hidden text-right md:block">{COPY.leaderboard.columns.pct}</span>
-        <span role="columnheader" className="meta text-right">{COPY.leaderboard.columns.score}</span>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 md:gap-x-12">
-        <div className="flex flex-col">{body.slice(0, body.length > 6 ? half : body.length)}</div>
-        {body.length > 6 && <div className="flex flex-col">{body.slice(half)}</div>}
+      <div className={`grid grid-cols-1 md:gap-x-12 ${cols.length > 1 ? "md:grid-cols-2" : ""}`}>
+        {cols.map((c, i) => (
+          <div key={i} className="flex min-w-0 flex-col">
+            {head(i > 0)}
+            {c}
+          </div>
+        ))}
       </div>
       {youBelow && youRow && (
-        <>
+        <div className={`flex flex-col ${cols.length > 1 ? "md:w-[calc(50%-24px)]" : ""}`}>
           <div aria-hidden className="h-8 px-2 text-base text-[#bdbdbd]">
             …
           </div>
           {line(youRow, youRank, true, -1)}
-        </>
+        </div>
       )}
     </div>
   );

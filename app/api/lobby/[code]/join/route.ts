@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { addPlayer, getLobbyMeta, getLobbyState, MAX_PLAYERS } from "@/lib/db";
+import { addPlayer, getLobbyMeta, getLobbyState, MAX_PLAYERS, type LobbyStateResponse } from "@/lib/db";
+import { getRaceEntry } from "@/lib/data";
 import { driverFor, handle, hashToken, HttpError, newToken, normalizeCode, readBody, requireDriver, tokenMatches } from "../../../_lib/http";
 import { guardLobbyRead } from "../../../_lib/limits";
 import { redactForPhase } from "../../../_lib/redact";
@@ -18,6 +19,22 @@ const Body = z.object({
 // stored); a taken name can be rejoined only by sending that name's token in x-player-token. A name or device
 // token the host removed (POST .../kick) gets 403. In a "choose" lobby a new player must send a scorable
 // driver_code (400 otherwise); a rejoin keeps the car stored at the first join.
+// Round 6: the car for a race lobby. "same": the lobby's car. "choose": a car from the race's picker list
+// before the start; after the start a new player watches without a car (the freeze plan is fixed), and a
+// rejoin keeps the stored car.
+async function raceDriver(code: string, name: string, lobby: LobbyStateResponse, driverCode: string | undefined, presented: string | null): Promise<string> {
+  if (lobby.driver_mode === "same") return lobby.driver_code ?? "";
+  const meta = await getLobbyMeta(code, name);
+  if (meta?.is_player && tokenMatches(presented, meta.player_token_hash)) return meta.player_driver_code ?? "";
+  if (lobby.phase !== "waiting") return "";
+  if (!driverCode) throw new HttpError(400, "Pick a driver");
+  const race = await getRaceEntry(lobby.decision_id.replace(/^race:/, ""));
+  const want = driverCode.trim().toUpperCase();
+  const car = race?.drivers.find((d) => d.code === want);
+  if (!car) throw new HttpError(400, `Unknown driver "${want.slice(0, 8)}" for this race`);
+  return car.code;
+}
+
 export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobby/[code]/join">) => {
   const code = normalizeCode((await ctx.params).code);
   const { name, driver_code } = await readBody(req, Body);
@@ -28,7 +45,9 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
   const presented = req.headers.get("x-player-token");
   let driver: string;
   const revealed = lobby.phase === "reveal" || lobby.phase === "done";
-  if (lobby.driver_mode === "choose" && revealed && driver_code) {
+  if (lobby.mode === "race") {
+    driver = await raceDriver(code, name, lobby, driver_code, presented);
+  } else if (lobby.driver_mode === "choose" && revealed && driver_code) {
     // After the reveal a new joiner watches without a car, so joining late can't add another car's answer
     // to this lobby's reveal or leaderboard rows.
     driver = "";

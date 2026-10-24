@@ -81,15 +81,19 @@ export function useLobby(code: string, stop = false) {
 
   // The server enforces minimum phase times: an early POST answers 409 with the seconds left
   // (Retry-After or a number in the message). Wait that long and retry, up to a few times, silently.
+  // freezeIndex (race lobbies): the freeze loop the click belongs to, so a stale click gets 409 instead of skipping a freeze.
+  // Returns null on success, else the server's message (e.g. "Nobody has picked a car yet").
   const setPhase = useCallback(
-    async (phase: string) => {
+    async (phase: string, freezeIndex?: number): Promise<string | null> => {
+      let last: string | null = null;
       for (let attempt = 0; attempt < 6; attempt++) {
         const sentAt = Date.now();
         try {
-          apply(await api.phase(code, phase, recallHostToken(code)), sentAt);
+          apply(await api.phase(code, phase, recallHostToken(code), freezeIndex), sentAt);
           setPhaseErr(null);
-          return;
+          return null;
         } catch (e) {
+          last = e instanceof Error ? e.message : "error";
           // 403: this device does not hold the host token for the lobby.
           if (e instanceof ApiError && e.status === 403) {
             setPhaseErr("forbidden");
@@ -111,6 +115,7 @@ export function useLobby(code: string, stop = false) {
         }
       }
       await refresh();
+      return last;
     },
     [code, apply, refresh],
   );
