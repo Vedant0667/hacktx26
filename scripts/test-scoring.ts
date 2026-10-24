@@ -46,9 +46,9 @@ async function main() {
 
   await test("points formula: check values", () => {
     assert.equal(pointsFor("BOX", "BOX", 100, 50), 100, "right 50/50 = stakes");
-    assert.equal(pointsFor("STAY", "BOX", 100, 50), 60, "wrong 50/50 = +60%");
-    assert.equal(pointsFor("BOX", "BOX", 100, 10), 40, "right 10/50 = +40%");
-    assert.equal(pointsFor("BOX", "BOX", 100, 0), 25, "right 0/50 = +25%");
+    assert.equal(pointsFor("STAY", "BOX", 100, 50), 63, "wrong 50/50 = +63%");
+    assert.equal(pointsFor("BOX", "BOX", 100, 10), 38, "right 10/50 = +38%");
+    assert.equal(pointsFor("BOX", "BOX", 100, 0), 22, "right 0/50 = +22%");
     assert.equal(pointsFor("STAY", "BOX", 100, 0), -15, "wrong 0/50 = -15%");
     assert.equal(pointsFor(null, "BOX", 100, 50), 0, "no call = 0");
     assert.equal(pointsFor("BOX", "BOX", 0, 50), 0, "no stakes = 0");
@@ -59,11 +59,12 @@ async function main() {
     for (const s of [15, 47, 78, 100]) {
       assert.ok(pointsFor("STAY", "BOX", s, 50) > pointsFor("BOX", "BOX", s, 10), `wrong 50 beats right 10 at stakes ${s}`);
       assert.ok(pointsFor("STAY", "BOX", s, 50) > pointsFor("BOX", "BOX", s, 0), `wrong 50 beats right 0 at stakes ${s}`);
+      assert.ok(pointsFor("STAY", "BOX", s, 40) >= pointsFor("BOX", "BOX", s, 15), `wrong 40 at least ties right 15 at stakes ${s} (rounding)`);
       assert.equal(pointsFor("BOX", "BOX", s, 50), s, `right 50 = stakes ${s}`);
       assert.ok(pointsFor("STAY", "BOX", s, 0) < 0, `wrong 0 is negative at stakes ${s}`);
       for (let r = 0; r <= 50; r += 5) assert.ok(pointsFor("BOX", "BOX", s, r) > pointsFor("STAY", "BOX", s, r), `right beats wrong at r=${r}, stakes ${s}`);
     }
-    assert.deepEqual(scoreCall({ ground_truth: { correct: "BOX", swing_s: 15.6 } }, "BOX", 37), { score_call: 78, score_reasoning: 37, total: 63 });
+    assert.deepEqual(scoreCall({ ground_truth: { correct: "BOX", swing_s: 15.6 } }, "BOX", 37), { score_call: 78, score_reasoning: 37, total: 62 });
     assert.deepEqual(scoreCall({ ground_truth: { correct: "BOX", swing_s: 15.6 } }, null, 37), { score_call: 78, score_reasoning: 0, total: 0 });
   });
 

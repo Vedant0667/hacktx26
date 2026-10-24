@@ -6,7 +6,7 @@ import type { BlindDecision } from "./api";
 export { CALL_WINDOW_S, VOICE_NOTE_MAX_S };
 export const LAP_MS = 1200; // replay speed before the call
 export const PLAYED_OUT_MS = 6000; // lap L to reveal_to_lap after the call (docs/06 motion table)
-// Round 7 scoring (lib/scoring.ts): points = round(stakes × (0.40 × right + 0.75 × r/50 − 0.15)), stakes 0–100.
+// Round 7 scoring (lib/scoring.ts): points = round(stakes × (0.37 × right + 0.78 × r/50 − 0.15)), stakes 0–100.
 // One call scores between -15 (wrong, no reasoning, full stakes) and 100 (right, 50/50, full stakes).
 export const REASONING_MAX = 50;
 export const MAX_TOTAL = 100;

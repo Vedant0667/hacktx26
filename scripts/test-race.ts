@@ -213,7 +213,7 @@ test("audible scoring: right BOX, wrong BOX, no split, cancelled near a freeze",
   const wrong = rows.find((a) => a.truth.scorable && a.truth.correct === "STAY")!;
   const none = rows.find((a) => !a.truth.scorable)!;
   assert.ok(right && wrong && none, "fixtures");
-  // Round 7: stakes from the audible's own swing; points = round(stakes × (0.40 × right + 0.75 × r/50 − 0.15)).
+  // Round 7: stakes from the audible's own swing; points = round(stakes × (0.37 × right + 0.78 × r/50 − 0.15)).
   const s1 = scoreAudible(right.lap, right.driver_code, [], right.truth, "box, the tyres are old and worn");
   assert.equal(s1.status, "scored");
   assert.equal(s1.score_call, stakesFor(right.truth.swing_s));

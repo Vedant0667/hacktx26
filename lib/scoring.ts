@@ -2,7 +2,7 @@
 // and the engine and real-team rows.
 //   stakes = min(100, round(swing_s × 5))      how much the call was worth in the real race
 //   r      = reasoning score, an integer 0–50  graded against the decision's rubric (lib/muse/rubric.ts)
-//   points = round(stakes × (0.40 × right + 0.75 × r/50 − 0.15)), right = 1 or 0
+//   points = round(stakes × (0.37 × right + 0.78 × r/50 − 0.15)), right = 1 or 0
 //   right 50 → 100%, wrong 50 → +60%, right 10 → +40%, right 0 → +25%, wrong 0 → −15% of stakes.
 //   Great reasoning counts even when the call was wrong; at equal reasoning a right call beats a wrong one.
 //   no call: 0
@@ -15,6 +15,12 @@ export const VOICE_NOTE_MAX_S = 30;
 export const REASONING_MAX = 50;
 export const STAKES_MAX = 100;
 export const STAKES_PER_SECOND = 5;
+
+// Reasoning outweighs the call: a wrong call overtakes a right one once its reasoning is ~24/50 higher.
+// Right at 50/50 = 100% of stakes; right at 0 = +22%; wrong at 50/50 = +63%; wrong at 0 = -15%.
+export const CALL_WEIGHT = 0.37;
+export const REASONING_WEIGHT = 0.78;
+export const BASE_PENALTY = 0.15;
 
 export function stakesFor(swingS: number | null | undefined): number {
   if (swingS == null || !Number.isFinite(swingS) || swingS <= 0) return 0;
@@ -31,7 +37,7 @@ const roundAbs = (x: number) => Math.sign(x) * Math.round(Math.abs(x));
 export function pointsFor(call: Call | null, correct: Call, stakes: number, reasoning: number): number {
   if (!call || stakes <= 0) return 0;
   const right = call === correct ? 1 : 0;
-  return roundAbs(stakes * (0.4 * right + (0.75 * clampReasoning(reasoning)) / REASONING_MAX - 0.15)) || 0;
+  return roundAbs(stakes * (CALL_WEIGHT * right + (REASONING_WEIGHT * clampReasoning(reasoning)) / REASONING_MAX - BASE_PENALTY)) || 0;
 }
 
 // Round 9: the call scored as right. final_right_call (the luck-aware verdict, lib/luck.ts) when the data carries
