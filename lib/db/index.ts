@@ -513,8 +513,9 @@ export async function claimMuseDuel(code: string, decisionId: string, submitted:
 
 export async function saveMuseDuel(code: string, decisionId: string, duel: unknown): Promise<void> {
   await query(
+    // Only a pending pick is written, so a saved pair (and the votes cast on it) can never be replaced.
     `update muse_duels set status = 'done', duel = $3::jsonb, updated_at = now()
-     where lobby_code = $1 and decision_id = $2`,
+     where lobby_code = $1 and decision_id = $2 and status = 'pending'`,
     [code, decisionId, JSON.stringify(duel)],
   );
 }
