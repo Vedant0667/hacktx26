@@ -5,4 +5,5 @@ cd "$(dirname "$0")/.."
 npx tsc --noEmit
 npx eslint . --max-warnings=0
 python3 engine/test_engine.py
+python3 engine/test_triggers.py
 npx tsx scripts/test-gate.ts
