@@ -41,3 +41,8 @@ yarn-error.log*
 certificatescertificates/
 ideas.md
 tasks/todo.md
+
+# Race data lives in Postgres. engine/build.py writes build/race-data (ignored above via /build) for
+# scripts/seed-db.mjs; the old static trees must not come back.
+/public/data/
+/server-data/

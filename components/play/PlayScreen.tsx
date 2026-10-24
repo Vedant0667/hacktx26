@@ -4,7 +4,8 @@
 // shows decision.blind_title instead of race or team names.
 import { useEffect, useState, useSyncExternalStore, type FormEvent } from "react";
 import { COPY } from "@/lib/copy";
-import { ApiError, data, type BlindDecision, type JoinResponse, type LobbyStateResponse } from "@/lib/client/api";
+import { ApiError, data, type BlindDecision, type BlindDriver, type JoinResponse, type LobbyStateResponse } from "@/lib/client/api";
+import { asDriver, driverCodeOf, revealFor } from "@/lib/client/drivers";
 import { noopSubscribe, recallName, recallPlayerToken } from "@/lib/client/identity";
 import { callMomentFrames, fmtGap, replayLap, tla } from "@/lib/client/race";
 import { canRejoin, isLobbyFull, joinErrorText, joinLobby } from "@/lib/client/session";
@@ -31,6 +32,7 @@ export function PlayScreen({ code }: { code: string }) {
   if (kicked && !removed) setRemoved(true);
   const [decision, setDecision] = useState<BlindDecision | null>(null);
   const [frames, setFrames] = useState<LapFrame[] | null>(null);
+  const [drivers, setDrivers] = useState<BlindDriver[] | null>(null);
   const t = useTicker(serverNow, 200);
   const [mode, setMode] = useDataMode(code, "play");
   const reveal = useReveal(code, lobby?.phase);
@@ -44,11 +46,20 @@ export function PlayScreen({ code }: { code: string }) {
         setFrames(f);
       })
       .catch(() => {});
+    data
+      .drivers(decisionId)
+      .then((r) => setDrivers(r.drivers))
+      .catch(() => setDrivers([]));
   }, [decisionId]);
 
   // Joined only with this device's token for the name (without it the server refuses submits).
   const joined = !!me && !!(token || joinedAs) && !!lobby?.players.some((p) => p.name === me);
-  const team = decision ? teamColourOf(reveal?.frames ?? frames, decision.player_role.number) : null;
+  // Everything driver-specific follows the player's own car (Round 4).
+  const myCode = driverCodeOf(lobby, me);
+  const myDriver = drivers?.find((d) => d.code === myCode) ?? null;
+  const mine = decision ? asDriver(decision, myDriver) : null;
+  const team = mine ? (myDriver?.team_colour ?? teamColourOf(reveal?.frames ?? frames, mine.player_role.number)) : null;
+  const myReveal = reveal ? revealFor(reveal, myCode) : null;
 
   if (removed)
     return (
@@ -84,6 +95,9 @@ export function PlayScreen({ code }: { code: string }) {
         <JoinForm
           code={code}
           players={lobby.players.length}
+          choose={lobby.driver_mode === "choose"}
+          drivers={drivers}
+          frames={frames}
           initialName={me ?? ""}
           onJoined={(name, state) => {
             setMe(name);
@@ -96,14 +110,14 @@ export function PlayScreen({ code }: { code: string }) {
   const elapsed = t - lobby.phase_started_at;
   const phase = lobby.phase;
 
-  if (phase === "decision" && decision)
+  if (phase === "decision" && mine)
     return (
       <>
         <ConnNotice conn={conn} code={code} />
         <CallPad
           code={code}
           me={me!}
-          decision={decision}
+          decision={mine}
           frames={frames}
           elapsed={elapsed}
           players={lobby.players.map((p) => p.name)}
@@ -117,11 +131,11 @@ export function PlayScreen({ code }: { code: string }) {
   return (
     <main style={fieldStyle(team)} className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col">
       <ConnNotice conn={conn} code={code} />
-      {phase === "waiting" && <Waiting lobby={lobby} decision={decision} me={me!} mode={mode} setMode={setMode} />}
-      {phase === "replay" && decision && frames && <Replay decision={decision} frames={frames} elapsed={elapsed} mode={mode} setMode={setMode} me={me!} />}
+      {phase === "waiting" && <Waiting lobby={lobby} decision={mine} me={me!} mode={mode} setMode={setMode} />}
+      {phase === "replay" && mine && frames && <Replay decision={mine} frames={frames} elapsed={elapsed} mode={mode} setMode={setMode} me={me!} />}
       {(phase === "reveal" || phase === "done") &&
-        (reveal ? (
-          <PlayerResult code={code} me={me!} decision={reveal.decision} frames={reveal.frames} lobby={lobby} mode={mode} setMode={setMode} gt={reveal.ground_truth} />
+        (reveal && myReveal ? (
+          <PlayerResult code={code} me={me!} decision={myReveal.decision} frames={reveal.frames} lobby={lobby} mode={mode} setMode={setMode} gt={myReveal.gt} />
         ) : (
           <p className="px-5 pt-24 text-lg font-bold">{COPY.reveal.grading}</p>
         ))}
@@ -134,8 +148,8 @@ function Foot({ title, meta, progress }: { title: string; meta?: string; progres
   return (
     <div className="on-dark sticky bottom-0 mt-auto flex h-24 items-center justify-between bg-ink px-6 pb-[env(safe-area-inset-bottom)] text-white">
       {progress != null && <div className="absolute left-0 top-0 h-1 bg-field transition-[width] duration-700 ease-out" style={{ width: `${Math.round(progress * 100)}%` }} aria-hidden />}
-      <b className="whitespace-nowrap text-xl">{title}</b>
-      {meta && <span className="nums ml-4 truncate text-[13px] text-[#BDBDBD]">{meta}</span>}
+      <b className="truncate text-lg">{title}</b>
+      {meta && <span className="nums ml-4 shrink-0 text-[13px] text-[#BDBDBD]">{meta}</span>}
     </div>
   );
 }
@@ -170,7 +184,10 @@ function Waiting({ lobby, decision, me, mode, setMode }: { lobby: LobbyStateResp
             <li key={p.name} className={`rise grid h-10 grid-cols-[40px_64px_1fr] items-center font-mono text-[15px] ${p.name === me ? "-mx-2 bg-field px-2 font-bold text-on-field" : "border-b border-soft-2"}`}>
               <span>{i + 1}</span>
               <span className="font-bold">{tla(p.name)}</span>
-              <span className="truncate font-sans font-medium">{p.name}</span>
+              <span className="flex min-w-0 items-center justify-between gap-2">
+                <span className="truncate font-sans font-medium">{p.name}</span>
+                {p.driver_code && <span className="text-xs font-bold">{p.driver_code}</span>}
+              </span>
             </li>
           ))}
         </ol>
@@ -257,8 +274,25 @@ function Replay({ decision, frames, elapsed, mode, setMode, me }: { decision: Bl
   );
 }
 
-function JoinForm({ code, players, initialName, onJoined }: { code: string; players: number; initialName: string; onJoined: (name: string, state: JoinResponse) => void }) {
+function JoinForm({
+  code,
+  players,
+  choose,
+  drivers,
+  frames,
+  initialName,
+  onJoined,
+}: {
+  code: string;
+  players: number;
+  choose: boolean;
+  drivers: BlindDriver[] | null;
+  frames: LapFrame[] | null;
+  initialName: string;
+  onJoined: (name: string, state: JoinResponse) => void;
+}) {
   const [name, setName] = useState(initialName);
+  const [pick, setPick] = useState<string | null>(null);
   const [consent, setConsent] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [taken, setTaken] = useState<string | null>(null);
@@ -269,7 +303,7 @@ function JoinForm({ code, players, initialName, onJoined }: { code: string; play
     setTaken(null);
     setBusy(true);
     try {
-      onJoined(n, await joinLobby(code, n, consent));
+      onJoined(n, await joinLobby(code, n, consent, choose ? pick : null));
     } catch (e) {
       setErr(joinErrorText(e, code, n));
       if (e instanceof ApiError && e.status === 409 && !isLobbyFull(e)) setTaken(n);
@@ -282,6 +316,7 @@ function JoinForm({ code, players, initialName, onJoined }: { code: string; play
     e.preventDefault();
     const n = name.trim();
     if (!n) return setErr(COPY.home.nameMissing);
+    if (choose && !pick) return setErr(COPY.drivers.pick);
     if (!consent) return setErr(COPY.play.consentMissing);
     void join(n);
   }
@@ -329,6 +364,8 @@ function JoinForm({ code, players, initialName, onJoined }: { code: string; play
           )}
         </p>
 
+        {choose && <DriverPicker drivers={drivers} frames={frames} pick={pick} onPick={setPick} />}
+
         <label className="mt-5 flex cursor-pointer items-start gap-3.5 text-base leading-[1.4]">
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="peer sr-only" />
           <span
@@ -359,5 +396,41 @@ function JoinForm({ code, players, initialName, onJoined }: { code: string; play
         <small className="nums text-[13px] font-medium text-[#BDBDBD]">{COPY.tele.inRoom(players)}</small>
       </button>
     </form>
+  );
+}
+
+// Driver picker for "choose" lobbies: scorable cars by position at the call, with team swatch and tyre chip.
+function DriverPicker({ drivers, frames, pick, onPick }: { drivers: BlindDriver[] | null; frames: LapFrame[] | null; pick: string | null; onPick: (c: string) => void }) {
+  const moment = frames?.[frames.length - 1];
+  return (
+    <fieldset className="mt-7">
+      <legend className="meta">{COPY.drivers.pickTitle}</legend>
+      <p className="mt-1 text-sm text-ink-2">{COPY.drivers.pickHint}</p>
+      {!drivers ? (
+        <p className="mt-3 text-sm font-bold">{COPY.drivers.loading}</p>
+      ) : (
+        <div role="radiogroup" className="mt-3 flex flex-col">
+          {drivers.map((d) => {
+            const f = moment?.drivers.find((x) => x.code === d.code);
+            const on = pick === d.code;
+            return (
+              <label
+                key={d.code}
+                className={`grid h-14 cursor-pointer grid-cols-[32px_5px_52px_minmax(0,1fr)_auto] items-center gap-x-2.5 border-b px-2 transition-colors duration-150 has-[:focus-visible]:outline has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-ink ${
+                  on ? "border-ink bg-ink text-white" : "border-soft-2 hover:bg-soft"
+                }`}
+              >
+                <input type="radio" name="driver" value={d.code} checked={on} onChange={() => onPick(d.code)} className="sr-only" />
+                <span className="nums text-sm">{f ? `P${f.position}` : ""}</span>
+                <span className="h-6 w-[5px]" style={d.team_colour ? { backgroundColor: d.team_colour } : undefined} aria-hidden />
+                <b className="text-lg font-black tracking-tight">{d.code}</b>
+                <span className="truncate text-sm font-medium">{d.name}</span>
+                <TyreChip compound={f?.compound ?? null} age={f?.tyre_age ?? null} size="sm" />
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </fieldset>
   );
 }

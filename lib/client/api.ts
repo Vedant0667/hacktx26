@@ -1,4 +1,4 @@
-// Browser-side fetchers for the lobby API (app/api/**) and the blind static race data (public/data/**).
+// Browser-side fetchers for the lobby API (app/api/**) and the blind race data (GET /api/decisions/**).
 import type { LobbyStateResponse } from "@/lib/db";
 import { recallHostToken, recallName, recallPlayerToken } from "./identity";
 import type { GroundTruthFile } from "./mode";
@@ -24,6 +24,7 @@ export interface RevealResponse {
   decision: RevealDecision;
   frames: LapFrame[];
   ground_truth: GroundTruthFile;
+  drivers?: Record<string, DriverReveal>;
 }
 
 export class ApiError extends Error {
@@ -108,6 +109,30 @@ export interface LeaderboardResponse {
   rows: LeaderboardRow[];
 }
 
+// GET /api/decisions/<id>/drivers: the scorable cars for the picker (blind: no answer, team call or engine).
+export interface BlindDriver {
+  code: string;
+  number: number;
+  name: string;
+  team: string;
+  team_colour: string | null;
+  blind_title: string;
+}
+export interface DriversResponse {
+  decision_id: string;
+  default_driver: string;
+  drivers: BlindDriver[];
+}
+// Per-car reveal data, keyed by code (Round 4).
+export interface DriverReveal extends Omit<BlindDriver, "blind_title"> {
+  scorable: true;
+  team_call: { call: Call; reasons: string[] };
+  engine: { call: Call; confidence: number; reasons: string[] };
+  ground_truth: { correct: Call; swing_s: number };
+  ground_truth_detail?: GroundTruthFile["seconds"];
+}
+export type DriverMode = "same" | "choose";
+
 export type JoinResponse = LobbyStateResponse & { player_token: string | null; rejoined: boolean };
 
 const enc = encodeURIComponent;
@@ -125,11 +150,11 @@ function lobbyAuth(code: string | null | undefined): Record<string, string> | un
 
 export const api = {
   // host_token comes back once; keep it (identity.rememberHostToken) to advance phases.
-  createLobby: (decision_id: string, host_name: string) =>
-    post<LobbyStateResponse & { host_token: string }>("/api/lobby", { decision_id, host_name }),
+  createLobby: (decision_id: string, host_name: string, driver_mode: DriverMode = "same", driver_code?: string | null) =>
+    post<LobbyStateResponse & { host_token: string }>("/api/lobby", { decision_id, host_name, driver_mode, ...(driver_code ? { driver_code } : {}) }),
   // consent is the ticked checkbox; the route rejects a join without it. playerToken proves a rejoin.
-  join: (code: string, name: string, consent: true, playerToken?: string | null) =>
-    post<JoinResponse>(`/api/lobby/${enc(code)}/join`, { name, consent }, tokenHeader("x-player-token", playerToken)),
+  join: (code: string, name: string, consent: true, playerToken?: string | null, driver_code?: string | null) =>
+    post<JoinResponse>(`/api/lobby/${enc(code)}/join`, { name, consent, ...(driver_code ? { driver_code } : {}) }, tokenHeader("x-player-token", playerToken)),
   // The token matters after the reveal: without it the server redacts the calls.
   lobby: (code: string) => request<LobbyStateResponse>(`/api/lobby/${enc(code)}`, { headers: lobbyAuth(code) }),
   phase: (code: string, phase: string, hostToken: string | null) =>
@@ -166,12 +191,14 @@ function staticJson<T>(path: string): Promise<T> {
 
 export const data = {
   index: async () => {
-    const raw = await staticJson<DecisionIndexEntry[] | { decision_points: DecisionIndexEntry[] }>("/data/index.json");
+    const raw = await staticJson<DecisionIndexEntry[] | { decision_points: DecisionIndexEntry[] }>("/api/decisions");
     return Array.isArray(raw) ? raw : raw.decision_points;
   },
   // Blind: no team, engine or answer. Frames stop at the call-moment lap. The rest comes from api.reveal.
-  decision: (id: string) => staticJson<BlindDecision>(`/data/${enc(id)}/decision.json`),
-  frames: (id: string) => staticJson<LapFrame[]>(`/data/${enc(id)}/frames.json`),
+  decision: (id: string) => staticJson<BlindDecision>(`/api/decisions/${enc(id)}`),
+  frames: (id: string) => staticJson<LapFrame[]>(`/api/decisions/${enc(id)}/frames`),
+  // Scorable cars for the driver picker (Round 4).
+  drivers: (id: string) => staticJson<DriversResponse>(`/api/decisions/${enc(id)}/drivers`),
 };
 
 // The post-reveal data (full decision, every lap, ground truth). 409 until the lobby is in reveal or done;

@@ -315,10 +315,10 @@ export const COPY = {
   // added: telemetry around the player's car at the call moment (lib/client/telemetry.ts)
   tele: {
     title: "Telemetry",
-    lapTimeLabel: (n: number, vs: string) => `Lap time · last ${n} · you vs ${vs}`,
+    lapTimeLabel: (n: number, vs: string) => `Lap time · last ${n}${vs ? ` · you vs ${vs}` : ""}`,
     vsAhead: "car ahead",
     vsBehind: "car behind",
-    vsBoth: "cars ahead and behind",
+    vsBoth: "",
     stintLapTimes: "Stint lap times",
     lapRange: (a: number, b: number) => `L${a}-${b} · s`,
     lap: (n: number) => `L${n}`,
@@ -586,6 +586,17 @@ export const COPY = {
     calls: (n: number) => `${n.toLocaleString("en-US")} ${n === 1 ? "call" : "calls"}`,
     yourMark: "Square = your room",
     distribution: "Every score on this call, 0 to 150",
+  },
+  // added: per-driver play (Round 4)
+  drivers: {
+    pickTitle: "Pick your driver",
+    pick: "Pick a driver to join.",
+    pickHint: "Ordered by position at the call. Several players can pick the same driver.",
+    picked: (code: string) => `Driving ${code}`,
+    sameMode: "Everyone plays the same driver",
+    chooseMode: "Each player picks a driver",
+    modeLabel: "Drivers",
+    loading: "Loading drivers",
   },
   cue: { mute: "Mute sound", unmute: "Sound on" },
   compounds: { SOFT: "Soft", MEDIUM: "Medium", HARD: "Hard", INTERMEDIATE: "Inter", WET: "Wet" } as Record<string, string>,

@@ -11,6 +11,8 @@ import type { Call, TrackStatus } from "@/lib/types";
 import { TyreChip } from "./ui";
 
 const W = 350;
+// Keep at most about eight lap labels on an axis.
+const labelStep = (n: number) => Math.max(1, Math.ceil(n / 8));
 const svgText = { fontFamily: "var(--font-mono)" } as const;
 
 // A titled block: 2px rule, mono label left, quieter meta right.
@@ -103,11 +105,13 @@ export function LapChart({
           </text>
         </g>
       ))}
-      {laps.map((l, i) => (
-        <text key={l} x={x(i)} y={height - 3} fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity=".75" style={svgText}>
-          {COPY.tele.lap(l)}
-        </text>
-      ))}
+      {laps.map((l, i) =>
+        i % labelStep(laps.length) === 0 || i === laps.length - 1 ? (
+          <text key={l} x={x(i)} y={height - 3} fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity=".75" style={svgText}>
+            {COPY.tele.lap(l)}
+          </text>
+        ) : null,
+      )}
       {list
         .map((c, k) => {
           const pts: string[] = [];

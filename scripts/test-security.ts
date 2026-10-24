@@ -61,7 +61,7 @@ async function main() {
   const loadPath = path.join(root, "build/race-data/load.json");
   if (!existsSync(loadPath)) execFileSync("python3", ["engine/build.py"], { cwd: root, stdio: "ignore" });
   const load = JSON.parse(readFileSync(loadPath, "utf8")) as {
-    decision_points: { id: string; lap: number; blind: Record<string, unknown> & { race: string; player_role: { team: string; driver: string } }; full: Record<string, unknown> }[];
+    decision_points: { id: string; lap: number; blind: Record<string, unknown> & { race: string; blind_title: string; player_role: { team: string; driver: string } }; full: Record<string, unknown> }[];
   };
   assert.ok(load.decision_points.length > 0);
   for (const { id, lap, blind: d, full } of load.decision_points) {
@@ -73,6 +73,14 @@ async function main() {
   const dataSrc = src("lib/data.ts");
   assert.match(dataSrc, /lap < \$2 order by lap, position/, "blind frames read laps after the call");
   assert.match(dataSrc, /blindFrames\(\[\.\.\.frames, \{ lap: row\.lap, track_status: status\[0\]\.track_status, drivers: \[\] \}\], row\.lap, null\)/);
+  // Round 4: a "choose" join must name a scorable car of the lobby's decision; a "same" lobby validates its car at creation.
+  const joinSrc = src("app/api/lobby/[code]/join/route.ts");
+  assert.match(joinSrc, /requireDriver\(lobby\.decision_id, driver_code\)/, "join does not validate the picked car");
+  assert.match(joinSrc, /"Pick a driver"/);
+  assert.match(src("app/api/lobby/route.ts"), /requireDriver\(decision_id, code\)/, "lobby create does not validate driver_code");
+  assert.match(src("app/api/_lib/http.ts"), /getDriverAnswer\(decisionId, code\.trim\(\)\.toUpperCase\(\)\);\n  if \(!driver\) throw new HttpError\(400/);
+  assert.match(src("lib/data.ts"), /find\(\(d\) => d\.code === code && d\.scorable\)/, "a car with no answer can be picked");
+
   // ---- Re-audit (docs/audits/security-reaudit.md) ----
 
   // R9: IPv6 keyed by /64, IPv4 unchanged.
@@ -117,7 +125,7 @@ async function main() {
   assert.match(lbSrc, /requireLobbyMember\(req, code/);
   assert.match(src("app/api/lobby/[code]/reveal/route.ts"), /requireLobbyMember\(req, code\)/);
   // R2: the blind decision has a blind_title that names neither the race nor the team.
-  for (const { id, blind: d } of load.decision_points as { id: string; blind: { blind_title: string; race: string; player_role: { team: string; driver: string } } }[]) {
+  for (const { id, blind: d } of load.decision_points) {
     assert.ok(typeof d.blind_title === "string" && d.blind_title.length > 0, `${id}: no blind_title`);
     for (const word of [d.race, d.player_role.team, d.player_role.driver, ...String(d.race).split(" ").filter((w: string) => /^[A-Z][a-z]{3,}$/.test(w))]) {
       assert.ok(!d.blind_title.includes(word), `${id}: blind_title names ${word}`);

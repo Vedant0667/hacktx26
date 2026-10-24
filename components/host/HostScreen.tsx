@@ -168,7 +168,7 @@ export function HostScreen({ code }: { code: string }) {
           elapsed={elapsed}
           onNext={() => setPhase("done")}
           mode={mode}
-          modeToggle={<ModeToggle mode={mode} onChange={setMode} size="sm" />}
+          setMode={setMode}
           gt={reveal.ground_truth}
         />
       )}
@@ -270,7 +270,7 @@ function Lobby({
                       </button>
                     </span>
                   ) : (
-                    <span className="text-[2rem] font-bold leading-none tracking-[-0.02em] text-[#5a5a5a]">{COPY.play.open.toLowerCase()}</span>
+                    <span className="text-[2rem] font-bold leading-none tracking-[-0.02em] text-[#8c8c8c]">{COPY.play.open.toLowerCase()}</span>
                   )}
                 </li>
               );
@@ -287,9 +287,7 @@ function Lobby({
       <footer className="flex items-center justify-between gap-6 border-t-2 border-white pt-[18px]">
         <span className="flex items-center gap-6">
           <span className="font-mono text-[15px] text-[#bdbdbd]">{COPY.host.replayNote(decision.replay_from_lap, decision.lap)}</span>
-          <span className="[&_div]:border-white [&_button[aria-pressed=false]]:text-white [&_button[aria-pressed=true]]:bg-white [&_button[aria-pressed=true]]:text-ink">
-            <ModeToggle mode={mode} onChange={setMode} size="sm" />
-          </span>
+          <DarkModeToggle mode={mode} onChange={setMode} />
         </span>
         <Button
           variant="inverse"
@@ -306,6 +304,25 @@ function Lobby({
         </Button>
       </footer>
     </main>
+  );
+}
+
+// The Simple / Advanced control on the black lobby: white border, the active segment white.
+function DarkModeToggle({ mode, onChange }: { mode: DataMode; onChange: (m: DataMode) => void }) {
+  return (
+    <div role="group" aria-label={COPY.mode.label} className="inline-flex shrink-0 border-2 border-white">
+      {(["simple", "advanced"] as const).map((m) => (
+        <button
+          key={m}
+          type="button"
+          aria-pressed={mode === m}
+          onClick={() => onChange(m)}
+          className={`meta h-8 px-2.5 transition-colors duration-150 ${mode === m ? "bg-white text-ink" : "text-white hover:bg-[#262626]"}`}
+        >
+          {COPY.mode[m]}
+        </button>
+      ))}
+    </div>
   );
 }
 

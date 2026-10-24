@@ -3,7 +3,7 @@
 // and turn API errors into lib/copy.ts strings.
 import { COPY } from "@/lib/copy";
 import type { Call } from "@/lib/types";
-import { ApiError, api, type JoinResponse, type LobbyStateResponse, type SubmitResponse } from "./api";
+import { ApiError, api, type DriverMode, type JoinResponse, type LobbyStateResponse, type SubmitResponse } from "./api";
 import {
   recallHostToken,
   recallPlayerToken,
@@ -15,8 +15,9 @@ import {
 } from "./identity";
 
 // POST /api/lobby, then keep the host token (shown once) so this browser can advance phases after a reload.
-export async function createLobby(decisionId: string, hostName: string): Promise<LobbyStateResponse> {
-  const lobby = await api.createLobby(decisionId, hostName);
+// driverMode "same": everyone plays `driverCode` (default: the decision's car). "choose": each player picks on join.
+export async function createLobby(decisionId: string, hostName: string, driverMode: DriverMode = "same", driverCode?: string | null): Promise<LobbyStateResponse> {
+  const lobby = await api.createLobby(decisionId, hostName, driverMode, driverCode);
   rememberName(lobby.code, hostName);
   rememberHost(lobby.code);
   rememberHostToken(lobby.code, lobby.host_token);
@@ -34,9 +35,10 @@ export const isHost = (code: string) => !!recallHostToken(code);
 
 // POST /api/lobby/[code]/join with consent. Sends the stored token for `name` when there is one (a rejoin);
 // stores a new token when the server issues one. `consent` must be the ticked checkbox.
-export async function joinLobby(code: string, name: string, consent: boolean): Promise<JoinResponse> {
+// driverCode: the picked car in a "choose" lobby (ignored by the server in "same" lobbies and on rejoin).
+export async function joinLobby(code: string, name: string, consent: boolean, driverCode?: string | null): Promise<JoinResponse> {
   if (!consent) throw new ApiError(400, COPY.play.consentMissing);
-  const res = await api.join(code, name, true, recallPlayerToken(code, name));
+  const res = await api.join(code, name, true, recallPlayerToken(code, name), driverCode);
   if (res.player_token) rememberPlayerToken(code, name, res.player_token);
   rememberName(code, name);
   return res;
@@ -65,7 +67,7 @@ export function joinErrorText(e: unknown, code: string, name: string): string {
   if (e.status === 404) return COPY.home.codeNotFound(code);
   if (e.status === 403) return COPY.error.removed;
   if (e.status === 429) return COPY.error.rateLimited(e.retryAfter);
-  if (e.status === 400) return COPY.play.consentMissing;
+  if (e.status === 400) return /driver/i.test(e.message) ? COPY.drivers.pick : COPY.play.consentMissing;
   return COPY.error.connectionLost;
 }
 

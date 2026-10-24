@@ -113,6 +113,7 @@ const FULL_LOADERS = /\b(getDecision|getFrames|getGroundTruth|getDriverAnswers?)
 for (const f of walk(path.join(root, "app/api/decisions"))) {
   const src = readFileSync(f, "utf8");
   assert.ok(!FULL_LOADERS.test(src), `${path.relative(root, f)} reads full data`);
-  assert.match(src, /private, max-age=/, `${path.relative(root, f)}: no private Cache-Control`);
+  if (f.endsWith("route.ts")) assert.match(src, /"Cache-Control": BLIND_CACHE/, `${path.relative(root, f)}: no blind Cache-Control`);
 }
+assert.match(readFileSync(path.join(root, "app/api/decisions/cache.ts"), "utf8"), /BLIND_CACHE = "private, max-age=\d+"/);
 console.log("ok data");

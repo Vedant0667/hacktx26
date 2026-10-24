@@ -3,12 +3,13 @@
 // top because most people arrive holding a phone; the host block follows under a 2 px rule.
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { COPY } from "@/lib/copy";
-import { ApiError, api } from "@/lib/client/api";
+import { ApiError, api, data, type BlindDriver, type DriverMode } from "@/lib/client/api";
 import { createErrorText, createLobby } from "@/lib/client/session";
 import type { DecisionIndexEntry } from "@/lib/types";
-import { Button, ErrorText, Field, FieldLabel } from "./ui";
+import type { DriverFrame } from "@/lib/types";
+import { Button, ErrorText, Field, FieldLabel, TyreChip } from "./ui";
 
 export function HomeScreen({ index }: { index: DecisionIndexEntry[] }) {
   const router = useRouter();
@@ -18,6 +19,29 @@ export function HomeScreen({ index }: { index: DecisionIndexEntry[] }) {
   const [createErr, setCreateErr] = useState<string | null>(null);
   const [joinErr, setJoinErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<"create" | "join" | null>(null);
+  const [driverMode, setDriverMode] = useState<DriverMode>("same");
+  // Per decision: the pickable cars (blind) and each car's row in the call-moment frame (position, tyre).
+  const [roster, setRoster] = useState<Record<string, { def: string; drivers: BlindDriver[]; at: Map<number, DriverFrame> } | "error">>({});
+  const [picked, setPicked] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!decision || roster[decision]) return;
+    let alive = true;
+    Promise.all([data.drivers(decision), data.frames(decision)])
+      .then(([d, frames]) => {
+        if (!alive) return;
+        const last = frames[frames.length - 1];
+        setRoster((m) => ({ ...m, [decision]: { def: d.default_driver, drivers: d.drivers, at: new Map((last?.drivers ?? []).map((x) => [x.number, x])) } }));
+      })
+      .catch(() => alive && setRoster((m) => ({ ...m, [decision]: "error" })));
+    return () => {
+      alive = false;
+    };
+  }, [decision, roster]);
+
+  const r = roster[decision];
+  const list = r && r !== "error" ? r : null;
+  const driverCode = picked[decision] ?? list?.def ?? null;
 
   async function create(e: FormEvent) {
     e.preventDefault();
@@ -27,7 +51,7 @@ export function HomeScreen({ index }: { index: DecisionIndexEntry[] }) {
     setBusy("create");
     try {
       // Stores the host token (shown once) so this browser can advance the lobby's phases.
-      const lobby = await createLobby(decision, n);
+      const lobby = await createLobby(decision, n, driverMode, driverMode === "same" ? driverCode : null);
       router.push(`/host/${lobby.code}`);
     } catch (err) {
       setBusy(null);
@@ -114,6 +138,59 @@ export function HomeScreen({ index }: { index: DecisionIndexEntry[] }) {
                 );
               })}
             </div>
+          </fieldset>
+          <fieldset className="flex flex-col gap-3">
+            <legend className="meta mb-2 text-ink-2">{COPY.drivers.modeLabel}</legend>
+            <div role="radiogroup" className="grid grid-cols-2 border-2 border-ink">
+              {(["same", "choose"] as const).map((m) => {
+                const on = driverMode === m;
+                return (
+                  <label
+                    key={m}
+                    className={`flex min-h-16 cursor-pointer items-center px-3 py-2 text-sm font-bold leading-snug transition-colors duration-150 has-[:focus-visible]:outline-3 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-ink md:text-base ${
+                      on ? "bg-ink text-white" : "hover:bg-soft"
+                    } ${m === "choose" ? "border-l-2 border-ink" : ""}`}
+                  >
+                    <input type="radio" name="driver-mode" value={m} checked={on} onChange={() => setDriverMode(m)} className="sr-only" />
+                    {m === "same" ? COPY.drivers.sameMode : COPY.drivers.chooseMode}
+                  </label>
+                );
+              })}
+            </div>
+            {driverMode === "same" &&
+              (list ? (
+                <div role="radiogroup" aria-label={COPY.drivers.pickTitle} className="grid grid-cols-3 border-l border-t border-line md:grid-cols-6">
+                  {list.drivers.map((d) => {
+                    const on = d.code === driverCode;
+                    const at = list.at.get(d.number);
+                    return (
+                      <label
+                        key={d.code}
+                        className={`flex min-h-[84px] cursor-pointer flex-col justify-between gap-1 border-b border-r p-2 transition-colors duration-150 has-[:focus-visible]:outline-3 has-[:focus-visible]:-outline-offset-3 has-[:focus-visible]:outline-ink ${
+                          on ? "border-ink bg-ink text-white" : "border-line hover:bg-soft"
+                        }`}
+                      >
+                        <input type="radio" name="driver" value={d.code} checked={on} onChange={() => setPicked((m) => ({ ...m, [decision]: d.code }))} className="sr-only" />
+                        <span className="flex items-baseline justify-between gap-1">
+                          <span className="text-xl font-black leading-none tracking-tight">{d.code}</span>
+                          {at && <span className="nums text-xs">{COPY.mode.position(at.position)}</span>}
+                        </span>
+                        <span className="flex items-center gap-1.5 truncate text-xs">
+                          {d.team_colour && <span aria-hidden className="h-3 w-1 shrink-0" style={{ backgroundColor: d.team_colour }} />}
+                          <span className="truncate">{d.name}</span>
+                        </span>
+                        {at?.compound && (
+                          <span className="self-start">
+                            <TyreChip compound={at.compound} age={at.tyre_age} size="sm" />
+                          </span>
+                        )}
+                      </label>
+                    );
+                  })}
+                </div>
+              ) : (
+                <p className="meta text-ink-2">{r === "error" ? COPY.error.data : COPY.drivers.loading}</p>
+              ))}
           </fieldset>
           <div className="flex flex-col gap-1">
             <FieldLabel htmlFor="host-name">{COPY.home.nameLabel}</FieldLabel>

@@ -9,13 +9,14 @@ import { MAX_TOTAL, PLAYED_OUT_MS, badgesFor, fmtSeconds, playedOutLap, splitCal
 import type { Call, DecisionPoint, LapFrame, Submission } from "@/lib/types";
 import type { DataMode, GroundTruthFile } from "@/lib/client/mode";
 import { Measured } from "../Measured";
-import { BadgeList, Button, CallWord, Check, clockText } from "../ui";
+import { BadgeList, Button, CallWord, Check, ModeToggle, clockText } from "../ui";
 import { DiffBars, boxMinusStay } from "./HostCharts";
 import { NeighbourList } from "../Telemetry";
 import { neighbourCalls, telemetry } from "@/lib/client/telemetry";
 import { callMomentFrames } from "@/lib/client/race";
 
-const STEP_AT = [0, 7000, 13000, 13000 + PLAYED_OUT_MS + 800];
+// Room split, team and engine, outcome bars playing out (held 6 s after they finish), verdict table.
+const STEP_AT = [0, 7000, 13000, 13000 + PLAYED_OUT_MS + 6000];
 
 // `code` is this lobby: the route fills the team and engine rows only once it has revealed.
 function useLeaderboard(decisionId: string, code: string, when: boolean) {
@@ -43,7 +44,7 @@ function Steps({ step, onNext }: { step: number; onNext: () => void }) {
     <span className="flex items-center gap-4">
       <span className="flex gap-1.5" role="img" aria-label={COPY.host.step(step + 1, STEP_AT.length)}>
         {STEP_AT.map((_, i) => (
-          <span key={i} className={`size-3 ${i <= step ? "bg-ink" : "border-2 border-ink"}`} />
+          <span key={i} className={`size-3 ${i <= step ? "bg-current" : "border-2 border-current"}`} />
         ))}
       </span>
       {step < STEP_AT.length - 1 && (
@@ -63,7 +64,7 @@ export function HostReveal({
   elapsed,
   onNext,
   mode,
-  modeToggle,
+  setMode,
   gt,
 }: {
   code: string;
@@ -74,7 +75,7 @@ export function HostReveal({
   elapsed: number;
   onNext: () => void;
   mode: DataMode;
-  modeToggle: React.ReactNode;
+  setMode: (m: DataMode) => void;
   gt: GroundTruthFile | null;
 }) {
   const [skip, setSkip] = useState(0);
@@ -118,13 +119,13 @@ export function HostReveal({
     return { t, revealed: neighbourCalls(frames, decision, { ahead: t.neighbours.ahead?.number, behind: t.neighbours.behind?.number }) };
   }, [frames, decision]);
 
-  if (step === 3) return <Verdict decision={decision} lobby={lobby} lb={lb} camps={camps} onNext={onNext} mode={mode} modeToggle={modeToggle} gt={gt} />;
+  if (step === 3) return <Verdict decision={decision} lobby={lobby} lb={lb} camps={camps} onNext={onNext} mode={mode} modeToggle={<ModeToggle mode={mode} onChange={setMode} size="sm" />} gt={gt} />;
 
   const top = (
     <header className="flex items-center justify-between gap-6 font-mono text-lg font-bold uppercase">
       <span>{COPY.host.revealTag(Math.min(step + 1, 3), 3, decision.race, decision.lap)}</span>
       <span className="flex items-center gap-6 font-sans normal-case">
-        {modeToggle}
+        <ModeToggle mode={mode} onChange={setMode} size="sm" onField={step > 0} />
         <Steps step={step} onNext={advance} />
       </span>
     </header>
@@ -146,6 +147,9 @@ export function HostReveal({
       return f ? factorLabel(f.factor) : null;
     };
     const many = players.length > 4;
+    const crowd = players.length > 8;
+    // Quotes that fit on one screen per side; the rest are listed by code.
+    const cap = crowd ? 4 : 6;
     return (
       <main className="grid h-dvh grid-rows-[auto_auto_auto_1fr_auto] gap-y-6 overflow-hidden px-14 py-10">
         {top}
@@ -158,7 +162,7 @@ export function HostReveal({
                 className={`grow-x flex items-center justify-between gap-4 px-8 ${side.call === "BOX" ? "on-dark bg-ink text-white" : "bg-soft text-ink"}`}
                 style={{ flexGrow: side.list.length / n, flexBasis: 0 }}
               >
-                <CallWord call={side.call} className="text-[3.25rem] font-black tracking-[-0.03em]" />
+                <CallWord call={side.call} className={`whitespace-nowrap font-black tracking-[-0.03em] ${side.list.length / n < 0.4 ? "text-[2.25rem]" : "text-[3.25rem]"}`} />
                 <span className="truncate font-mono text-lg font-bold">{side.list.map((p) => tla(p.name)).join(" · ")}</span>
               </div>
             ) : null,
@@ -168,18 +172,19 @@ export function HostReveal({
         <div className="grid min-h-0 gap-x-6" style={{ gridTemplateColumns: sides.map((s) => `${Math.max(0.3, s.list.length / n)}fr`).join(" ") }}>
           {sides.map((side) => (
             <section key={side.call} className="flex min-h-0 flex-col border-t-2 border-ink pt-4">
-              <span className="meta text-ink-2">{COPY.host.campTag(COPY.freeze.options[side.call])}</span>
-              <h2 className="display mt-1 line-clamp-2 text-[3rem] leading-[0.98]">{campOf(side.list) ?? COPY.freeze.options[side.call]}</h2>
+              <span className="meta shrink-0 text-ink-2">{COPY.host.campTag(COPY.freeze.options[side.call])}</span>
+              <h2 className={`display mt-1 line-clamp-2 shrink-0 leading-[0.98] ${crowd ? "text-[2.25rem]" : "text-[3rem]"}`}>{campOf(side.list) ?? COPY.freeze.options[side.call]}</h2>
               <ol className={`mt-5 grid min-h-0 gap-x-8 gap-y-5 overflow-hidden ${side.list.length > 1 && side.list.length / n > 0.5 ? "grid-cols-2" : "grid-cols-1"}`}>
-                {side.list.map((p, i) => (
+                {side.list.slice(0, cap).map((p, i) => (
                   <li key={p.name} className="rise flex flex-col gap-2 border-l-[3px] border-ink pl-5" style={{ animationDelay: `${200 + i * 300}ms` }}>
-                    {p.sub?.transcript && <q className={`line-clamp-4 ${many ? "text-2xl" : "text-[2rem]"} font-medium leading-[1.3]`}>{p.sub.transcript}</q>}
+                    {p.sub?.transcript && <q className={`${crowd ? "line-clamp-2 text-lg" : many ? "line-clamp-3 text-2xl" : "line-clamp-4 text-[2rem]"} font-medium leading-[1.3]`}>{p.sub.transcript}</q>}
                     <span className="font-mono text-sm">
                       <b className="font-bold">{tla(p.name)}</b> <span className="text-ink-2">{COPY.host.calledAt(clockText(p.sub?.seconds_to_call ?? 0))}</span>
                     </span>
                   </li>
                 ))}
               </ol>
+              {side.list.length > cap && <p className="mt-3 shrink-0 font-mono text-sm font-bold">+ {side.list.slice(cap).map((p) => tla(p.name)).join(" · ")}</p>}
             </section>
           ))}
         </div>
@@ -204,7 +209,7 @@ export function HostReveal({
   const end = diff?.values.filter((v): v is number => v != null).at(-1) ?? null;
   return (
     <main className="flood grid h-dvh grid-rows-[auto_auto_1fr] gap-y-6 overflow-hidden bg-field px-14 py-10 text-on-field">
-      <div className="[&_button]:text-on-field [&_span.size-3]:border-on-field [&_span.bg-ink]:bg-on-field">{top}</div>
+      {top}
       <div className="grid grid-cols-3 gap-x-6">
         <div className="rise flex flex-col border-t-2 border-on-field pt-4">
           <span className="meta">{COPY.host.teamDid(decision.player_role.team)}</span>
@@ -307,8 +312,9 @@ function Verdict({
   const correct = decision.ground_truth.correct;
   const subs = [...lobby.submissions].sort((a, b) => b.total - a.total || a.seconds_to_call - b.seconds_to_call);
   const factors = decision.factors;
-  const rowH = subs.length > 6 ? "min-h-10" : "min-h-12";
-  const cols = `minmax(120px,1.3fr) 200px repeat(${factors.length}, minmax(64px,0.8fr)) 64px 112px`;
+  const dense = subs.length > 6;
+  const rowH = dense ? "min-h-[36px]" : "min-h-12";
+  const cols = `minmax(110px,1.1fr) 200px repeat(${factors.length}, minmax(64px,0.8fr)) 64px 132px`;
 
   const best = subs.filter((s) => s.factors_named.length > 0);
   const bestK = best.length ? Math.max(...best.map((s) => s.factors_named.length)) : 0;
@@ -334,7 +340,7 @@ function Verdict({
         <Steps step={3} onNext={() => {}} />
       </header>
       <div className="col-span-12 flex items-end justify-between gap-10 border-b-2 border-ink pb-6">
-        <h1 className="display whitespace-nowrap text-5xl">{COPY.reveal.verdict(correct)}</h1>
+        <h1 className="display text-[4.5rem] leading-none [text-wrap:nowrap]!">{COPY.reveal.verdict(correct)}</h1>
         <div className="flex min-w-0 items-end gap-6">
           <span className="nums shrink-0 bg-field px-4 py-2 text-4xl font-bold leading-none text-on-field">+{decision.ground_truth.swing_s.toFixed(1)} s</span>
           <p className="max-w-[44ch] text-base">
@@ -343,7 +349,7 @@ function Verdict({
         </div>
       </div>
 
-      <section className="col-span-9 flex min-h-0 flex-col gap-5">
+      <section className="col-span-9 flex min-h-0 flex-col gap-4 overflow-hidden">
         <div role="table" className="flex flex-col">
           <div role="row" className="grid items-end gap-x-4 border-b-2 border-ink pb-2" style={{ gridTemplateColumns: cols }}>
             <span role="columnheader" className="meta">{COPY.reveal.who}</span>
@@ -363,11 +369,11 @@ function Verdict({
               className={`grid ${rowH} items-center gap-x-4 border-b ${r.kind === "player" ? "border-line" : "border-ink bg-soft"}`}
               style={{ gridTemplateColumns: cols }}
             >
-              <span role="cell" className="truncate pl-1 text-xl font-black tracking-tight">
+              <span role="cell" className={`truncate pl-1 font-black tracking-tight ${dense ? "text-lg" : "text-xl"}`}>
                 {r.label}
               </span>
               <span role="cell" className="flex items-baseline gap-3 whitespace-nowrap">
-                <CallWord call={r.call} className="text-xl font-bold" />
+                <CallWord call={r.call} className={`font-bold ${dense ? "text-base" : "text-xl"}`} />
                 {r.call === correct && <span className="meta bg-ink px-1.5 py-0.5 text-white">{COPY.reveal.right}</span>}
               </span>
               {factors.map((f) => (
@@ -378,13 +384,13 @@ function Verdict({
               <span role="cell" className="nums text-right text-base">
                 {r.time != null ? fmtSeconds(r.time) : ""}
               </span>
-              <span role="cell" className="nums pr-1 text-right text-lg font-bold">
+              <span role="cell" className={`nums whitespace-nowrap pr-1 text-right font-bold ${dense ? "text-base" : "text-lg"}`}>
                 {r.total} <span className="text-sm font-medium text-ink-2">{COPY.score.outOf(MAX_TOTAL)}</span>
               </span>
             </div>
           ))}
         </div>
-        {bestRows.map((s) => (
+        {(dense ? bestRows.slice(0, 1) : bestRows).map((s) => (
           <p key={s.player_name} className="line-clamp-2 text-lg">
             <span className="font-black">{COPY.reveal.bestReason(tla(s.player_name), bestK, factors.length)}</span> <q className="font-medium">{s.transcript}</q>
           </p>
@@ -480,6 +486,7 @@ export function HostScoreboard({ code, decision, lobby }: { code: string; decisi
   else if (top && teamTotal != null && top.total > teamTotal) facts.push(COPY.score.beatTeamBy(top.label, decision.player_role.team, top.total - teamTotal));
   const pct = selPct != null ? COPY.score.percentile(selPct) : null;
   const engineCall = lb?.engine?.call ?? decision.engine.call;
+  const big = rows.length > 9 ? "text-lg" : "text-[1.625rem]";
   const perFactor = decision.factors.length ? 50 : 0;
   const cols = "56px minmax(150px,1.2fr) 120px 110px 140px 130px 110px 90px minmax(90px,0.8fr)";
 
@@ -490,7 +497,7 @@ export function HostScoreboard({ code, decision, lobby }: { code: string; decisi
         <span>{COPY.host.room(code)}</span>
       </header>
       <div className="col-span-12 flex items-end justify-between gap-8">
-        <h1 className="display text-[5rem] leading-none">{top ? COPY.host.takesRound(top.label) : COPY.score.standings}</h1>
+        <h1 className="display text-[4.5rem] leading-none [text-wrap:nowrap]!">{top ? COPY.host.takesRound(top.label) : COPY.score.standings}</h1>
         {facts.length > 0 && <p className="max-w-[40ch] pb-2 text-right text-lg font-bold">{facts.join(" ")}</p>}
       </div>
 
@@ -515,33 +522,33 @@ export function HostScoreboard({ code, decision, lobby }: { code: string; decisi
                 onClick={() => setSelected(r.key)}
                 aria-pressed={on}
                 style={{ gridTemplateColumns: cols }}
-                className={`grid items-center gap-x-4 border-b text-left transition-colors duration-150 ${lobbyPlayers.length > 6 ? "min-h-[64px]" : "min-h-[96px]"} ${
+                className={`grid items-center gap-x-4 border-b text-left transition-colors duration-150 ${rows.length > 9 ? "min-h-[40px]" : rows.length > 5 ? "min-h-[60px]" : "min-h-[96px]"} ${
                   p1 ? "-mx-5 border-field bg-field px-5 text-on-field" : r.kind === "player" ? "border-line hover:bg-soft" : "border-line text-ink-2 hover:bg-soft"
                 } ${on && !p1 ? "outline outline-2 -outline-offset-2 outline-ink" : ""}`}
               >
                 <span className="nums text-xl font-bold">
                   {r.kind === "player" ? lobbyPlayers.indexOf(r) + 1 : ""}
                 </span>
-                <span className={`truncate font-black tracking-[-0.03em] ${r.kind === "player" ? "text-[2.75rem] leading-none" : "text-xl"}`}>
+                <span className={`truncate font-black tracking-[-0.03em] ${r.kind !== "player" ? "text-xl" : rows.length > 9 ? "text-2xl leading-none" : "text-[2.75rem] leading-none"}`}>
                   {r.label}
                 </span>
-                <CallWord call={call} className="text-[1.625rem] font-bold" />
-                <span className="nums text-[1.625rem] font-bold">
+                <CallWord call={call} className={`${big} font-bold`} />
+                <span className={`nums ${big} font-bold`}>
                   {r.sub ? clockText(r.sub.seconds_to_call) : ""}
                 </span>
-                <span className="text-[1.625rem] font-bold">
+                <span className={`${big} font-bold`}>
                   {r.kind === "player" && call ? (call === engineCall ? COPY.host.agreed : COPY.host.against) : ""}
                 </span>
-                <span className="nums text-[1.625rem] font-bold">
+                <span className={`nums ${big} font-bold`}>
                   {r.c ? `+${r.c}` : "0"}
                 </span>
-                <span className="nums text-[1.625rem] font-bold">
+                <span className={`nums ${big} font-bold`}>
                   {r.r ? `+${r.r}` : "0"}
                 </span>
                 <span className="nums text-right text-base">
                   {pctR != null ? `${pctR}%` : ""}
                 </span>
-                <span className={`nums text-right font-bold tracking-[-0.03em] ${r.kind === "player" ? "text-[3.25rem] leading-none" : "text-2xl"}`}>
+                <span className={`nums text-right font-bold tracking-[-0.03em] ${r.kind !== "player" ? "text-2xl" : rows.length > 9 ? "text-[1.75rem] leading-none" : "text-[3.25rem] leading-none"}`}>
                   {r.total}
                 </span>
               </button>
