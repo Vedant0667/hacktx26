@@ -125,7 +125,7 @@ export function HostSummary({ summary: s, code, carCode }: { summary: GameSummar
           ))}
         </div>
         {!single && (
-          <div className="col-span-5 flex min-h-0 flex-col gap-4 overflow-hidden border-t-2 border-ink pt-3">
+          <div className="col-span-5 flex min-h-0 flex-col gap-2.5 overflow-hidden border-t-2 border-ink pt-3">
             <span className="meta text-ink-2">{COPY.end.moments}</span>
             {s.moments.map((m) => (
               <HostMoment key={m.lap} m={m} s={s} carCode={carCode} />
@@ -159,7 +159,7 @@ function HostRow({ r, s, size, single }: { r: RankRow; s: GameSummary; size: key
   const bench = r.kind !== "player";
   const m = s.moments[0];
   const e = single && m ? m.entries.find((x) => x.kind === r.kind && x.name === r.name && x.driver_code === r.driver_code) : undefined;
-  const cols = single ? "88px minmax(0,260px) 210px minmax(0,1fr) 140px" : "64px minmax(0,1fr) minmax(0,1.3fr) 110px";
+  const cols = single ? "76px minmax(0,230px) 180px minmax(0,1fr) 130px" : "64px minmax(0,1fr) minmax(0,1.3fr) 110px";
   const sub = e?.call ? (luckNote(m!, e) ?? e.verdict) : null;
   return (
     <div
@@ -168,7 +168,7 @@ function HostRow({ r, s, size, single }: { r: RankRow; s: GameSummary; size: key
     >
       <span className={`nums font-bold ${z.rank}`}>{r.rank_label}</span>
       <span className="flex min-w-0 items-baseline gap-3">
-        <span className={`truncate ${bench ? `font-bold ${size === "sm" ? "text-lg" : "text-2xl"}` : `display leading-none ${z.name}`}`}>{label(r, s)}</span>
+        <span className={bench ? `line-clamp-2 font-bold leading-tight ${size === "sm" ? "text-base" : "text-xl"}` : `display truncate leading-none ${z.name}`}>{label(r, s)}</span>
         {r.kind === "player" && s.cars.length > 1 && <CarChip summary={s} code={r.driver_code} />}
       </span>
       {single ? (
@@ -211,17 +211,18 @@ function HostRow({ r, s, size, single }: { r: RankRow; s: GameSummary; size: key
 function HostMoment({ m, s, carCode }: { m: SummaryMoment; s: GameSummary; carCode: string | null }) {
   const line = momentLine(s, m, carCode);
   return (
-    <div className="flex flex-col gap-1.5 border-b border-line pb-3">
+    <div className="flex flex-col gap-1 border-b border-line pb-2.5">
       <span className="flex items-baseline gap-3">
-        <b className="font-mono text-base font-bold">L{m.lap}</b>
-        <span className="font-mono text-xs font-bold uppercase text-ink-2">{m.triggers.map(triggerText).join(" · ")}</span>
+        <b className="font-mono text-sm font-bold">L{m.lap}</b>
+        <span className="truncate font-mono text-xs font-bold uppercase text-ink-2">{m.triggers.map(triggerText).join(" · ")}</span>
       </span>
-      <span className="text-lg font-black leading-tight">{line.head}</span>
-      {line.luck && <span className="text-sm">{line.luck}</span>}
-      <span className="flex flex-wrap gap-x-4 gap-y-1">
+      <span className="text-base font-black leading-tight">{line.head}</span>
+      {line.luck && <span className="line-clamp-1 text-sm">{line.luck}</span>}
+      <span className="flex flex-wrap gap-x-3 gap-y-0.5">
         {m.entries.map((e) => (
-          <span key={`${e.kind}:${e.name}:${e.driver_code}`} className={`nums text-base ${e.kind === "player" ? "font-bold" : "text-ink-2"}`}>
-            {e.kind === "player" ? tla(e.name) : label(e, s)} {e.call ? (rightOf(m, e) ? "✓" : "✗") : "–"} {COPY.end.points(e.points)}
+          <span key={`${e.kind}:${e.name}:${e.driver_code}`} className={`text-sm ${e.kind === "player" ? "font-bold" : "text-ink-2"}`}>
+            {e.kind === "player" ? tla(e.name) : e.kind === "engine" ? COPY.end.engine : e.name} {e.call ? (rightOf(m, e) ? "✓" : "✗") : "–"}{" "}
+            <span className="nums">{COPY.end.points(e.points)}</span>
           </span>
         ))}
       </span>
@@ -238,7 +239,7 @@ function HostAudibles({ list }: { list: SummaryAudible[] }) {
     <div className="flex flex-col gap-1">
       <span className="meta text-ink-2">{COPY.end.audibles}</span>
       {list.map((a) => (
-        <span key={`${a.name}:${a.lap}`} className="nums flex gap-3 text-base">
+        <span key={`${a.name}:${a.lap}`} className="flex gap-3 text-sm">
           <b className="font-bold">{tla(a.name)}</b>
           <span>{COPY.end.audibleRow(a.lap)}</span>
           <span>{audibleMark(a)}</span>
@@ -355,7 +356,7 @@ export function PhoneSummary({ summary: s, me }: { summary: GameSummary; me: str
               <div key={a.lap} className="flex items-baseline gap-3 border-b border-soft-2 py-3">
                 <span className="text-base font-bold">{COPY.end.audibleRow(a.lap)}</span>
                 <span>{audibleMark(a)}</span>
-                <span className="nums ml-auto text-xl font-black">{a.status === "scored" ? COPY.end.points(a.points) : (COPY.race.audibleStatus[a.status] ?? "")}</span>
+                {a.status === "scored" ? <span className="nums ml-auto text-xl font-black">{COPY.end.points(a.points)}</span> : <span className="ml-auto text-right text-sm font-bold">{COPY.race.audibleStatus[a.status] ?? ""}</span>}
               </div>
             ))}
           </section>
@@ -404,7 +405,7 @@ export function PhoneSummary({ summary: s, me }: { summary: GameSummary; me: str
                 <b className="text-base font-black">{tla(a.name)}</b>
                 <span className="text-sm">{COPY.end.audibleRow(a.lap)}</span>
                 <span>{audibleMark(a)}</span>
-                <span className="nums ml-auto text-lg font-black">{a.status === "scored" ? COPY.end.points(a.points) : (COPY.race.audibleStatus[a.status] ?? "")}</span>
+                {a.status === "scored" ? <span className="nums ml-auto text-lg font-black">{COPY.end.points(a.points)}</span> : <span className="ml-auto text-right text-sm font-bold">{COPY.race.audibleStatus[a.status] ?? ""}</span>}
               </div>
             ))}
           </section>

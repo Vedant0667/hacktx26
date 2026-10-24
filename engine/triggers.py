@@ -29,6 +29,7 @@ Triggers (end of lap L-1)
 """
 import copy
 import json
+import re
 import statistics
 import sys
 from pathlib import Path
@@ -82,9 +83,10 @@ def sc_periods(rc):
 
 
 def red_flags(rc):
-    """Laps with a red flag shown, from race control (flag RED, or a RED FLAG message)."""
+    """Laps with a red flag shown, from race control (flag RED, or a RED FLAG message; "CHEQUERED FLAG" also
+    contains the letters RED FLAG, hence the word boundary)."""
     return sorted({m["lap_number"] for m in rc if m.get("lap_number")
-                   and (m.get("flag") == "RED" or "RED FLAG" in (m.get("message") or "").upper())})
+                   and (m.get("flag") == "RED" or re.search(r"\bRED FLAG\b", (m.get("message") or "").upper()))})
 
 
 # ---------------------------------------------------------------- luck (Round 9, build-time only)
@@ -101,10 +103,14 @@ def luck_events(periods, reds, rain, L, end, own=()):
     for k in reds:
         if L <= k <= end:
             ev.append({"lap": k, "kind": "RED_FLAG"})
+    # Weather is sampled about once a minute, so a lap can have no sample: it keeps the last known value.
+    known, filled = 0, {}
+    for k in range(0, end + 1):
+        known = rain.get(k, known)
+        filled[k] = known
     for k in range(max(L, 2), end + 1):
-        before, now = rain.get(k - 1, 0), rain.get(k, 0)
-        if before != now:
-            ev.append({"lap": k, "kind": "RAIN_START" if now else "RAIN_STOP"})
+        if filled[k - 1] != filled[k]:
+            ev.append({"lap": k, "kind": "RAIN_START" if filled[k] else "RAIN_STOP"})
     return sorted(ev, key=lambda e: (e["lap"], e["kind"]))
 
 

@@ -34,11 +34,17 @@ export function pointsFor(call: Call | null, correct: Call, stakes: number, reas
   return roundAbs(stakes * (0.4 * right + (0.75 * clampReasoning(reasoning)) / REASONING_MAX - 0.15)) || 0;
 }
 
+// Round 9: the call scored as right. final_right_call (the luck-aware verdict, lib/luck.ts) when the data carries
+// it, else the measured answer. Stakes always come from the measured swing.
+export function rightCallOf(gt: { correct: Call; final_right_call?: Call }): Call {
+  return gt.final_right_call ?? gt.correct;
+}
+
 // score_call holds the stakes, score_reasoning the reasoning score, total the signed points.
 export function scoreCall(decision: Pick<DecisionPoint, "ground_truth">, call: Call | null, reasoning: number): Score {
   const stakes = stakesFor(decision.ground_truth.swing_s);
   const r = call ? clampReasoning(reasoning) : 0;
-  return { score_call: stakes, score_reasoning: r, total: pointsFor(call, decision.ground_truth.correct, stakes, r) };
+  return { score_call: stakes, score_reasoning: r, total: pointsFor(call, rightCallOf(decision.ground_truth), stakes, r) };
 }
 
 // Shared ranks: equal totals share a rank ("=1"), the next distinct total skips ahead (1, =2, =2, 4).

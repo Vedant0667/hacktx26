@@ -1,6 +1,8 @@
 // Loads race data into Postgres: runs engine/build.py (data/ -> build/race-data/load.json), then upserts
 // races, race_laps, decision_points, decision_drivers and the race-mode tables in one transaction and deletes rows the build no longer produces.
 // Idempotent: a second run leaves the same rows. Apply db/schema.sql first (scripts/migrate.mjs).
+// Round 9: rows with luck_events need a verdict from scripts/ai-verdicts.mjs (run after this). ai_verdicts rows are
+// kept across seeds; lib/data.ts ignores one whose measured answer or luck events no longer match.
 // Usage: node --env-file=.env.local scripts/seed-db.mjs [--skip-build]
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -149,6 +151,7 @@ const raceMode = await sql.query(
   `select f.race_key, count(*)::int as freezes, count(distinct f.driver_code)::int as drivers,
      count(*) filter (where f."full"->>'correct' = 'BOX')::int as box,
      count(*) filter (where f."full"->>'correct' = 'STAY')::int as stay,
+     count(*) filter (where jsonb_array_length(coalesce(f."full"->'luck_events', '[]'::jsonb)) > 0)::int as luck,
      (select count(*) from race_drivers d where d.race_key = f.race_key and d.freeze_count >= 3)::int as drivers_3plus,
      (select count(*) from race_audibles a where a.race_key = f.race_key)::int as audible_rows,
      (select count(*) from race_audibles a where a.race_key = f.race_key and (a.truth->>'scorable')::boolean)::int as audible_scorable
@@ -157,7 +160,8 @@ const raceMode = await sql.query(
 for (const r of raceMode) {
   console.log(
     `  race mode ${r.race_key}: ${r.freezes} freezes over ${r.drivers} drivers (${r.drivers_3plus} with 3+), ` +
-      `correct BOX ${r.box} / STAY ${r.stay}; audible truth ${r.audible_rows} car-laps, ${r.audible_scorable} scorable`,
+      `correct BOX ${r.box} / STAY ${r.stay}; ${r.luck} with luck events (scripts/ai-verdicts.mjs); ` +
+      `audible truth ${r.audible_rows} car-laps, ${r.audible_scorable} scorable`,
   );
 }
 const [rm] = await sql.query(

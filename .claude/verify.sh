@@ -11,5 +11,6 @@ npx tsx scripts/test-security.ts
 npx tsx scripts/test-scoring.ts
 npx tsx scripts/test-data.ts
 npx tsx scripts/test-race.ts
+npx tsx scripts/test-luck.ts
 npx tsx lib/client/race.check.ts
 npx tsx scripts/test-voice.ts

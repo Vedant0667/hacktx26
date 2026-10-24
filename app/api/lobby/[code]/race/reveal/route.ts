@@ -1,15 +1,22 @@
 import type { NextRequest } from "next/server";
 import { getLobbyDriverCodes, getRaceCalls } from "@/lib/db";
 import { getRaceFrames, getRaceFreezes, type RaceFreeze } from "@/lib/data";
+import { luckView, type LuckVerdict } from "@/lib/luck";
 import { requireRaceMember } from "../../../../_lib/access";
 import { handle, HttpError, normalizeCode } from "../../../../_lib/http";
 import { answerLaps, clockOf, freezeReveal, measuredTo, presentCall, type FreezePlanEntry, type FreezeRevealView } from "../../../../_lib/race";
 
-function revealEntry(entry: FreezePlanEntry, cars: string[], freezes: RaceFreeze[], withDetail: boolean) {
-  const drivers: Record<string, (FreezeRevealView & { detail?: Record<string, unknown> }) | null> = {};
+// atEnd (phase done only): Round 9 adds the luck-aware verdict (final_right_call, luck, luck_events, explanation).
+function revealEntry(entry: FreezePlanEntry, cars: string[], freezes: RaceFreeze[], withDetail: boolean, atEnd: boolean) {
+  const drivers: Record<string, (FreezeRevealView & { detail?: Record<string, unknown> } & Partial<LuckVerdict>) | null> = {};
   for (const car of cars) {
     const row = entry.drivers.includes(car) ? freezes.find((x) => x.lap === entry.lap && x.driver_code === car) : undefined;
-    drivers[car] = row ? (withDetail ? { ...freezeReveal(row), detail: row.full.detail } : freezeReveal(row)) : null;
+    if (!row) {
+      drivers[car] = null;
+      continue;
+    }
+    const view = withDetail ? { ...freezeReveal(row), detail: row.full.detail } : freezeReveal(row);
+    drivers[car] = atEnd ? { ...view, ...luckView(row.full) } : view;
   }
   return drivers;
 }
@@ -34,7 +41,7 @@ export const GET = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobby
     if (!revealed.includes(lap)) throw new HttpError(409, "Freeze answers open at the flag");
     // A swing measured past a later freeze in this lobby would describe laps the room hasn't called yet:
     // hold the number back until the race is done (the right call still shows).
-    const drivers = revealEntry(entry, cars, freezes, false);
+    const drivers = revealEntry(entry, cars, freezes, false, done);
     for (const car of Object.keys(drivers)) {
       const view = drivers[car];
       const row = view ? freezes.find((x) => x.lap === lap && x.driver_code === car) : undefined;
@@ -58,7 +65,7 @@ export const GET = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobby
     {
       race_key: meta.race_key,
       frames,
-      freezes: plan.map((entry) => ({ lap: entry.lap, drivers: revealEntry(entry, cars, freezes, true) })),
+      freezes: plan.map((entry) => ({ lap: entry.lap, drivers: revealEntry(entry, cars, freezes, true, true) })),
       calls,
     },
     { headers },

@@ -7,9 +7,13 @@
 // - Full: getDecision, getFrames, getGroundTruth, getDriverAnswers. They hold the answer and are only for
 //   scoring, phase timing and GET /api/lobby/[code]/reveal.
 //
-// Each process caches successful reads in memory (the data changes only when the seed runs). An id that is
+// Round 9: full answers also carry the luck-aware verdict from table ai_verdicts (scripts/ai-verdicts.mjs), merged
+// by freezeFullWithVerdict / driverFullWithVerdict; luck fields reach clients only at the end of a game.
+//
+// Each process caches successful reads in memory (the data changes only when the seed or ai-verdicts runs). An id that is
 // not in the table is answered from the cached list without a query, and the list is re-read at most every 30 s.
 import { query } from "./db";
+import { applyVerdict, type LuckEvent, type LuckVerdict, type StoredVerdict } from "./luck";
 import type { Call, DecisionIndexEntry, DecisionPoint, DriverFrame, LapFrame, TrackStatus } from "./types";
 
 const ID_RE = /^[a-z0-9][a-z0-9_-]{0,63}$/i;
@@ -38,13 +42,17 @@ export interface DriversResponse {
 }
 
 // One car's answer for a decision (Round 4). ground_truth_detail has the shape of ground_truth.seconds.
+// Round 9: ground_truth also carries the luck-aware verdict (final_right_call, luck, luck_events, explanation);
+// correct and swing_s stay the measured outcome.
 export interface DriverReveal extends Omit<BlindDriver, "blind_title"> {
   scorable: boolean;
   team_call: { call: Call; reasons: string[] };
   engine: { call: Call; confidence: number; reasons: string[] };
-  ground_truth: { correct: Call; swing_s: number };
+  ground_truth: { correct: Call; swing_s: number } & Partial<LuckVerdict>;
   ground_truth_detail: Record<string, unknown>;
 }
+
+type DriverFull = Omit<DriverReveal, keyof BlindDriver | "scorable"> & { luck_events?: LuckEvent[]; luck_facts?: unknown };
 
 interface DecisionRow {
   id: string;
@@ -138,6 +146,20 @@ export function decisionForDriver(decision: DecisionPoint, driver: DriverReveal)
     team: driver.team_call,
     engine: driver.engine,
   };
+}
+
+// Round 9: a stored full row with its luck-aware verdict merged in (ai_verdicts row or null). luck_facts is the
+// build-time prompt input for scripts/ai-verdicts.mjs and is dropped here, so no route can serve it.
+export function freezeFullWithVerdict(full: FullFreeze & { luck_facts?: unknown }, verdict: StoredVerdict | null): FullFreeze {
+  const { luck_facts: _facts, ...rest } = full;
+  void _facts;
+  return { ...rest, ...applyVerdict(rest.correct, rest.luck_events, verdict) };
+}
+
+export function driverFullWithVerdict(full: DriverFull, verdict: StoredVerdict | null): Omit<DriverReveal, keyof BlindDriver | "scorable"> {
+  const { luck_events, luck_facts: _facts, ...rest } = full;
+  void _facts;
+  return { ...rest, ground_truth: { ...rest.ground_truth, ...applyVerdict(rest.ground_truth.correct, luck_events, verdict) } };
 }
 
 // ---- Cached reads ----
@@ -253,16 +275,20 @@ export async function getFrames(id: string): Promise<LapFrame[] | null> {
   );
 }
 
-// Every car running at the decision lap with its answer (scorable or not).
+// Every car running at the decision lap with its answer (scorable or not), with its luck-aware verdict (Round 9).
 export async function getDriverAnswers(id: string): Promise<DriverReveal[] | null> {
   if (!(await decisionRow(id))) return null;
   return remember(driversCache, id, async () => {
-    const rows = await query<{ blind: BlindDriver; scorable: boolean; full: Omit<DriverReveal, keyof BlindDriver | "scorable"> }>(
-      `select blind, scorable, "full" as full from decision_drivers where decision_id = $1 order by position`,
+    const rows = await query<{ blind: BlindDriver; scorable: boolean; full: DriverFull; verdict: StoredVerdict | null }>(
+      `select d.blind, d.scorable, d."full" as full, ${VERDICT_JSON} as verdict
+       from decision_drivers d join decision_points p on p.id = d.decision_id
+       left join ai_verdicts v on v.kind = 'decision' and v.scope = d.decision_id and v.driver_code = d.driver_code and v.lap = p.lap
+       where d.decision_id = $1 order by d.position`,
       [id],
     );
-    return rows.map(({ blind: b, scorable, full }) => ({
-      code: b.code, number: b.number, name: b.name, team: b.team, team_colour: b.team_colour, scorable, ...full,
+    return rows.map(({ blind: b, scorable, full, verdict }) => ({
+      code: b.code, number: b.number, name: b.name, team: b.team, team_colour: b.team_colour, scorable,
+      ...driverFullWithVerdict(full, verdict),
     }));
   });
 }
@@ -317,7 +343,9 @@ export interface BlindFreeze {
   factors: string[];
 }
 
-export interface FullFreeze {
+// Round 9: correct and swing_s are the measured outcome. getRaceFreezes adds the luck-aware verdict
+// (final_right_call, luck, luck_events, explanation, verdict_source); scoring uses final_right_call.
+export interface FullFreeze extends Partial<LuckVerdict> {
   correct: Call;
   swing_s: number;
   window: [number, number];
@@ -345,6 +373,11 @@ export interface AudibleTruth {
   reason: string | null;
   comparison?: { boxed: string[]; stayed: string[] };
 }
+
+// The ai_verdicts columns applyVerdict needs, or null when there is no row (Round 9).
+const VERDICT_JSON = `case when v.kind is null then null else json_build_object('status', v.status,
+  'measured_correct', v.measured_correct, 'luck_events', v.luck_events, 'final_right_call', v.final_right_call,
+  'luck_changed_outcome', v.luck_changed_outcome, 'explanation', v.explanation) end`;
 
 let raceListCache: { at: number; rows: Promise<RaceEntry[]> } | null = null;
 const raceFreezeCache = new Map<string, Promise<RaceFreeze[]>>();
@@ -386,15 +419,19 @@ export async function getRaceEntry(key: string): Promise<RaceEntry | null> {
   return (await getRaceList()).find((r) => r.race_key === key) ?? null;
 }
 
-// Every freeze of every car in a race (blind and full). Server-side only.
+// Every freeze of every car in a race (blind and full, with its luck-aware verdict). Server-side only.
 export async function getRaceFreezes(key: string): Promise<RaceFreeze[]> {
   if (!(await getRaceEntry(key))) return [];
-  return remember(raceFreezeCache, key, () =>
-    query<RaceFreeze>(
-      `select driver_code, lap, blind, "full" as full from race_freezes where race_key = $1 order by lap, driver_code`,
+  return remember(raceFreezeCache, key, async () => {
+    const rows = await query<RaceFreeze & { verdict: StoredVerdict | null }>(
+      `select f.driver_code, f.lap, f.blind, f."full" as full, ${VERDICT_JSON} as verdict
+       from race_freezes f
+       left join ai_verdicts v on v.kind = 'freeze' and v.scope = f.race_key and v.driver_code = f.driver_code and v.lap = f.lap
+       where f.race_key = $1 order by f.lap, f.driver_code`,
       [key],
-    ),
-  );
+    );
+    return rows.map(({ verdict, ...r }) => ({ ...r, full: freezeFullWithVerdict(r.full, verdict) }));
+  });
 }
 
 // The seconds answer for a BOX audible by `code` on `lap`; null when that car was not running then.

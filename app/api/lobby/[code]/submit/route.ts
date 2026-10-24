@@ -4,7 +4,7 @@ import { getSubmission, getTotals, insertSubmission, claimSubmission, getRaceCal
 import { decisionForDriver, getRaceEntry, getRaceFreezes } from "@/lib/data";
 import { parseCallLocal, rubricScore } from "@/lib/muse";
 import { CALL_WINDOW_S, percentile, scoreCall } from "@/lib/scoring";
-import { momentRubric } from "../../../_lib/grading";
+import { momentRubricFor } from "../../../_lib/grading";
 import { lobbyMetaGuarded } from "../../../_lib/access";
 import { driverFor, handle, HttpError, normalizeCode, readBody, requireDecision, tokenMatches } from "../../../_lib/http";
 import { currentFreeze, freezeDecision, freezeRubric, type RacePhase } from "../../../_lib/race";
@@ -46,7 +46,7 @@ async function raceSubmit(code: string, player: string, meta: LobbyMeta, transcr
   const decision = freezeDecision(raceKey, race.name, freeze);
   const parsed = parseCallLocal(transcript);
   const finalCall = buttonCall ?? parsed.call;
-  const grade = rubricScore(freezeRubric(raceKey, freeze), parsed.transcript);
+  const grade = rubricScore(freezeRubric(raceKey, freeze, race.total_laps), parsed.transcript);
   const score = scoreCall(decision, finalCall, grade.reasoning_score);
   const seconds_to_call = meta.phase === "freeze" ? Math.min(CALL_WINDOW_S, Math.round(meta.phase_elapsed_s * 10) / 10) : CALL_WINDOW_S;
   const { call: row, duplicate } = await insertRaceCall(code, {
@@ -102,7 +102,7 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
     // once at the reveal. The phone's BOX / STAY button wins over the parsed transcript for the call.
     const parsed = parseCallLocal(transcript);
     const finalCall = call ?? parsed.call;
-    const grade = rubricScore(momentRubric(decision), parsed.transcript);
+    const grade = rubricScore(await momentRubricFor(decision), parsed.transcript);
     const score = scoreCall(decision, finalCall, grade.reasoning_score);
     ({ submission, duplicate } = await insertSubmission({
       lobby_code: code,

@@ -1,7 +1,8 @@
 // Round 7 reasoning rubric (pure, no I/O; unit-tested in scripts/test-scoring.ts).
 // Each decision gets a rubric of the ideas that decided its outcome: tyre life and stops still owed, the pit loss
-// under SC/VSC against green, what similar cars did, and track position on rejoin. Points per idea depend on
-// which call won. Muse Spark grades a reason against it (lib/muse/grade.ts); rubricScore is the deterministic
+// under SC/VSC against green, what similar cars did, and track position on rejoin. The facts come from the race
+// data only (frames, pit loss, comparison cars), never from the engine, so the engine is graded like a player.
+// Points per idea depend on which call won. Muse Spark grades a reason against it (lib/muse/grade.ts); rubricScore is the deterministic
 // fallback, and groundedIn / verdictGrounded keep Muse from crediting ideas that are not in the player's words.
 import { COPY } from "../copy";
 import type { Call } from "../types";
@@ -26,16 +27,29 @@ export interface Rubric {
   points: RubricPoint[];
 }
 
+// What the pit wall knew at the call, plus the comparison cars, from the race data.
+export interface RubricFacts {
+  position?: number | null;
+  compound?: string | null;
+  tyre_age?: number | null;
+  laps_left?: number | null;
+  stopped_yet?: boolean | null; // false: no stop yet in a dry race, so at least one stop is still owed
+  pit_loss_green_s?: number | null;
+  field?: { pitted: number; of: number; from: number; to: number } | null; // cars that pitted on those laps
+  comparison?: { boxed: number; stayed: number } | null; // comparison cars within 3 places, by call
+}
+
 export interface RubricInput {
   decision_id: string;
   factors: string[];
   correct: Call;
   swing_s: number;
   trigger: "SC" | "VSC" | "GREEN";
-  engine_reasons: string[];
-  position?: number | null;
-  stops_owed?: number | null;
+  facts: RubricFacts;
 }
+
+// Pit loss under a neutralisation as a share of the green-flag loss (same factors as lib/client/race.ts).
+export const NEUTRAL_LOSS = { SC: 0.5, VSC: 0.75, GREEN: 1 } as const;
 
 // Points per idea by the winning call, summing to 50 over the ideas a decision has (rescaled when fewer).
 const WEIGHTS: Record<Call, Record<"tyre" | "cheap" | "field" | "track", number>> = {
@@ -56,19 +70,28 @@ const MEANING: Record<FactorId, string> = {
   track_position: "Track position: places lost or kept, traffic or dirty air on rejoin, how hard it is to pass ('lose the lead', 'traffic').",
 };
 
-const DEFAULT_HERE: Record<FactorId, (i: RubricInput) => string> = {
-  tyre_age: () => "Tyre age against the laps left.",
-  cheap_stop_under_sc: () => "A stop under the safety car costs less than at green.",
-  cheap_stop_under_vsc: () => "A stop under the VSC costs less than at green.",
-  similar_cars_pitted: () => "What the cars around did at this lap.",
-  track_position: (i) => (i.position ? `Running P${i.position}; places at risk on rejoin.` : "Places at risk on rejoin."),
-};
-const REASON_FOR: Record<FactorId, RegExp> = {
-  tyre_age: /\btyres?\b/i,
-  cheap_stop_under_sc: /\bstop costs\b/i,
-  cheap_stop_under_vsc: /\bstop costs\b/i,
-  similar_cars_pitted: /\b(pitted|expected to pit|cars? (ahead|behind))\b/i,
-  track_position: /\b(leading|position|P\d+)\b/,
+const owesStop = (f: RubricFacts) => f.stopped_yet === false && (f.laps_left ?? 1) > 0;
+const n1 = (x: number) => x.toFixed(1);
+
+// The facts at this decision for each idea, in plain words for the model.
+const HERE: Record<FactorId, (i: RubricInput) => string> = {
+  tyre_age: ({ facts: f }) => {
+    const tyres = f.tyre_age != null ? `${f.compound ? `${f.compound.toLowerCase()} ` : ""}tyres ${f.tyre_age} laps old` : "tyre age";
+    const left = f.laps_left != null ? `, ${f.laps_left} laps left` : "";
+    return `${tyres[0].toUpperCase()}${tyres.slice(1)}${left}${owesStop(f) ? "; no stop yet, so at least one stop is still owed (two dry compounds)" : ""}.`;
+  },
+  cheap_stop_under_sc: ({ facts: f }) =>
+    f.pit_loss_green_s ? `A stop costs ${n1(f.pit_loss_green_s * NEUTRAL_LOSS.SC)} s under the safety car, ${n1(f.pit_loss_green_s)} s at green.` : "A stop under the safety car costs less than at green.",
+  cheap_stop_under_vsc: ({ facts: f }) =>
+    f.pit_loss_green_s ? `A stop costs ${n1(f.pit_loss_green_s * NEUTRAL_LOSS.VSC)} s under the VSC, ${n1(f.pit_loss_green_s)} s at green.` : "A stop under the VSC costs less than at green.",
+  similar_cars_pitted: ({ facts: f }) =>
+    f.comparison
+      ? `Of the comparison cars within 3 places, ${f.comparison.boxed} boxed and ${f.comparison.stayed} stayed out.`
+      : f.field
+        ? `${f.field.pitted} of ${f.field.of} cars pitted on laps ${f.field.from} to ${f.field.to}.`
+        : "What the cars around did at this lap.",
+  track_position: ({ facts: f, trigger }) =>
+    `${f.position ? `Running P${f.position}` : "Track position"}; a stop ${trigger === "GREEN" ? "at green" : `under the ${trigger}`} puts places at risk on rejoin.`,
 };
 
 export function buildRubric(i: RubricInput): Rubric {
@@ -86,12 +109,12 @@ export function buildRubric(i: RubricInput): Rubric {
     maxes[k]++;
     rest--;
   }
-  const owed = (i.stops_owed ?? 0) > 0 || i.engine_reasons.some((r) => /stops? owed/i.test(r));
+  const owed = owesStop(i.facts);
   const points = usable.map((id, k) => ({
     id,
     label: id === "tyre_age" && owed ? COPY.grade.labels.stops_owed : (COPY.grade.labels[id] ?? id),
     idea: MEANING[id],
-    here: i.engine_reasons.find((r) => REASON_FOR[id].test(r)) ?? DEFAULT_HERE[id](i),
+    here: HERE[id](i),
     max: maxes[k],
   }));
   return { decision_id: i.decision_id, correct: i.correct, swing_s: i.swing_s, trigger: i.trigger, points };

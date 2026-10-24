@@ -157,7 +157,7 @@ export interface AudibleScore {
 export function audibleRubric(car: string, lap: number, truth: AudibleTruth): Rubric {
   return buildRubric({
     decision_id: `audible-L${lap}-${car}`, factors: AUDIBLE_FACTORS, correct: truth.correct ?? "BOX",
-    swing_s: truth.swing_s ?? 0, trigger: "GREEN", engine_reasons: truth.reason ? [truth.reason] : [],
+    swing_s: truth.swing_s ?? 0, trigger: "GREEN", facts: { comparison: { boxed: truth.n_box, stayed: truth.n_stay } },
   });
 }
 
@@ -221,19 +221,27 @@ export function freezeReveal(f: { blind: BlindFreeze; full: FullFreeze }) {
 
 export type FreezeRevealView = ReturnType<typeof freezeReveal>;
 
-// The rubric for one car's freeze: its factors, the engine's reasons and inputs, and the measured answer.
-export function freezeRubric(raceKey: string, f: { blind: BlindFreeze; full: FullFreeze }): Rubric {
+const DRY = ["SOFT", "MEDIUM", "HARD"];
+
+// The rubric for one car's freeze, from the race data only (no engine fields): position, tyres, laps left,
+// whether a stop is still owed, pit loss, the comparison cars and the measured answer. A car whose tyres are
+// older than the laps run has not stopped yet; in a dry race it still owes a stop (two compounds).
+export function freezeRubric(raceKey: string, f: { blind: BlindFreeze; full: FullFreeze }, totalLaps: number | null): Rubric {
   const types = f.blind.triggers.map((t) => t.type);
-  const inputs = f.full.engine_inputs ?? {};
+  const b = f.blind;
   return buildRubric({
     decision_id: `race-${raceKey}-L${f.blind.lap}-${f.blind.driver_code}`,
     factors: f.blind.factors,
     correct: f.full.correct,
     swing_s: f.full.swing_s,
     trigger: types.includes("SC") ? "SC" : types.includes("VSC") ? "VSC" : "GREEN",
-    engine_reasons: f.full.engine.reasons,
-    position: f.blind.position,
-    stops_owed: typeof inputs.stops_owed === "number" ? inputs.stops_owed : null,
+    facts: {
+      position: b.position, compound: b.compound, tyre_age: b.tyre_age,
+      laps_left: totalLaps != null ? Math.max(0, totalLaps - b.lap) : null,
+      stopped_yet: b.compound && DRY.includes(b.compound.toUpperCase()) ? b.tyre_age + 1 < b.lap : null,
+      pit_loss_green_s: b.pit_loss?.normal_s ?? null,
+      comparison: { boxed: f.full.comparison.boxed.length, stayed: f.full.comparison.stayed.length },
+    },
   });
 }
 

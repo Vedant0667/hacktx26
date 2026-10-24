@@ -17,10 +17,10 @@ import {
   type LobbyMeta,
   type StoredGrade,
 } from "@/lib/db";
-import { decisionForDriver, getAudibleTruth, getDriverAnswers, getRaceFreezes, type DriverReveal, type RaceEntry, type RaceFreeze } from "@/lib/data";
-import { gradeReason, buildRubric, rubricScore, type Rubric } from "@/lib/muse";
-import { pointsFor, rankLabel, sharedRanks, stakesFor } from "@/lib/scoring";
-import type { Call, DecisionPoint } from "@/lib/types";
+import { callMomentFrame, decisionForDriver, getAudibleTruth, getDriverAnswers, getFrames, getGroundTruth, getRaceFreezes, type DriverReveal, type RaceEntry, type RaceFreeze } from "@/lib/data";
+import { gradeReason, buildRubric, rubricScore, type Rubric, type RubricFacts } from "@/lib/muse";
+import { pointsFor, rankLabel, rightCallOf, sharedRanks, stakesFor } from "@/lib/scoring";
+import type { Call, DecisionPoint, LapFrame } from "@/lib/types";
 import { HttpError, requireDecision } from "./http";
 import { answerLaps, audibleRubric, clockOf, freezeRubric } from "./race";
 
@@ -31,12 +31,50 @@ export type BenchKind = "team" | "engine";
 const hashOf = (reasons: string[]) => createHash("sha256").update(reasons.join("\n")).digest("hex").slice(0, 16);
 const keyOf = (k: { decision_id: string; driver_code: string; kind: string; reasons_hash: string }) =>
   `${k.decision_id}|${k.driver_code}|${k.kind}|${k.reasons_hash}`;
+// Round 9: a freeze as scored (race calls are graded only at the flag): the luck-aware right call in place of the
+// measured one. Stakes keep the measured swing. The benchmark cache key includes the right call (benchJobs).
+const atFlag = (f: RaceFreeze): RaceFreeze => ({ ...f, full: { ...f.full, correct: rightCallOf(f.full) } });
 
-export function momentRubric(d: DecisionPoint): Rubric {
-  return buildRubric({
-    decision_id: d.id, factors: d.factors, correct: d.ground_truth.correct, swing_s: d.ground_truth.swing_s,
-    trigger: d.trigger, engine_reasons: d.engine.reasons,
-  });
+const DRY = ["SOFT", "MEDIUM", "HARD"];
+
+// Rubric facts for one car at a moment, from the frames and the measured pit loss only (never the engine):
+// position, tyres, laps left, whether a stop is still owed, and how many cars pitted on laps L to L+2.
+export function momentFacts(d: DecisionPoint, frames: LapFrame[] | null, pitLossGreen: number | null): RubricFacts {
+  if (!frames?.length) return { pit_loss_green_s: pitLossGreen };
+  let me: LapFrame["drivers"][number] | undefined;
+  let of = 0;
+  try {
+    const cm = callMomentFrame(frames, d.lap, null);
+    me = cm.drivers.find((x) => x.number === d.player_role.number);
+    of = cm.drivers.length;
+  } catch {
+    // frames do not cover the call lap: facts without the car
+  }
+  const to = d.lap + 2;
+  const pitted = new Set(frames.filter((f) => f.lap >= d.lap && f.lap <= to).flatMap((f) => f.drivers.filter((x) => x.pitted_this_lap).map((x) => x.code)));
+  const age = me?.tyre_age ?? null;
+  return {
+    position: me?.position ?? null, compound: me?.compound ?? null, tyre_age: age,
+    laps_left: Math.max(0, (frames[frames.length - 1]?.lap ?? d.lap) - d.lap),
+    stopped_yet: age != null && me?.compound && DRY.includes(me.compound.toUpperCase()) ? age + 1 < d.lap : null,
+    pit_loss_green_s: pitLossGreen,
+    field: of ? { pitted: pitted.size, of, from: d.lap, to } : null,
+  };
+}
+
+export function momentRubric(d: DecisionPoint, facts: RubricFacts): Rubric {
+  return buildRubric({ decision_id: d.id, factors: d.factors, correct: rightCallOf(d.ground_truth), swing_s: d.ground_truth.swing_s, trigger: d.trigger, facts });
+}
+
+const pitLossOf = (gt: Record<string, unknown> | null) => {
+  const v = (gt?.pit_loss as { normal_s?: unknown } | undefined)?.normal_s;
+  return typeof v === "number" ? v : null;
+};
+
+// The rubric for one car's decision, loading the frames and pit loss (cached per process by lib/data.ts).
+export async function momentRubricFor(d: DecisionPoint): Promise<Rubric> {
+  const [frames, gt] = await Promise.all([getFrames(d.id), getGroundTruth(d.id)]);
+  return momentRubric(d, momentFacts(d, frames, pitLossOf(gt)));
 }
 
 interface BenchJob {
@@ -49,7 +87,7 @@ interface BenchJob {
 
 function benchJobs(rubric: Rubric, car: string, situation: string, team: { call: Call; reasons: string[] }, engine: { call: Call; reasons: string[] }): BenchJob[] {
   return ([["team", team], ["engine", engine]] as const).map(([kind, b]) => ({
-    key: { decision_id: rubric.decision_id, driver_code: car, kind, reasons_hash: hashOf(b.reasons) },
+    key: { decision_id: rubric.decision_id, driver_code: car, kind, reasons_hash: hashOf([...b.reasons, `right:${rubric.correct}`]) },
     rubric, call: b.call, reasons: b.reasons, situation,
   }));
 }
@@ -74,12 +112,13 @@ interface MomentCtx {
   answers: DriverReveal[];
   cars: string[];
   forCar: (code: string | null) => DecisionPoint;
+  rubricFor: (code: string | null) => Rubric;
   jobs: BenchJob[];
 }
 
 async function momentCtx(code: string, meta: LobbyMeta): Promise<MomentCtx> {
   const decision = await requireDecision(meta.decision_id);
-  const [answers, played] = await Promise.all([getDriverAnswers(decision.id), getLobbyDriverCodes(code)]);
+  const [answers, played, frames, gt] = await Promise.all([getDriverAnswers(decision.id), getLobbyDriverCodes(code), getFrames(decision.id), getGroundTruth(decision.id)]);
   if (!answers) throw new HttpError(404, `Data for ${decision.id} not found`);
   const scorable = answers.filter((d) => d.scorable);
   const cars = played.filter((c) => scorable.some((d) => d.code === c));
@@ -87,12 +126,21 @@ async function momentCtx(code: string, meta: LobbyMeta): Promise<MomentCtx> {
     const d = scorable.find((x) => x.code === c);
     return d ? decisionForDriver(decision, d) : decision;
   };
+  const rubrics = new Map<string, Rubric>();
+  const rubricFor = (c: string | null) => {
+    const k = c ?? "";
+    if (!rubrics.has(k)) {
+      const d = forCar(c);
+      rubrics.set(k, momentRubric(d, momentFacts(d, frames, pitLossOf(gt))));
+    }
+    return rubrics.get(k)!;
+  };
   const situation = decision.blind_title ?? `Lap ${decision.lap}. ${decision.trigger}.`;
   const jobs = cars.flatMap((c) => {
     const d = forCar(c);
-    return benchJobs(momentRubric(d), c, situation, d.team, d.engine);
+    return benchJobs(rubricFor(c), c, situation, d.team, d.engine);
   });
-  return { decision, answers: scorable, cars, forCar, jobs };
+  return { decision, answers: scorable, cars, forCar, rubricFor, jobs };
 }
 
 // Grades what is left to grade, if this request wins the claim. grading: true while anything is still ungraded.
@@ -111,8 +159,8 @@ export async function ensureMomentGraded(code: string, meta: LobbyMeta, ctx?: Mo
     await Promise.all([
       ...subs.map(async (s) => {
         const d = c.forCar(s.driver_code);
-        const g = await gradeReason(momentRubric(d), s.call, s.transcript, { purpose: "grade_call", lobbyCode: code, situation });
-        const total = pointsFor(s.call, d.ground_truth.correct, stakesFor(d.ground_truth.swing_s), s.call ? g.reasoning_score : 0);
+        const g = await gradeReason(c.rubricFor(s.driver_code), s.call, s.transcript, { purpose: "grade_call", lobbyCode: code, situation });
+        const total = pointsFor(s.call, rightCallOf(d.ground_truth), stakesFor(d.ground_truth.swing_s), s.call ? g.reasoning_score : 0);
         await saveSubmissionGrade(code, s.player_name, s.decision_id, {
           score_reasoning: s.call ? g.reasoning_score : 0, total, verdict: g.verdict, credited: g.credited,
         });
@@ -133,7 +181,7 @@ export interface LuckFields {
   final_right_call?: Call;
   luck?: boolean;
   luck_events?: unknown[];
-  explanation?: string;
+  explanation?: string | null; // Round 9: null when no accepted AI verdict
 }
 
 export interface SummaryCar {
@@ -221,7 +269,7 @@ const luckOf = (src: unknown): LuckFields => {
   if (o.final_right_call === "BOX" || o.final_right_call === "STAY") out.final_right_call = o.final_right_call;
   if (typeof o.luck === "boolean") out.luck = o.luck;
   if (Array.isArray(o.luck_events)) out.luck_events = o.luck_events;
-  if (typeof o.explanation === "string") out.explanation = o.explanation;
+  if (typeof o.explanation === "string" || o.explanation === null) out.explanation = o.explanation;
   return out;
 };
 
@@ -275,7 +323,7 @@ export async function momentSummary(code: string, meta: LobbyMeta): Promise<Game
     const stakes = stakesFor(d.ground_truth.swing_s);
     return {
       kind: "player", name, driver_code: car, call: s?.call ?? null, said: s?.transcript ?? "",
-      right: s?.call ? s.call === d.ground_truth.correct : null, stakes,
+      right: s?.call ? s.call === rightCallOf(d.ground_truth) : null, stakes,
       reasoning: s?.call ? s.score_reasoning : 0, verdict: s?.call ? (s.verdict ?? null) : null, credited: s?.credited ?? [], points: s?.call ? s.total : 0,
     };
   });
@@ -285,8 +333,8 @@ export async function momentSummary(code: string, meta: LobbyMeta): Promise<Game
     const stakes = stakesFor(d.ground_truth.swing_s);
     entries.push({
       kind: j.key.kind, name: j.key.kind === "engine" ? "Engine" : d.player_role.team, driver_code: j.key.driver_code, call: j.call,
-      said: j.reasons.join(" "), right: j.call === d.ground_truth.correct, stakes, reasoning: g.reasoning_score, verdict: g.verdict,
-      credited: g.credited, points: pointsFor(j.call, d.ground_truth.correct, stakes, g.reasoning_score),
+      said: j.reasons.join(" "), right: j.call === rightCallOf(d.ground_truth), stakes, reasoning: g.reasoning_score, verdict: g.verdict,
+      credited: g.credited, points: pointsFor(j.call, rightCallOf(d.ground_truth), stakes, g.reasoning_score),
     });
   }
   const moment: SummaryMoment = { lap: ctx.decision.lap, triggers: [ctx.decision.trigger], cars: momentCars, entries };
@@ -301,7 +349,7 @@ export async function momentBenchmarks(code: string, meta: LobbyMeta) {
     const d = ctx.forCar(j.key.driver_code);
     const g = benchGrade(j, cache);
     const stakes = stakesFor(d.ground_truth.swing_s);
-    return { job: j, decision: d, grade: g, stakes, points: pointsFor(j.call, d.ground_truth.correct, stakes, g.reasoning_score) };
+    return { job: j, decision: d, grade: g, stakes, points: pointsFor(j.call, rightCallOf(d.ground_truth), stakes, g.reasoning_score) };
   });
 }
 
@@ -311,12 +359,12 @@ function raceSituation(f: RaceFreeze): string {
   return f.blind.blind_title;
 }
 
-function raceJobs(raceKey: string, plan: { lap: number; drivers: string[] }[], laps: number[], cars: string[], freezes: RaceFreeze[]): BenchJob[] {
+function raceJobs(raceKey: string, totalLaps: number, plan: { lap: number; drivers: string[] }[], laps: number[], cars: string[], freezes: RaceFreeze[]): BenchJob[] {
   const out: BenchJob[] = [];
   for (const entry of plan.filter((e) => laps.includes(e.lap))) {
     for (const car of cars.filter((c) => entry.drivers.includes(c))) {
       const f = freezes.find((x) => x.lap === entry.lap && x.driver_code === car);
-      if (f) out.push(...benchJobs(freezeRubric(raceKey, f), car, raceSituation(f), f.full.team_call, f.full.engine));
+      if (f) out.push(...benchJobs(freezeRubric(raceKey, atFlag(f), totalLaps), car, raceSituation(f), f.full.team_call, f.full.engine));
     }
   }
   return out;
@@ -332,7 +380,7 @@ export async function ensureRaceGraded(code: string, meta: LobbyMeta, race: Race
   if (!done) return { grading: false };
   const [calls, freezes, cars] = await Promise.all([getRaceCalls(code), getRaceFreezes(race.race_key), getLobbyDriverCodes(code)]);
   const todo = calls.filter((c) => !c.graded && ((c.kind === "freeze" && laps.includes(c.lap)) || (c.kind === "audible" && done && c.status === "scored")));
-  const jobs = raceJobs(race.race_key, plan, laps, cars, freezes);
+  const jobs = raceJobs(race.race_key, race.total_laps, plan, laps, cars, freezes);
   const cache = await getBenchmarkGrades(jobs.map((j) => j.key));
   const missing = jobs.filter((j) => !cache.has(keyOf(j.key)));
   if (!todo.length && !missing.length) return { grading: false };
@@ -344,7 +392,7 @@ export async function ensureRaceGraded(code: string, meta: LobbyMeta, race: Race
         let situation = "";
         if (c.kind === "freeze") {
           const f = freezes.find((x) => x.lap === c.lap && x.driver_code === c.driver_code);
-          if (f) [rubric, situation] = [freezeRubric(race.race_key, f), raceSituation(f)];
+          if (f) [rubric, situation] = [freezeRubric(race.race_key, atFlag(f), race.total_laps), raceSituation(f)];
         } else {
           const truth = await getAudibleTruth(race.race_key, c.driver_code, c.lap);
           if (truth?.scorable && truth.correct) [rubric, situation] = [audibleRubric(c.driver_code, c.lap, truth), `Lap ${c.lap}. Green flag. Box now call.`];
@@ -365,8 +413,8 @@ export async function ensureRaceGraded(code: string, meta: LobbyMeta, race: Race
 }
 
 // Team and engine grades for one car's freeze (race leaderboard), from the cache or the rubric score.
-export async function raceBenchmarkGrades(raceKey: string, items: { car: string; freeze: RaceFreeze }[]) {
-  const jobs = items.flatMap(({ car, freeze }) => benchJobs(freezeRubric(raceKey, freeze), car, raceSituation(freeze), freeze.full.team_call, freeze.full.engine));
+export async function raceBenchmarkGrades(raceKey: string, totalLaps: number, items: { car: string; freeze: RaceFreeze }[]) {
+  const jobs = items.flatMap(({ car, freeze }) => benchJobs(freezeRubric(raceKey, atFlag(freeze), totalLaps), car, raceSituation(freeze), freeze.full.team_call, freeze.full.engine));
   const cache = await getBenchmarkGrades(jobs.map((j) => j.key));
   return jobs.map((j) => {
     const g = benchGrade(j, cache);
@@ -387,7 +435,7 @@ export async function raceSummary(code: string, meta: LobbyMeta, race: RaceEntry
   const items = plan.flatMap((e) =>
     played.filter((car) => e.drivers.includes(car)).map((car) => ({ car, freeze: freezes.find((x) => x.lap === e.lap && x.driver_code === car) })),
   ).filter((x): x is { car: string; freeze: RaceFreeze } => !!x.freeze);
-  const grades = await raceBenchmarkGrades(race.race_key, items);
+  const grades = await raceBenchmarkGrades(race.race_key, race.total_laps, items);
   const moments: SummaryMoment[] = plan.map((e) => {
     const here = items.filter((x) => x.freeze.lap === e.lap);
     const momentCars: MomentCar[] = here.map(({ car, freeze: f }) => ({
@@ -401,7 +449,7 @@ export async function raceSummary(code: string, meta: LobbyMeta, race: RaceEntry
         const mc = momentCars.find((x) => x.code === (c?.driver_code ?? p.driver_code))!;
         return {
           kind: "player" as const, name: p.name, driver_code: mc.code, call: c?.call ?? null, said: c?.transcript ?? "",
-          right: c?.call ? c.call === mc.correct : null, stakes: mc.stakes, reasoning: c?.call ? c.score_reasoning : 0,
+          right: c?.call ? c.call === rightCallOf(mc) : null, stakes: mc.stakes, reasoning: c?.call ? c.score_reasoning : 0,
           verdict: c?.call ? (c.verdict ?? null) : null, credited: c?.credited ?? [], points: c?.call ? c.total : 0,
         };
       });
@@ -410,7 +458,7 @@ export async function raceSummary(code: string, meta: LobbyMeta, race: RaceEntry
       const f = here.find((x) => x.car === g.car)!.freeze;
       entries.push({
         kind: g.kind, name: g.kind === "engine" ? "Engine" : mc.team, driver_code: g.car, call: g.call,
-        said: (g.kind === "engine" ? f.full.engine.reasons : f.full.team_call.reasons).join(" "), right: g.call === mc.correct,
+        said: (g.kind === "engine" ? f.full.engine.reasons : f.full.team_call.reasons).join(" "), right: g.call === rightCallOf(mc),
         stakes: g.stakes, reasoning: g.grade.reasoning_score, verdict: g.grade.verdict, credited: g.grade.credited, points: g.points,
       });
     }

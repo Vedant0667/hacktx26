@@ -185,6 +185,49 @@ def test_freeze_detection_matches_scrambled_future_for_exported_freezes():
             assert strip(T.detect(ctx, L)) == strip(T.detect(scrambled(ctx, L, 7 + L), L)), (ctx["spec"]["key"], L)
 
 
+def test_luck_events_on_known_laps():
+    """Round 9: luck = an SC/VSC deployed, a red flag or a rain change on laps L..end, not the moment's own trigger."""
+    q = next(c for c in CTXS if c["spec"]["key"] == "2025-qatar")
+    s = next(c for c in CTXS if c["spec"]["key"] == "2026-singapore")
+    ev = lambda ctx, L, end, own=(): T.luck_events(ctx["periods"], ctx["reds"], ctx["rain"], L, end, set(own))
+    assert ev(q, 3, 26) == [{"lap": 7, "kind": "SC"}]          # Qatar SC deployed on lap 7
+    assert ev(q, 7, 26, ["SC"]) == []                           # the lap-7 SC is the moment's own trigger
+    assert ev(q, 7, 26) == [{"lap": 7, "kind": "SC"}]           # ... but luck for a call that did not see it
+    assert ev(q, 8, 57) == []
+    assert ev(s, 24, 62) == [{"lap": 39, "kind": "VSC"}]        # Singapore VSC on lap 39
+    assert ev(s, 5, 10) == [{"lap": 8, "kind": "VSC"}]          # and on lap 8
+    assert ev(s, 39, 62, ["VSC", "FAST_DEG"]) == []
+    assert ev(s, 24, 38) == []                                  # measurement ended before the VSC
+    assert q["reds"] == [] and s["reds"] == []                  # "CHEQUERED FLAG" is not a red flag
+    rc = [{"lap_number": 12, "category": "Flag", "flag": "RED", "message": "RED FLAG"},
+          {"lap_number": 57, "category": "Flag", "flag": "CHEQUERED", "message": "CHEQUERED FLAG"}]
+    assert T.red_flags(rc) == [12]
+    assert T.luck_events([], [12], {}, 10, 20) == [{"lap": 12, "kind": "RED_FLAG"}]
+    assert T.luck_events([], [], {10: 0, 11: 1, 14: 0}, 10, 20) == [{"lap": 11, "kind": "RAIN_START"}, {"lap": 14, "kind": "RAIN_STOP"}]   # laps 12-13 unsampled
+    assert T.luck_events([], [], {9: 0, 10: 1, 12: 0}, 11, 20) == [{"lap": 12, "kind": "RAIN_STOP"}]   # lap-10 change known at L=11
+
+
+def test_exported_luck_rows():
+    """Every exported freeze has luck_events (full only); facts only for luck rows and only pre-call stops."""
+    out = T.export()
+    lucky = [f for f in out["race_freezes"] if f["full"]["luck_events"]]
+    assert all("luck_events" in f["full"] for f in out["race_freezes"])
+    assert not any("luck" in k for f in out["race_freezes"] for k in f["blind"]), "luck in a blind row"
+    assert not any(f["race_key"] == "2025-qatar" for f in lucky), "Qatar has no SC after lap 7"
+    lec = next(f for f in lucky if f["race_key"] == "2026-singapore" and f["driver_code"] == "LEC" and f["lap"] == 24)
+    assert lec["full"]["luck_events"] == [{"lap": 39, "kind": "VSC"}]
+    assert 0 < len(lucky) <= 40, len(lucky)
+    for f in out["race_freezes"]:
+        facts = f["full"].get("luck_facts")
+        assert bool(facts) == bool(f["full"]["luck_events"])
+        if facts:
+            L = f["lap"]
+            cars = [facts["call"]["you"], facts["call"]["car_ahead"], facts["call"]["car_behind"]] + facts["call"]["cars_ahead_nearest"]
+            assert all(c["last_stop_lap"] is None or c["last_stop_lap"] < L for c in cars if c), (f["driver_code"], L)
+            assert facts["measured"]["right_call_by_measurement"] == f["full"]["correct"]
+            assert facts["measured"]["swing_s"] == f["full"]["swing_s"]
+
+
 if __name__ == "__main__":
     for name, fn in list(globals().items()):
         if name.startswith("test_"):

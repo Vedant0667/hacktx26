@@ -352,6 +352,9 @@ def call_facts(frames, L, code, inputs, stops, n_laps, triggers, cap=None):
         "stops_owed_rule": f"{cap}-lap stint cap" if cap else "two dry compounds: one stop needed if none made yet",
         "cars_ahead_nearest": ahead,
         "cars_ahead_stopped": sum(1 for c in ahead if c["stops_made"]), "cars_ahead_listed": len(ahead),
+        "pitted_last_lap_within_3_places": [d["code"] for d in order if d["code"] != code
+                                            and abs(d["position"] - order[i]["position"]) <= 3
+                                            and L - 1 in stops.get(d["id"], [])],
     }
 
 
@@ -400,6 +403,7 @@ def lap_rows(key, frames, clean):
 
 
 def main():
+    import triggers  # noqa: E402  (imports this module; loaded here, not at the top, to avoid a cycle)
     OUT.mkdir(parents=True, exist_ok=True)
     PUB.mkdir(parents=True, exist_ok=True)
     index, engine_calls = [], {}
@@ -466,6 +470,27 @@ def main():
         (pd / "frames.json").write_text(json.dumps(blind, separators=(",", ":")))
         engine_calls[dp["id"]] = {**decision["engine"], "inputs": e["inputs"]}
         drivers = driver_answers(race, results, frames, dp, track, team)
+        # Round 9: luck after the call (a later SC/VSC, red flag or rain change) up to the end of each car's
+        # measurement. The decision's own SC/VSC on lap L was known at the call. full only, never blind.
+        luck_src = triggers.luck_source(key)
+        code_of = {r["Driver"]["driverId"]: r["Driver"]["code"] for r in results}
+        for x in drivers:
+            tgx = x["full"]["ground_truth_detail"]
+            end = max(dp["window"][1], tgx["end_lap"])
+            ev = triggers.luck_events(luck_src["periods"], luck_src["reds"], luck_src["rain"], dp["lap"], end,
+                                      {dp["trigger"]}) if (luck_src and x["scorable"]) else []
+            x["full"]["luck_events"] = ev
+            if ev:
+                boxed = [code_of[i] for i in (tgx["group_player_call"] if tgx["player_call"] == "BOX" else tgx["group_other_call"])]
+                stayed = [code_of[i] for i in (tgx["group_other_call"] if tgx["player_call"] == "BOX" else tgx["group_player_call"])]
+                stops_by_code = {code_of[i]: sl for i, sl in race["stops"].items() if i in code_of}
+                x["full"]["luck_facts"] = {
+                    "call": call_facts(frames, dp["lap"], x["code"], x["engine_inputs"], race["stops"], race["n_laps"],
+                                       [dp["trigger"]], track.get("max_stint_laps")),
+                    "after_call": triggers.luck_after(ev, luck_src["periods"], stops_by_code, [x["code"]] + boxed + stayed),
+                    "measured": measured_facts(tgx["correct"], tgx["swing_s"], dp["window"], end,
+                                               [c for c in boxed if c != x["code"]], [c for c in stayed if c != x["code"]]),
+                }
         mine = next(x for x in drivers if x["code"] == pcode)
         assert mine["scorable"] and mine["full"]["ground_truth_detail"] == tg, f"{dp['id']}: per-car answer drifted"
         (d / "drivers.json").write_text(json.dumps(drivers, indent=1))
@@ -513,7 +538,6 @@ def main():
     (PUB / "index.json").write_text(json.dumps(index, indent=1))
     (OUT / "engine_calls.json").write_text(json.dumps(engine_calls, indent=1))
     # Race mode (docs/09-race-mode.md): freezes per driver, picker rows and audible truth, from engine/triggers.py.
-    import triggers  # noqa: E402  (imports this module; loaded late to avoid a cycle)
     load.update(triggers.export())
     for key in sorted({r["race_key"] for r in load["race_freezes"]}):
         fz = [r for r in load["race_freezes"] if r["race_key"] == key]
@@ -521,6 +545,11 @@ def main():
         print(f"race mode {key}: {len(fz)} freezes over {len({r['driver_code'] for r in fz})} drivers "
               f"(BOX {nb}, STAY {len(fz) - nb}), "
               f"{sum(r['truth']['scorable'] for r in load['race_audibles'] if r['race_key'] == key)} scorable audible laps")
+        lucky = [r for r in fz if r["full"]["luck_events"]]
+        print(f"  luck events after the call: {len(lucky)} freezes "
+              + ", ".join(f"{r['driver_code']} L{r['lap']} {'+'.join(e['kind'] + str(e['lap']) for e in r['full']['luck_events'])}" for r in lucky))
+    lucky_dd = [(d["id"], x["code"]) for d in load["decision_points"] for x in d["drivers"] if x["full"]["luck_events"]]
+    print(f"moment decisions: {len(lucky_dd)} cars with luck events after the call {lucky_dd}")
     (BUILD / "load.json").write_text(json.dumps(load, separators=(",", ":")))
     print(f"\nwrote {BUILD.relative_to(ROOT)}/load.json: {len(load['races'])} races, "
           f"{len(load['race_laps'])} lap rows, {len(load['decision_points'])} decision points")

@@ -6,6 +6,10 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { buildRubric, gradeProblems, gradeReason, groundedIn, isEmptyReason, rubricScore, type AskMuse } from "../lib/muse";
 import { pointsFor, rankLabel, scoreCall, sharedRanks, stakesFor } from "../lib/scoring";
+import { rowsToFrames, type RaceFreeze } from "../lib/data";
+import type { DecisionPoint } from "../lib/types";
+import { momentFacts, momentRubric } from "../app/api/_lib/grading";
+import { freezeRubric } from "../app/api/_lib/race";
 
 const root = path.resolve(__dirname, "..");
 const src = (p: string) => readFileSync(path.join(root, p), "utf8");
@@ -20,18 +24,14 @@ async function test(name: string, fn: () => void | Promise<void>) {
   }
 }
 
-// Qatar 2025 lap 7 as the engine saw it for Piastri (from the seeded decision).
+// Qatar 2025 lap 7 for Piastri, facts as the race data gives them (no engine fields anywhere).
 const qatar = buildRubric({
   decision_id: "qatar-2025-l7",
   factors: ["tyre_age", "cheap_stop_under_sc", "similar_cars_pitted", "track_position"],
   correct: "BOX",
   swing_s: 15.6,
   trigger: "SC",
-  engine_reasons: [
-    "Leading under the SC. 9 of 9 cars within 14.2 s behind expected to pit.",
-    "SC stop costs 14.2 s, green-flag stop 28.3 s.",
-    "Tyres 7 laps old, 50 laps left, 25-lap cap: 2 more stops owed.",
-  ],
+  facts: { position: 1, compound: "MEDIUM", tyre_age: 7, laps_left: 50, stopped_yet: false, pit_loss_green_s: 28.3, field: { pitted: 17, of: 20, from: 7, to: 9 } },
 });
 const ctx = { purpose: "grade_call", lobbyCode: null, situation: "Lap 7. Safety car." };
 
@@ -79,10 +79,35 @@ async function main() {
     assert.deepEqual(qatar.points.map((p) => p.id), ["tyre_age", "cheap_stop_under_sc", "similar_cars_pitted", "track_position"]);
     assert.equal(qatar.points.reduce((a, p) => a + p.max, 0), 50);
     assert.equal(qatar.points.find((p) => p.id === "tyre_age")!.label, "stops owed");
-    assert.match(qatar.points.find((p) => p.id === "tyre_age")!.here, /2 more stops owed/);
-    const green = buildRubric({ decision_id: "g", factors: ["tyre_age", "cheap_stop_under_sc", "similar_cars_pitted", "track_position"], correct: "STAY", swing_s: 4, trigger: "GREEN", engine_reasons: [] });
+    assert.match(qatar.points.find((p) => p.id === "tyre_age")!.here, /7 laps old, 50 laps left; no stop yet, so at least one stop is still owed/);
+    assert.match(qatar.points.find((p) => p.id === "cheap_stop_under_sc")!.here, /14\.2 s under the safety car, 28\.3 s at green/);
+    const green = buildRubric({ decision_id: "g", factors: ["tyre_age", "cheap_stop_under_sc", "similar_cars_pitted", "track_position"], correct: "STAY", swing_s: 4, trigger: "GREEN", facts: {} });
     assert.ok(!green.points.some((p) => p.id.startsWith("cheap_stop")), "no cheap stop under green");
     assert.equal(green.points.reduce((a, p) => a + p.max, 0), 50);
+  });
+
+  await test("rubric builds from race data alone, without any engine field", () => {
+    assert.doesNotMatch(src("lib/muse/rubric.ts"), /engine_reasons|engine_inputs|\.engine\b/, "the rubric reads engine output again");
+    const raceSrc = src("app/api/_lib/race.ts");
+    const fnStart = raceSrc.indexOf("export function freezeRubric");
+    assert.doesNotMatch(raceSrc.slice(fnStart, raceSrc.indexOf("\n}\n", fnStart)), /engine/, "freezeRubric reads the engine");
+    const load = JSON.parse(readFileSync(path.join(root, "build/race-data/load.json"), "utf8")) as {
+      race_laps: (Parameters<typeof rowsToFrames>[0][number] & { race_key: string })[];
+      decision_points: { id: string; full: DecisionPoint }[];
+      race_freezes: (RaceFreeze & { race_key: string })[];
+    };
+    const d = load.decision_points.find((x) => x.id === "qatar-2025-l7")!.full;
+    const noEngine = { ...d, engine: undefined, team: undefined } as unknown as DecisionPoint;
+    const frames = rowsToFrames(load.race_laps.filter((r) => r.race_key === "2025-qatar"));
+    const facts = momentFacts(noEngine, frames, 28.3);
+    assert.deepEqual([facts.position, facts.tyre_age, facts.laps_left, facts.stopped_yet], [1, 7, 50, false]);
+    const r = momentRubric(noEngine, facts);
+    assert.equal(r.points.reduce((a, p) => a + p.max, 0), 50);
+    assert.equal(rubricScore(r, "box we'll need to pit once more anyway").credited[0], "tyre_age");
+    const fz = load.race_freezes[0];
+    const stripped = { blind: fz.blind, full: { ...fz.full, engine: undefined, engine_inputs: undefined } } as unknown as RaceFreeze;
+    const fr = freezeRubric(fz.race_key, stripped, 62);
+    assert.ok(fr.points.length > 0 && fr.points.every((p) => p.here.length > 0));
   });
 
   await test("fallback scorer: the playtest reason and other synonyms", () => {

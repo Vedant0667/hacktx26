@@ -7,6 +7,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import {
   AUDIBLE_GAP_LAPS,
+  answerLaps,
   audibleAllowed,
   buildFreezePlan,
   framesFor,
@@ -248,6 +249,19 @@ test("freeze reveal carries no pair-by-pair future gaps", () => {
   const r = freezeReveal(f) as Record<string, unknown>;
   assert.ok(!("detail" in r) && !("engine_inputs" in r));
   assert.ok(["BOX", "STAY"].includes(r.correct as string));
+});
+
+test("Round 7: no right call, swing or score until the flag", () => {
+  const plan = [{ lap: 24, drivers: ["LEC"] }, { lap: 39, drivers: ["LEC", "HAM"] }];
+  for (const phase of ["waiting", "replay", "freeze", "reveal_freeze"] as RacePhase[]) {
+    assert.deepEqual(answerLaps({ phase, plan }), [], phase);
+  }
+  assert.deepEqual(answerLaps({ phase: "done", plan }), [24, 39]);
+  const src = (p: string) => readFileSync(path.join(root, p), "utf8");
+  assert.match(src("app/api/lobby/[code]/race/reveal/route.ts"), /const revealed = answerLaps\(clock\)/, "race/reveal?lap= answers before the flag");
+  assert.match(src("app/api/leaderboard/route.ts"), /const revealed = answerLaps\(clock\)/, "race leaderboard counts scores before the flag");
+  assert.match(src("app/api/lobby/[code]/submit/route.ts"), /submission: hidden\(row\)/, "a race call response shows its score before the flag");
+  assert.match(src("app/api/_lib/grading.ts"), /if \(!done\) return \{ grading: false \}/, "race calls are graded before the flag");
 });
 
 console.log(`${n} race-mode checks passed`);

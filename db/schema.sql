@@ -305,3 +305,30 @@ create table if not exists benchmark_grades (
   created_at timestamptz not null default now(),
   primary key (decision_id, driver_code, kind, reasons_hash)
 );
+
+-- Round 9: luck-aware verdicts. engine/build.py stores luck_events (an SC/VSC, red flag or rain change after the
+-- call, before its measurement ended) in race_freezes.full and decision_drivers.full. scripts/ai-verdicts.mjs asks
+-- Muse Spark once per such row which call was right given only what was knowable at the call, validates the
+-- answer, and stores it here. kind 'freeze': scope = race key. kind 'decision': scope = decision id. lib/data.ts
+-- uses a row only when status = 'accepted' and its measured_correct and luck_events still match the seeded row,
+-- else the measured answer stands. Read only after the end of a game (security-contract.md Round 9).
+create table if not exists ai_verdicts (
+  kind text not null check (kind in ('freeze', 'decision')),
+  scope text not null,
+  driver_code text not null,
+  lap int not null,
+  luck_events jsonb not null,
+  measured_correct text not null check (measured_correct in ('BOX', 'STAY')),
+  measured_swing_s double precision not null,
+  right_call text check (right_call in ('BOX', 'STAY')),
+  luck_changed_outcome boolean,
+  explanation text,
+  status text not null check (status in ('accepted', 'rejected', 'no_answer')),
+  final_right_call text not null check (final_right_call in ('BOX', 'STAY')),
+  problems jsonb not null default '[]',
+  attempts int not null default 0,
+  input_hash text not null,
+  model text not null,
+  created_at timestamptz not null default now(),
+  primary key (kind, scope, driver_code, lap)
+);

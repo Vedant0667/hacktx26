@@ -114,7 +114,7 @@ async function raceLeaderboard(req: NextRequest, race: RaceEntry): Promise<Respo
     .filter((e) => revealed.includes(e.lap))
     .flatMap((e) => cars.filter((car) => e.drivers.includes(car)).map((car) => ({ car, freeze: freezes.find((x) => x.lap === e.lap && x.driver_code === car) })))
     .filter((x): x is { car: string; freeze: NonNullable<typeof x.freeze> } => !!x.freeze);
-  const grades = await raceBenchmarkGrades(race.race_key, items);
+  const grades = await raceBenchmarkGrades(race.race_key, race.total_laps, items);
   const benchmarks: RaceRow[] = [];
   for (const car of cars) {
     const info = race.drivers.find((d) => d.code === car);
