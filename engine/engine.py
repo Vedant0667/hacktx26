@@ -63,8 +63,8 @@ def decide(frames, lap, player_code, track, radio_signals=None):
     status = now["track_status"]
     before = {d["code"]: d for d in prev["drivers"]}   # state at the start of lap L
     me = before[player_code]
-    running = {d["code"] for d in now["drivers"]}
-    rivals = [d for c, d in before.items() if c != player_code and c in running]
+    # Everyone who started lap L; a retirement during lap L isn't known at the call.
+    rivals = [d for c, d in before.items() if c != player_code]
     # At the moment of the call we only see stops by cars ahead on the road: they reach pit entry first.
     ahead = [r for r in rivals if r["position"] < me["position"]]
     pitted_now = {d["code"] for d in now["drivers"] if d["pitted_this_lap"]} & {r["code"] for r in ahead}
@@ -85,7 +85,13 @@ def decide(frames, lap, player_code, track, radio_signals=None):
     # 3. tyre state
     # tyre age on lap L (laps on the set including this one), matching how pit walls quote it
     now_by = {d["code"]: d for d in now["drivers"]}
-    ages = sorted(now_by[r["code"]]["tyre_age"] or 0 for r in rivals)
+
+    def age_on_lap(code):
+        # A car that retires during lap L has no lap-L row; carry its tyres one lap on.
+        if code in now_by:
+            return now_by[code]["tyre_age"] or 0
+        return (before[code]["tyre_age"] or 0) + 1
+    ages = sorted(age_on_lap(r["code"]) for r in rivals)
     med_age = ages[len(ages) // 2]
     laps_left = track["total_laps"] - lap
     cap = track.get("max_stint_laps")
@@ -108,7 +114,7 @@ def decide(frames, lap, player_code, track, radio_signals=None):
         for r in rivals:
             g = r["gap_to_leader_s"]
             if r["position"] > me["position"] and g is not None and g - my_gap < reduced:
-                r_tyre, _ = tyre_need(now_by[r["code"]]["tyre_age"] or 0)
+                r_tyre, _ = tyre_need(age_on_lap(r["code"]))
                 if W_DISCOUNT * (saving / normal) + W_TYRE * r_tyre > RIVAL_PIT_THRESHOLD:
                     expected_pit += 1
                 else:

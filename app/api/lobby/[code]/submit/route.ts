@@ -6,7 +6,7 @@ import { CALL_WINDOW_S, percentile, scoreCall } from "@/lib/scoring";
 import type { Submission } from "@/lib/types";
 import { handle, HttpError, normalizeCode, readBody, requireDecision } from "../../../_lib/http";
 
-const REVEAL_GRACE_S = 5;
+const REVEAL_GRACE_S = 2;
 
 const Body = z.object({
   player_name: z.string().trim().min(1).max(24),

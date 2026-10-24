@@ -1,7 +1,7 @@
 {
  "id": "qatar-2025-l7",
  "race": "2025 Qatar GP",
- "blind_title": "Lap 7. Safety car. You're in P1, tyres 7 laps old.",
+ "blind_title": "Lap 7. Safety car. You're in P1 on 7-lap-old mediums.",
  "lap": 7,
  "trigger": "SC",
  "player_role": {
@@ -36,7 +36,7 @@
   "call": "BOX",
   "confidence": 0.95,
   "reasons": [
-   "Leading under the SC. 8 of 8 cars within 14.2 s behind expected to pit.",
+   "Leading under the SC. 9 of 9 cars within 14.2 s behind expected to pit.",
    "SC stop costs 14.2 s, green-flag stop 28.3 s.",
    "Tyres 7 laps old, 50 laps left, 25-lap cap: 2 more stops owed."
   ]

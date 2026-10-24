@@ -9,7 +9,10 @@ export function redactForPhase(state: LobbyStateResponse): LobbyStateResponse {
   if (isRevealed(state.phase)) return state;
   return {
     ...state,
-    submissions: state.submissions.map((s) => ({
+    // Re-sorted by name: the stored order is by score, which would give the answer away.
+    submissions: [...state.submissions]
+      .sort((a, b) => a.player_name.localeCompare(b.player_name))
+      .map((s) => ({
       ...s,
       call: null,
       reasons: [],
@@ -18,6 +21,6 @@ export function redactForPhase(state: LobbyStateResponse): LobbyStateResponse {
       score_call: 0,
       score_reasoning: 0,
       total: 0,
-    })),
+      })),
   };
 }

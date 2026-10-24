@@ -3,7 +3,7 @@
   "call": "BOX",
   "confidence": 0.95,
   "reasons": [
-   "Leading under the SC. 8 of 8 cars within 14.2 s behind expected to pit.",
+   "Leading under the SC. 9 of 9 cars within 14.2 s behind expected to pit.",
    "SC stop costs 14.2 s, green-flag stop 28.3 s.",
    "Tyres 7 laps old, 50 laps left, 25-lap cap: 2 more stops owed."
   ],
@@ -20,7 +20,7 @@
    "laps_left": 50,
    "stops_owed": 2,
    "places_at_risk": 0,
-   "behind_expected_to_pit": 8,
+   "behind_expected_to_pit": 9,
    "score": 3.0,
    "p_box": 0.953,
    "radio_delta": 0.0
@@ -28,7 +28,7 @@
  },
  "singapore-2026-vsc": {
   "call": "BOX",
-  "confidence": 0.94,
+  "confidence": 0.95,
   "reasons": [
    "1 of 2 cars ahead pitted under the VSC, 1 of the 2 most similar.",
    "VSC stop costs 17.6 s, green-flag stop 23.5 s.",
@@ -36,7 +36,7 @@
   ],
   "inputs": {
    "track_status": "VSC",
-   "field_share_weighted": 0.771,
+   "field_share_weighted": 0.818,
    "pitted_count": 1,
    "rivals": 2,
    "similar_top5_pitted": 1,
@@ -48,8 +48,8 @@
    "stops_owed": null,
    "places_at_risk": 1,
    "behind_expected_to_pit": 1,
-   "score": 2.733,
-   "p_box": 0.939,
+   "score": 2.92,
+   "p_box": 0.949,
    "radio_delta": 0.0
   }
  }

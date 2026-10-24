@@ -99,6 +99,17 @@ def manual_compounds(key):
     return {(c["driver"], c["stint"]): c["compound"] for c in m.get("compounds", [])}, m
 
 
+def openf1_compounds(of1, results):
+    """(driverId, stint) -> compound from OpenF1 stints.json; driver numbers mapped through the Jolpica results."""
+    by_number = {int(r["number"]): r["Driver"]["driverId"] for r in results}
+    out = {}
+    for s in json.loads((of1 / "stints.json").read_text()):
+        d = by_number.get(s["driver_number"])
+        if d and s.get("compound") and s["compound"] != "UNKNOWN":
+            out[(d, s["stint_number"])] = s["compound"]
+    return out
+
+
 def openf1_dir(key):
     for d in OF1.glob("*"):
         if d.is_dir() and d.name.startswith(key):
@@ -272,7 +283,9 @@ def main():
         comps, man = manual_compounds(key)
         of1 = openf1_dir(key)
         if of1:
-            print(f"NOTE {dp['id']}: OpenF1 data present at {of1} (compounds/race control not yet merged; TODO)")
+            # OpenF1 stints are timing data; hand-entered compounds only fill what it lacks.
+            comps = {**comps, **openf1_compounds(of1, results)}
+            print(f"NOTE {dp['id']}: compounds from OpenF1 {of1.name} ({len(comps)} stints)")
         ts = man.get("track_status", {})
         sc = set(ts.get("SC", {}).get("laps", []))
         vsc = set(ts.get("VSC", {}).get("laps", []))
