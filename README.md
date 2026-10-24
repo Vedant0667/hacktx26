@@ -66,7 +66,7 @@ Checks: `.claude/verify.sh` runs the type-check, lint, engine tests, trigger tes
 - The test deployment sits behind a shared password. Every page, API route and data route is gated.
 - Hosts and players get random tokens on create and join. Only hashes are stored.
 - Joining requires consent to show your nickname and spoken reasons to the room and on the leaderboard. A daily job deletes lobbies, names and calls once they are more than 24 hours old, so nothing stays longer than about 48 hours.
-- Two security audits and their fixes are in `docs/audits/`.
+- The code went through three rounds of security review before the first deploy, and every finding was fixed.
 
 ## Repository map
 
@@ -78,7 +78,6 @@ Checks: `.claude/verify.sh` runs the type-check, lint, engine tests, trigger tes
 | `lib/muse/` | Muse Spark client, prompts and spend cap |
 | `engine/` | Data build, engine, ground truth and race-mode trigger detection, with tests |
 | `scripts/` | Migrate, seed, purge and test scripts |
-| `docs/` | Research, build plan, design and copy rules, audits |
 
 ## Open source used
 

@@ -46,3 +46,6 @@ tasks/todo.md
 # scripts/seed-db.mjs; the old static trees must not come back.
 /public/data/
 /server-data/
+docs/
+PRODUCT.md
+tasks/
