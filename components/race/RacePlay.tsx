@@ -1,8 +1,8 @@
 "use client";
 // The phone in a race lobby (Round 6): join (with the race's driver list in a "choose" lobby), wait, follow the
 // replay with telemetry and the audible control, make the call at each freeze where your car has one (the
-// existing CallPad), "no call needed" otherwise, a short freeze reveal, and your race result at the flag.
-// No scores show mid-race.
+// existing CallPad), "no call needed" otherwise, then "calls locked" while the race goes on (Round 7: nobody
+// learns who was right until the flag), and the shared game summary at the flag.
 import { useState, type FormEvent } from "react";
 import { COPY } from "@/lib/copy";
 import { ApiError, api, type BlindDriver, type BlindFreeze, type JoinResponse, type LobbyStateResponse, type RaceEntry } from "@/lib/client/api";
@@ -18,12 +18,9 @@ import {
   racePhase,
   replayDecision,
   useAudibleCooldown,
-  useFreezeReveal,
-  useRaceBoard,
   useRaceEntry,
   useRaceFrames,
   useRaceFreeze,
-  useRaceReveal,
   type RaceLobby,
 } from "@/lib/client/raceLobby";
 import { telemetry } from "@/lib/client/telemetry";
@@ -34,6 +31,8 @@ import { FieldHead, Foot, JoinForm } from "../play/PlayScreen";
 import { LapChart, NeighbourList, simpleChartLabel } from "../Telemetry";
 import { CallWord, ConnNotice, ErrorText, ModeToggle, ScChip, TrackStrip, TyreChip } from "../ui";
 import { RaceProgress, Triggers } from "./parts";
+import { PhoneSummary, Scoring } from "../EndScreen";
+import { useSummary } from "@/lib/client/results";
 
 export function RacePlay({
   code,
@@ -65,9 +64,7 @@ export function RacePlay({
   // Token-gated routes: only once this phone has joined.
   const frames = useRaceFrames(code, joined ? lobby : null);
   const freeze = useRaceFreeze(code, joined ? lobby : null);
-  const freezeRev = useFreezeReveal(code, joined && phase === "reveal_freeze" ? r.freeze_lap : null);
-  const full = useRaceReveal(code, joined && phase === "done");
-  const board = useRaceBoard(r.race_key, code, "done", joined && phase === "done");
+  const { summary, failed } = useSummary(code, joined && phase === "done");
   const t = useTicker(serverNow, 200);
 
   if (!joined || !me) {
@@ -143,8 +140,8 @@ export function RacePlay({
       {phase === "freeze" && (
         <NoCall race={race} me={me} car={myCar} freeze={freeze?.drivers ?? null} loading={!!myCar && need.includes(myCar)} left={Math.max(0, Math.ceil(CALL_WINDOW_S - elapsed / 1000))} />
       )}
-      {phase === "reveal_freeze" && <FreezeResult race={race} me={me} car={myCar} rev={freezeRev} left={Math.max(0, Math.ceil((REVEAL_HOLD_MS - elapsed) / 1000))} />}
-      {phase === "done" && <RaceResult race={race} me={me} car={myCar} board={board} full={full} />}
+      {phase === "reveal_freeze" && <Locked left={Math.max(0, Math.ceil((REVEAL_HOLD_MS - elapsed) / 1000))} />}
+      {phase === "done" && (summary ? <PhoneSummary summary={summary} me={me} /> : <Scoring elapsedMs={elapsed} failed={failed} />)}
     </main>
   );
 }
@@ -420,121 +417,13 @@ function NoCall({
   );
 }
 
-// Minimal freeze reveal on the phone: your take, then the right call for your car. No scores mid-race.
-function FreezeResult({ race, me, car, rev, left }: { race: RaceLobby; me: string; car: string | null; rev: ReturnType<typeof useFreezeReveal>; left: number }) {
-  const r = race.race;
-  if (!rev) return <p className="px-5 pt-24 text-lg font-bold">{COPY.reveal.grading}</p>;
-  const mineCalled = car ? rev.drivers[car] : null;
-  const take = rev.calls.find((c) => c.kind === "freeze" && c.player_name === me);
-  const shown = mineCalled ? [[car!, mineCalled] as const] : Object.entries(rev.drivers).filter((e) => e[1] != null);
+// Round 7: after a freeze the race goes on. No right call, swing or score until the flag.
+function Locked({ left }: { left: number }) {
   return (
-    <>
-      <Head race={race} me={me} status={COPY.race.revealTag(r.freeze_index + 1, r.freeze_count, rev.lap)}>
-        {mineCalled ? (
-          <>
-            <span className="meta">{COPY.race.yourCall}</span>
-            <p className="display mt-1 text-[3rem] leading-none">{take?.call ? COPY.freeze.options[take.call] : COPY.race.noCall}</p>
-            {take?.transcript && <q className="mt-3 block text-lg leading-snug">{take.transcript}</q>}
-          </>
-        ) : (
-          <h1 className="display text-[2.5rem] leading-[0.95]">{car ? COPY.race.noCallHere(car) : COPY.race.watching}</h1>
-        )}
-      </Head>
-      <div className="flex flex-1 flex-col gap-4 px-5 pb-6 pt-[22px]">
-        {shown.map(([c, d]) =>
-          d ? (
-            <section key={c} className="rise flex flex-col gap-1 border-t-2 border-ink pt-3">
-              <span className="meta">{c}</span>
-              <span className="display text-[2.25rem] leading-none">{COPY.race.winning(d.correct)}</span>
-              <span className="text-lg font-bold">{d.swing_s != null && !d.swing_deferred ? `${COPY.race.worthLabel}: ${COPY.race.worth(d.swing_s)}` : COPY.race.worthDeferred}</span>
-            </section>
-          ) : null,
-        )}
-      </div>
-      <Foot title={COPY.race.resumeIn(left)} />
-    </>
-  );
-}
-
-// At the flag: race score, rank in the lobby, each freeze and each audible.
-function RaceResult({
-  race,
-  me,
-  car,
-  board,
-  full,
-}: {
-  race: RaceLobby;
-  me: string;
-  car: string | null;
-  board: ReturnType<typeof useRaceBoard>;
-  full: ReturnType<typeof useRaceReveal>;
-}) {
-  if (!board || !full) return <p className="px-5 pt-24 text-lg font-bold">{COPY.reveal.grading}</p>;
-  const players = board.rows.filter((r) => r.kind === "player");
-  const rank = players.findIndex((r) => r.name === me) + 1;
-  const row = players.find((r) => r.name === me) ?? null;
-  const audibles = full.calls.filter((c) => c.kind === "audible" && c.player_name === me);
-  const bench = board.rows.filter((r) => r.kind !== "player" && r.driver_code === car);
-  return (
-    <>
-      <Head race={race} me={me} status={COPY.race.flagTitle}>
-        <span className="meta">{COPY.race.scoreTitle}</span>
-        <p className="nums display mt-1 text-[4.5rem] leading-none">{row?.total ?? 0}</p>
-        {rank > 0 && <p className="mt-2 text-lg font-bold">{COPY.race.rank(rank, players.length)}</p>}
-      </Head>
-      <div className="flex flex-1 flex-col gap-6 px-5 pb-8 pt-[22px]">
-        <section>
-          <span className="meta block border-b-2 border-ink pb-1">{COPY.race.breakdown}</span>
-          <ol>
-            {full.freezes
-              .filter((f) => car && f.drivers[car])
-              .map((f) => {
-                const mine = row?.freezes.find((x) => x.lap === f.lap);
-                const d = f.drivers[car!]!;
-                return (
-                  <li key={f.lap} className="grid grid-cols-[48px_1fr_auto] items-center gap-x-3 border-b border-line py-2.5">
-                    <span className="nums text-sm font-bold">{COPY.race.freezeCol(f.lap)}</span>
-                    <span className="flex flex-col">
-                      <CallWord call={mine?.call ?? null} className="text-lg font-black" />
-                      <span className="text-xs text-ink-2">{COPY.race.winning(d.correct)}</span>
-                    </span>
-                    <span className="nums text-lg font-bold">{mine?.total ?? 0}</span>
-                  </li>
-                );
-              })}
-          </ol>
-        </section>
-        <section>
-          <span className="meta block border-b-2 border-ink pb-1">{COPY.race.audiblesTitle}</span>
-          {audibles.length === 0 ? (
-            <p className="mt-2 text-base text-ink-2">{COPY.race.noAudibles}</p>
-          ) : (
-            <ol>
-              {audibles.map((a) => (
-                <li key={a.lap} className="grid grid-cols-[48px_1fr_auto] items-center gap-x-3 border-b border-line py-2.5">
-                  <span className="nums text-sm font-bold">{COPY.race.freezeCol(a.lap)}</span>
-                  <span className="text-sm font-bold">{COPY.race.audibleStatus[a.status] ?? a.status}</span>
-                  <span className="nums text-lg font-bold">{a.status === "scored" ? COPY.race.pts(a.total) : "0"}</span>
-                </li>
-              ))}
-            </ol>
-          )}
-        </section>
-        {bench.length > 0 && (
-          <section>
-            <span className="meta block border-b-2 border-ink pb-1">{COPY.phone.teamEngine}</span>
-            <ol>
-              {bench.map((b) => (
-                <li key={b.name} className="flex items-center justify-between border-b border-line py-2.5 text-base">
-                  <span className="font-bold">{b.name}</span>
-                  <span className="nums font-bold">{b.total}</span>
-                </li>
-              ))}
-            </ol>
-          </section>
-        )}
-      </div>
-    </>
+    <div className="flex flex-1 flex-col justify-center gap-4 px-5 pb-24">
+      <p className="display text-[3rem] leading-none">{COPY.end.lockedTitle}</p>
+      <p className="text-lg font-medium">{COPY.end.lockedSub}</p>
+      <p className="nums text-base font-bold">{COPY.end.lockedIn(left)}</p>
+    </div>
   );
 }
