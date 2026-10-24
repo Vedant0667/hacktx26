@@ -37,8 +37,6 @@ const nextConfig: NextConfig = {
   partialPrefetching: true,
   // The LAN dev host (npm run dev:lan) so phones and the laptop browser on it get HMR.
   allowedDevOrigins: ["10.147.47.90"],
-  // Full decisions, frames and ground truth (the answers) live outside public/; lib/data.ts reads them.
-  outputFileTracingIncludes: { "/*": ["./server-data/**/*"] },
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },

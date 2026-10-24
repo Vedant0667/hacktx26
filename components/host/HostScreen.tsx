@@ -4,7 +4,8 @@
 // and frames only, with no race, team or driver name (decision.blind_title and driver codes instead).
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { COPY } from "@/lib/copy";
-import { data, type BlindDecision } from "@/lib/client/api";
+import { data, type BlindDecision, type DriversResponse, type LobbyStateResponse } from "@/lib/client/api";
+import { asDriver } from "@/lib/client/drivers";
 import { noopSubscribe, recallHostToken, rememberHost } from "@/lib/client/identity";
 import { kickPlayer } from "@/lib/client/session";
 import { CALL_WINDOW_S, callMomentFrames, frameAt, replayDoneMs, replayLap, tla } from "@/lib/client/race";
@@ -21,6 +22,7 @@ import { Button, ConnNotice, ModeToggle, ScChip, TrackStrip, TyreChip, clockText
 import { LineChart } from "./HostCharts";
 import { HostQr } from "./HostQr";
 import { HostReveal, HostScoreboard } from "./HostReveal";
+import { carOf, carsInPlay, driverBy, lobbyCarCode } from "./cars";
 
 const MAX_PLAYERS = 12;
 
@@ -30,6 +32,8 @@ export function HostScreen({ code }: { code: string }) {
   const [decision, setDecision] = useState<BlindDecision | null>(null);
   const [frames, setFrames] = useState<LapFrame[] | null>(null);
   const [dataErr, setDataErr] = useState(false);
+  // Round 4: the scorable cars, so the screen can follow the lobby's car and label each player's car.
+  const [drivers, setDrivers] = useState<DriversResponse | null>(null);
   const reveal = useReveal(code, lobby?.phase);
   const hostToken = useSyncExternalStore(noopSubscribe, () => recallHostToken(code), () => null);
   const [mode, setMode] = useDataMode(code, "host");
@@ -49,6 +53,10 @@ export function HostScreen({ code }: { code: string }) {
         setFrames(f);
       })
       .catch(() => setDataErr(true));
+    data
+      .drivers(decisionId)
+      .then(setDrivers)
+      .catch(() => setDrivers(null));
   }, [decisionId]);
 
   const phase = lobby?.phase;
@@ -92,7 +100,11 @@ export function HostScreen({ code }: { code: string }) {
 
   const joinUrl = origin ? `${origin.replace(/^https?:\/\//, "")}/play/${code}` : "";
   const joinHref = origin ? `${origin}/play/${code}` : "";
-  const team = teamColourOf(frames, decision.player_role.number);
+  // Every pre-reveal view follows the lobby's car (blind decision re-pointed at it).
+  const carCode = lobbyCarCode(lobby, drivers);
+  const car = asDriver(decision, driverBy(drivers, carCode));
+  const team = teamColourOf(frames, car.player_role.number);
+  const colourOf = (code: string | null) => driverBy(drivers, code)?.team_colour ?? null;
   const muteBtn = (variant: "secondary" | "inverse") => (
     <Button variant={variant} size="sm" aria-pressed={muted} onClick={() => setMuted((m) => !m)}>
       {muted ? COPY.cue.unmute : COPY.cue.mute}
@@ -112,8 +124,10 @@ export function HostScreen({ code }: { code: string }) {
           code={code}
           joinUrl={joinUrl}
           joinHref={joinHref}
-          decision={decision}
+          decision={car}
           frames={frames}
+          lobby={lobby}
+          colourOf={colourOf}
           players={lobby.players}
           onStart={() => setPhase("replay")}
           onKick={async (name) => {
@@ -130,7 +144,7 @@ export function HostScreen({ code }: { code: string }) {
       {phase === "replay" && (
         <Replay
           code={code}
-          decision={decision}
+          decision={car}
           frames={frames}
           lap={replayLap(decision, elapsed)}
           onAdvance={() => setPhase("decision")}
@@ -146,7 +160,8 @@ export function HostScreen({ code }: { code: string }) {
       {phase === "decision" && (
         <Freeze
           code={code}
-          decision={decision}
+          decision={car}
+          lobby={lobby}
           frames={frames}
           team={team}
           elapsed={elapsed}
@@ -162,17 +177,17 @@ export function HostScreen({ code }: { code: string }) {
       {phase === "reveal" && reveal && (
         <HostReveal
           code={code}
-          decision={reveal.decision}
+          reveal={reveal}
+          carCode={carCode}
           frames={reveal.frames}
           lobby={lobby}
           elapsed={elapsed}
           onNext={() => setPhase("done")}
           mode={mode}
           setMode={setMode}
-          gt={reveal.ground_truth}
         />
       )}
-      {phase === "done" && reveal && <HostScoreboard code={code} decision={reveal.decision} lobby={lobby} />}
+      {phase === "done" && reveal && <HostScoreboard code={code} reveal={reveal} carCode={carCode} lobby={lobby} />}
     </div>
   );
 }
@@ -198,6 +213,8 @@ function Lobby({
   joinHref,
   decision,
   frames,
+  lobby,
+  colourOf,
   players,
   onStart,
   onKick,
@@ -209,6 +226,8 @@ function Lobby({
   joinHref: string;
   decision: BlindDecision;
   frames: LapFrame[];
+  lobby: LobbyStateResponse;
+  colourOf: (code: string | null) => string | null;
   players: { name: string; joined_at: number }[];
   onStart: () => void;
   onKick: (name: string) => Promise<void>;
@@ -254,7 +273,7 @@ function Lobby({
                     <span className="flex min-w-0 flex-1 flex-col items-start">
                       <span className="flex items-center gap-2.5">
                         <span className="text-[2rem] font-black leading-none tracking-[-0.02em]">{tla(p.name)}</span>
-                        <span aria-hidden className="size-2.5 shrink-0 bg-field" />
+                        <CarTag code={carOf(lobby, p.name)} colour={colourOf(carOf(lobby, p.name))} />
                       </span>
                       <button
                         type="button"
@@ -281,6 +300,7 @@ function Lobby({
             <span className="meta text-[15px]">{COPY.host.yourCar}</span>
           </div>
           <p className="mt-4 text-xl font-bold">{decision.blind_title}</p>
+          {lobby.driver_mode === "choose" && carsInPlay(lobby).length > 0 && <p className="mt-2 font-mono text-sm text-[#bdbdbd]">{carLine(lobby)}</p>}
         </section>
       </div>
 
@@ -305,6 +325,24 @@ function Lobby({
       </footer>
     </main>
   );
+}
+
+// A player's car: its code with a small team swatch (a colour, never a logo).
+function CarTag({ code, colour }: { code: string | null; colour: string | null }) {
+  if (!code) return null;
+  return (
+    <span className="inline-flex items-center gap-1 font-mono text-[11px] font-bold leading-none">
+      <span aria-hidden className="h-3 w-1" style={{ backgroundColor: colour ?? "currentColor" }} />
+      {code}
+    </span>
+  );
+}
+
+// "PIA: PRI, MAR · HAM: JOR"
+function carLine(lobby: LobbyStateResponse) {
+  return carsInPlay(lobby)
+    .map((c) => COPY.host.drives(c, lobby.players.filter((p) => carOf(lobby, p.name) === c).map((p) => tla(p.name))))
+    .join(" · ");
 }
 
 // The Simple / Advanced control on the black lobby: white border, the active segment white.
@@ -455,6 +493,7 @@ function Replay({
 function Freeze({
   code,
   decision,
+  lobby,
   frames,
   team,
   elapsed,
@@ -467,6 +506,7 @@ function Freeze({
 }: {
   code: string;
   decision: BlindDecision;
+  lobby: LobbyStateResponse;
   frames: LapFrame[];
   team: string | null;
   elapsed: number;
@@ -487,7 +527,15 @@ function Freeze({
   // The server keeps the call window open for 40 s unless everyone has called; useLobby retries until then.
   const [asked, setAsked] = useState(false);
   const room = (compact: boolean) => (
-    <RoomStrip players={players} submitted={submitted} waiting={waiting} left={left} dark={isDarkField(team)} compact={compact}>
+    <RoomStrip
+      players={players}
+      submitted={submitted}
+      waiting={waiting}
+      left={left}
+      dark={isDarkField(team)}
+      compact={compact}
+      carFor={carsInPlay(lobby).length > 1 ? (name) => carOf(lobby, name) : undefined}
+    >
       <ModeToggle mode={mode} onChange={setMode} size="sm" onField />
       {mute}
       <Button
@@ -514,8 +562,10 @@ function RoomStrip({
   left,
   dark,
   compact,
+  carFor,
   children,
 }: {
+  carFor?: (name: string) => string | null;
   players: { name: string }[];
   submitted: Set<string>;
   waiting: number;
@@ -538,6 +588,7 @@ function RoomStrip({
               className={`flex items-baseline gap-2 px-2 py-0.5 transition-colors duration-200 ${inn ? (dark ? "bg-white text-ink" : "on-dark bg-ink text-white") : "border-b-2 border-dashed border-on-field"}`}
             >
               <span className="text-lg font-black tracking-tight">{tla(p.name)}</span>
+              {carFor && <span className="font-mono text-[11px] font-bold">{carFor(p.name)}</span>}
               {words && <span className="font-mono text-sm font-medium">{inn ? COPY.host.called : COPY.host.thinking}</span>}
             </li>
           );
@@ -628,7 +679,7 @@ function SimpleFreeze({ brief, decision, left, urgent, meCode, code, room, mode,
         </div>
         {t && (
           <section className="grid grid-cols-12 gap-x-6 border-t-2 border-on-field pt-3">
-            <div className="col-span-4">
+            <div className="col-span-3">
               <span className="meta">{simpleChartLabel(t)}</span>
               <div className="mt-1 max-h-[150px] overflow-hidden">
                 <LapChart laps={t.laps} cars={[t.me, t.ahead, t.behind]} height={120} />
@@ -637,8 +688,8 @@ function SimpleFreeze({ brief, decision, left, urgent, meCode, code, room, mode,
             <div className="col-span-4">
               <NeighbourList t={t} big />
             </div>
-            <div className="col-span-4 max-h-[200px] overflow-hidden [&>section]:border-t-0 [&>section]:pt-0">
-              <UndercutClock t={t} mode={mode} />
+            <div className="col-span-5 max-h-[210px] overflow-hidden [&>section]:border-t-0 [&>section]:pt-0">
+              <UndercutClock t={t} mode={mode} big />
             </div>
           </section>
         )}

@@ -481,6 +481,11 @@ export const COPY = {
     confirmRemove: "Tap again to remove",
     confirmShort: "Tap again",
     callsIn: (s: number) => `Calls in ${s} s`,
+    andMore: (n: number) => `…and ${n} more`,
+    drives: (car: string, who: string[]) => `${car}: ${who.join(", ")}`,
+    carSplit: (car: string, box: number, stay: number) => `${car}: ${box} box, ${stay} stay out`,
+    otherCar: (code: string, team: string, did: Call, engine: Call, pct: number, correct: Call, swing: number) =>
+      `${code} · ${team} ${did === "BOX" ? "boxed" : "stayed out"} · engine ${engine === "BOX" ? "box" : "stay out"} ${pct}% · ${correct === "BOX" ? "boxing" : "staying out"} worth ${swing.toFixed(1)} s`,
     playerState: (tla: string, called: boolean) => `${tla}: ${called ? "called" : "thinking"}`,
     stayLine: (pos: number, behind: { code: string; gap: string } | null) =>
       `keep P${pos}${behind ? ` · ${behind.code} ${behind.gap} s behind` : ""}`,

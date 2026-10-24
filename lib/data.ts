@@ -147,6 +147,7 @@ const fullCache = new Map<string, Promise<{ full: DecisionPoint; ground_truth: R
 const raceFrames = new Map<string, Promise<LapFrame[]>>();
 const blindFrameCache = new Map<string, Promise<LapFrame[]>>();
 const driversCache = new Map<string, Promise<DriverReveal[]>>();
+const blindDriversCache = new Map<string, Promise<DriversResponse>>();
 
 // Drops a failed promise so the next call retries the query.
 function remember<K, V>(map: Map<K, Promise<V>>, key: K, load: () => Promise<V>): Promise<V> {
@@ -213,11 +214,13 @@ export async function getBlindFrames(id: string): Promise<LapFrame[] | null> {
 export async function getBlindDrivers(id: string): Promise<DriversResponse | null> {
   const row = await decisionRow(id);
   if (!row) return null;
-  const drivers = await query<{ blind: BlindDriver }>(
-    `select blind from decision_drivers where decision_id = $1 and scorable order by position`,
-    [id],
-  );
-  return { decision_id: id, default_driver: row.player_code ?? "", drivers: drivers.map((d) => d.blind) };
+  return remember(blindDriversCache, id, async () => {
+    const drivers = await query<{ blind: BlindDriver }>(
+      `select blind from decision_drivers where decision_id = $1 and scorable order by position`,
+      [id],
+    );
+    return { decision_id: id, default_driver: row.player_code ?? "", drivers: drivers.map((d) => d.blind) };
+  });
 }
 
 async function fullRow(id: string) {
