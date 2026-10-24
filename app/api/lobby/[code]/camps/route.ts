@@ -1,8 +1,8 @@
 import type { NextRequest } from "next/server";
-import { getLobbyState } from "@/lib/db";
-import { parseCallLocal } from "@/lib/muse";
+import { claimMuseCamps, getLobbyState, getMuseCamps, saveMuseCamps, type LobbyStateResponse } from "@/lib/db";
+import { museCamps, parseCallLocal, type CampLabel } from "@/lib/muse";
 import type { Submission } from "@/lib/types";
-import { handle, HttpError, normalizeCode } from "../../../_lib/http";
+import { handle, HttpError, normalizeCode, requireDecision } from "../../../_lib/http";
 import { isRevealed } from "../../../_lib/redact";
 
 const QUOTE_MAX = 90;
@@ -20,9 +20,34 @@ function quoteFor(s: Submission, factor: string): string {
   return clip(reason ?? s.transcript);
 }
 
-// Lobby submissions on the current decision grouped by factor id (Muse will relabel these later).
+// Muse camp labels for this lobby and decision: one call, cached in muse_camps so polling never re-calls.
+// A new call is made only when more calls have landed since the cached one (reveal grace window).
+// Concurrent pollers that lose the claim get the cached labels, or null (the factor grouping stands in).
+async function campLabels(state: LobbyStateResponse): Promise<CampLabel[] | null> {
+  const subs = state.submissions;
+  try {
+    const cached = await getMuseCamps(state.code, state.decision_id);
+    const cachedCamps = (cached?.camps as CampLabel[] | null) ?? null;
+    if (cached && cached.status !== "pending" && cached.submitted >= subs.length) return cachedCamps;
+    if (!(await claimMuseCamps(state.code, state.decision_id, subs.length))) return cachedCamps;
+    const decision = await requireDecision(state.decision_id);
+    const camps = await museCamps(
+      decision,
+      state.code,
+      subs.map((s) => ({ name: s.player_name, call: s.call, reasons: s.reasons, transcript: s.transcript })),
+    );
+    await saveMuseCamps(state.code, state.decision_id, camps);
+    return camps;
+  } catch (err) {
+    console.error("camps: Muse labels failed, using factor grouping", err);
+    return null;
+  }
+}
+
+// Lobby submissions on the current decision grouped by factor id, plus Muse Spark camp labels when available.
 // Response: { code, decision_id, phase, submitted, by_call: {BOX, STAY, none},
-//             camps: [{factor, count, players, quotes}] (largest first), no_factor: {count, players, quotes} }
+//             camps: [{factor, count, players, quotes}] (largest first), no_factor: {count, players, quotes},
+//             labels: [{label, call: BOX|STAY|MIXED, players, count}] | null, labels_source: "muse" | "factors" }
 export const GET = handle(async (_req: NextRequest, ctx: RouteContext<"/api/lobby/[code]/camps">) => {
   const code = normalizeCode((await ctx.params).code);
   const state = await getLobbyState(code);
@@ -52,8 +77,12 @@ export const GET = handle(async (_req: NextRequest, ctx: RouteContext<"/api/lobb
   }
 
   const camps = [...groups.values()].sort((a, b) => b.count - a.count || a.factor.localeCompare(b.factor));
+  const labels = await campLabels(state);
   return Response.json(
-    { code, decision_id: state.decision_id, phase: state.phase, submitted: state.submissions.length, by_call, camps, no_factor },
+    {
+      code, decision_id: state.decision_id, phase: state.phase, submitted: state.submissions.length, by_call, camps, no_factor,
+      labels, labels_source: labels ? "muse" : "factors",
+    },
     { headers: { "Cache-Control": "no-store" } },
   );
 });

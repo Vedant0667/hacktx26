@@ -31,7 +31,8 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
   const seconds_to_call = meta.phase === "decision" ? Math.min(CALL_WINDOW_S, Math.round(meta.phase_elapsed_s * 10) / 10) : CALL_WINDOW_S;
   const decision = await requireDecision(meta.decision_id);
 
-  const parsed = await parseCall(transcript);
+  // Muse grades which factors were named; the phone's BOX / STAY button still wins for the call.
+  const parsed = await parseCall(transcript, decision, { lobbyCode: code });
   const finalCall = call ?? parsed.call;
   const score = scoreCall(decision, finalCall, parsed.factors_named);
   const { submission, duplicate } = await insertSubmission({

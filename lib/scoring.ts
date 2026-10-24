@@ -1,7 +1,9 @@
 // Scoring rules from docs/05-build-plan.md: call 100, reasoning 0–50 (factors the player named, out of the decision's factor list).
 import type { Call, DecisionPoint, Score } from "./types";
 
-export const CALL_WINDOW_S = 20;
+// 30 s of talking (VOICE_NOTE_MAX_S) plus time to tap BOX or STAY OUT.
+export const CALL_WINDOW_S = 40;
+export const VOICE_NOTE_MAX_S = 30;
 export const CALL_POINTS = 100;
 export const REASONING_MAX = 50;
 
