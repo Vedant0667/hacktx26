@@ -27,7 +27,12 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
   const token = newToken();
   const presented = req.headers.get("x-player-token");
   let driver: string;
-  if (lobby.driver_mode === "choose") {
+  const revealed = lobby.phase === "reveal" || lobby.phase === "done";
+  if (lobby.driver_mode === "choose" && revealed && driver_code) {
+    // After the reveal a new joiner watches without a car, so joining late can't add another car's answer
+    // to this lobby's reveal or leaderboard rows.
+    driver = "";
+  } else if (lobby.driver_mode === "choose") {
     if (driver_code) {
       driver = (await requireDriver(lobby.decision_id, driver_code)).code;
     } else {

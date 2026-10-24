@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { CRON_PURGE_PATH, cronAuthorized, GATE_COOKIE, gateMisconfigured, gatePassword, verifyGateToken } from "@/lib/gate";
 
-// Exact paths that skip the gate: the unlock page and its form handler, and the favicon. Checked here as
+// Exact paths that skip the gate: the unlock page and its form handler, and the public logo and icon files. Checked here as
 // whole paths rather than matcher prefixes, so a future /unlock-foo or /iconic.json stays gated.
-export const GATE_OPEN_PATHS: ReadonlySet<string> = new Set(["/unlock", "/api/unlock", "/favicon.ico"]);
+export const GATE_OPEN_PATHS: ReadonlySet<string> = new Set(["/unlock", "/api/unlock", "/favicon.ico", "/icon.png", "/apple-icon.png", "/brand/wordmark.png", "/brand/mark.png"]);
 
 // Everything sits behind the shared password, including /api and /data.
 export function proxy(request: NextRequest) {
