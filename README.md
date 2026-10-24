@@ -1,32 +1,37 @@
 # OutpaceF1
 
-OutpaceF1 is a party game where friends replay a real F1 race on a shared screen and, when the safety car comes out, each person makes the pit call for their driver out loud from their phone: box or stay out, and why. Meta's Muse Spark grades each player's reasoning and groups the room into camps, then every call is scored against what actually happened to comparable cars, alongside the real team's call and our engine's.
+OutpaceF1 is a party game where friends replay a real F1 race on a shared screen and, at the moments a pit wall has to decide, each person makes the call for their driver from their phone: box or stay out, and why. Nobody finds out who was right until the end, when every call is scored against what actually happened in the race, with Meta's Muse Spark grading the reasoning.
 
 Built at HackTX 2026 (October 24–25, 2026). Everything in this repository was written during the event.
 
-## How a round works
+## How a game works
 
-1. The host opens a lobby on a laptop. Players scan the QR code and join on their phones with a nickname. The host picks one driver for everyone, or lets each player pick their own.
+1. The host opens a lobby on a laptop and picks a race. Players scan the QR code and join on their phones with a nickname. The host picks one driver for everyone, or lets each player pick their own.
 2. The race replays lap by lap with a timing tower and telemetry for each player's car: lap times against the cars ahead and behind, gaps and their trend, tyre compound and age.
-3. When the safety car or virtual safety car comes out, the replay freezes. Each player has 40 seconds to call BOX or STAY OUT and record a voice note of up to 30 seconds explaining why. The screen shows where a stop would put them back on track, and their gap to any rival who has already pitted.
-4. The reveal shows everyone's call and reason, the camps Muse found in the room, what the real team did, what our engine called, and how much time each call was worth.
+3. The replay freezes at decision moments: a safety car or VSC, a rival stopping nearby, an undercut window, tyres fading, the tyre window, or rain. Each player has 40 seconds to call BOX or STAY OUT and record a voice note of up to 30 seconds (tap to start, tap to stop) or type why. The screen shows where a stop would put them back on track and their gap to any rival who has already pitted. Between freezes, any player can call "box now" on their own.
+4. At the flag, one end screen shows the final ranking and each moment: the right call, how much it was worth, and everyone's call, reasoning score and points.
 
-Two moments ship with the game: the lap 7 safety car at the 2025 Qatar Grand Prix, and the lap 39 virtual safety car at the 2026 Singapore Grand Prix.
+A quick single-moment mode (the lap 7 safety car at the 2025 Qatar Grand Prix, or the lap 39 VSC at the 2026 Singapore Grand Prix) uses the same end screen.
 
 ## How a call is scored
 
-- **The right answer** comes from the race itself. For each driver we take the cars within three places that made the other call, then compare how the gap changed by the lap all of them had made their next stop. The call whose cars gained time is correct, and the average gain is the swing shown on screen. For Piastri at Qatar, boxing was worth 15.6 s.
-- **Points:** 100 for the right call, plus up to 50 for reasoning, split across four published factors: tyre age, a cheaper stop under the safety car, what similar cars did, and track position.
-- **No hindsight on screen.** Before the reveal, players and the engine see only what a pit wall could see at the moment of the call: the order and gaps at the end of the previous lap. The full race and the answers stay on the server until the lobby reaches the reveal.
+- **The right answer** comes from the race itself. For each driver we take the cars within three places that made the other call, then compare how the gap changed once all of them had made their next stop. The call whose cars gained time is correct. For Piastri at Qatar, boxing was worth 15.6 s.
+- **Luck is handled separately.** When a safety car, VSC, red flag or rain after the call changed the result, a Muse Spark verdict precomputed from the facts known at the call decides what was right, and the end screen says why.
+- **Points:** stakes = how much the call was worth (swing seconds × 5, up to 100). A call scores stakes × (0.37 if right + 0.78 × reasoning/50 − 0.15). Reasoning counts for more than the call: a wrong call argued well beats a right call with no reason.
+- **Reasoning** is graded out of 50 by Muse Spark against the facts of that moment (tyre age and stops still owed, the cheaper stop under a safety car, what similar cars did, track position). It's a party game, so any attempt earns something and scores centre around 25.
+- **Our engine is just another player.** It is scored with the same formula and never decides the right answer.
+- **No hindsight.** During the game, players see only what a pit wall could see at the moment of the call. Answers and scores stay on the server until the end.
 
 ## AI used
 
 We built OutpaceF1 with AI coding tools and we say so everywhere, including in every commit's co-author line.
 
 - **Building the project:** Claude Code (Anthropic) wrote most of the code, research notes and documents in this repository, directed and reviewed by the team.
-- **Inside the product:** Meta Muse Spark (`muse-spark-1.3`, via the Meta Model API) reads each player's transcript and decides which scoring factors they actually named, then labels the room's camps after the reveal. A server-side cap stops all Muse calls once logged spend reaches a set budget (default $5), and the game falls back to a keyword parser.
-- **Speech to text** uses the browser's built-in speech recognition. In Chrome that sends audio to Google.
-- **Not AI:** the engine's pit call and the scoring are plain Python and TypeScript arithmetic over lap data.
+- **Inside the product:**
+  - Meta Muse Voice Transcribe turns each voice note into text. If it's unavailable, the browser's own speech recognition is used (in Chrome that sends audio to Google).
+  - Meta Muse Spark (`muse-spark-1.3`) grades each reason out of 50 at the end of the game, and decides the right call for moments where luck changed the result.
+  - A server-side cap stops all Muse calls once logged spend reaches a set budget, and the game falls back to a keyword grader.
+- **Not AI:** the engine's pit calls, the measured right answers and the points arithmetic are plain Python and TypeScript over lap data.
 
 ## Data
 
@@ -36,7 +41,7 @@ We built OutpaceF1 with AI coding tools and we say so everywhere, including in e
 
 The data is cached in `data/`, built by `engine/build.py`, and loaded into Postgres (`races`, `race_laps`, `decision_points`, `decision_drivers`) by `scripts/seed-db.mjs`. The app reads it through `/api/decisions`.
 
-OutpaceF1 is a fan project with no affiliation to Formula 1, the FIA or any team. Team colours appear only as small data markers.
+OutpaceF1 is a fan project with no affiliation to Formula 1, the FIA or any team. Team colours appear only as plain colour fields and data markers, never logos or livery.
 
 ## Stack
 

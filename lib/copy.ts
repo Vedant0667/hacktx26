@@ -153,8 +153,6 @@ export const COPY = {
     line: (total: number, max: number, c: number, r: number) => `${total}/${max}. Call ${c}, reasoning ${r}.`,
     equation: (c: number, r: number, total: number) => `${c}-point stakes, reasoning ${r}/50: ${total} points`,
     outOf: (max: number) => `/ ${max}`,
-    percentile: (p: number) => ({ pre: "At or above", num: `${p}%`, post: "of other players on this call." }),
-    percentileHelp: (others: number) => `Share of the other ${others} players on this decision who scored at or below you.`,
     lobbyRank: (rank: number, n: number) => `P${rank} of ${n} in this lobby`,
     standings: "Standings", // added
     newLobby: "Create new lobby", // added: host button
@@ -162,15 +160,6 @@ export const COPY = {
     beatTeamBy: (who: string, team: string, n: number) => `${who} scored ${n} more than the ${team} call.`, // added
     pct: "Pct", // added: column header
     total: "Total", // added
-  },
-  badges: {
-    team: { name: "Beat the team call", text: (you: number, team: string, ts: number) => `You scored ${you}, the ${team} call scored ${ts}.` },
-    winning: {
-      name: "Matched the winning call",
-      text: (c: Call) => `${callGerund(c)} gained more time here, and you called it.`,
-    },
-    engine: { name: "Beat the engine", text: (you: number, es: number) => `You scored ${you}, the engine scored ${es}.` },
-    none: "The team call and the engine both scored higher here.",
   },
   leaderboard: {
     title: (race: string, lap: number) => `${race}, lap ${lap}`,
@@ -191,7 +180,7 @@ export const COPY = {
     joining: "Joining lobby",
     // added: consent checkbox (docs/05 logistics; audit M6). The server rejects a join without it.
     consent:
-      "Show my nickname and spoken reasons to the room and on the public leaderboard. Your browser's speech recognizer turns your voice into text. In Chrome, that sends the audio to Google. Lobbies, names and calls are deleted within a day.",
+      "Show my nickname and spoken reasons to the room and on the public leaderboard. Voice notes are sent to Meta's speech service to turn them into text (if it's down, your browser's recognizer is used, which in Chrome means Google). Lobbies, names and calls are deleted within a day.",
     consentMissing: "Tick the box to join.", // added
     // added: the Join bar names what is still missing, in form order
     need: { name: "Add your nickname", consent: "Tick consent", driver: "Pick a driver" },
@@ -453,9 +442,6 @@ export const COPY = {
     otherCall: (c: Call) => `${callWord(c)} was the winning call.`,
     worth: (c: Call, swing: number, team: string, teamCall: Call) =>
       `${callGerund(c)} was worth ${swing.toFixed(1)} s. ${team} ${callPast(teamCall).toLowerCase()}.`,
-    percentile: "Percentile",
-    top: (pct: number) => `Top ${Math.max(1, 100 - pct)}%`,
-    calledIn: "Called in",
     engineSaid: "Engine said",
     engineValue: (c: Call, conf: number) => `${callWord(c)} ${conf}%`,
     score: "Score",
@@ -487,7 +473,7 @@ export const COPY = {
     playerState: (name: string, called: boolean) => `${name}: ${called ? "called" : "thinking"}`,
     stayLine: (pos: number, behind: { code: string; gap: string } | null) =>
       `keep P${pos}${behind ? ` · ${behind.code} ${behind.gap} s behind` : ""}`,
-    boxLine: (pos: number, laps: number) => `out P${pos} · fresh tyres for ${laps} laps`,
+    boxLine: (pos: number, laps: number) => `rejoin P${pos} · new tyres for ${laps} laps`,
     called: "called",
     thinking: "thinking",
     next: "Next",
@@ -566,7 +552,7 @@ export const COPY = {
     offBest: (d: number | null) => (d == null ? "no clean laps yet" : `+${Math.max(0, d).toFixed(1)} s off best`),
     noTimes: "No clean green-flag laps yet.",
     boxNowSentence: (pos: number, ahead: { code: string; gap: number } | null) =>
-      `Box now and ${pos === 1 ? "you stay in front" : `you come out P${pos}`}${ahead ? `, ${ahead.gap.toFixed(1)} s behind ${ahead.code}` : ""}.`,
+      `Box now and ${pos === 1 ? "you stay in front" : `you rejoin P${pos}`}${ahead ? `, ${ahead.gap.toFixed(1)} s behind ${ahead.code}` : ""}.`,
     stopCost: (t: TrackStatus, under: number, normal: number) =>
       t === "GREEN"
         ? `The stop costs ${normal.toFixed(1)} s at green.`
@@ -576,7 +562,7 @@ export const COPY = {
     rejoinBoth: (pos: number, ahead: { code: string; gap: number } | null, behind: { code: string; gap: number } | null) =>
       `Out P${pos}.${ahead ? ` ${ahead.code} ${ahead.gap.toFixed(1)} s ahead.` : ""}${behind ? ` ${behind.code} ${behind.gap.toFixed(1)} s behind.` : ""}`,
     boxNowShort: (pos: number, ahead: { code: string; gap: number } | null, behind: { code: string; gap: number } | null) =>
-      `out P${pos}${ahead ? `, ${ahead.gap.toFixed(1)} s behind ${ahead.code}` : ""}${behind ? `, ${behind.gap.toFixed(1)} s ahead of ${behind.code}` : ""}.`,
+      `rejoin P${pos}${ahead ? `, ${ahead.gap.toFixed(1)} s behind ${ahead.code}` : ""}${behind ? `, ${behind.gap.toFixed(1)} s ahead of ${behind.code}` : ""}.`,
     boxNowLead: "Box now:",
   },
   // added: home and leaderboard layout labels
@@ -704,7 +690,7 @@ export const COPY = {
     cols: { rank: "#", who: "Who", call: "Call", reasoning: "Reason", points: "Points" },
     newLobby: "Create new lobby",
     leaderboard: "Open leaderboard",
-    credit: "Reasons graded by Muse Spark. Speech to text by your browser's recognizer (Chrome uses Google). Engine: offline model on Jolpica and OpenF1 lap data.",
+    credit: "Reasons graded by Muse Spark. Speech to text by Muse Voice Transcribe, with the browser's recognizer as a fallback. Engine: offline model on Jolpica and OpenF1 lap data.",
     retry: "Scores didn't load. Retrying.",
     // Phone summary (one screen): place and total, winner line, compact rows.
     place: (rank: number, tied: boolean) => `${tied ? "=" : ""}${ordinal(rank)}`,
@@ -791,6 +777,7 @@ export const COPY = {
     engineSaid: (c: Call, pct: number) => `Engine: ${callWord(c).toLowerCase()}, ${pct}%`,
     resumeIn: (s: number) => `Replay resumes in ${s} s`,
     resumeNow: "Resume the race",
+    continue: "Continue", // added: host button when the replay segment has ended but the freeze has not opened
     yourCall: "Your call",
     noCall: "No call",
     // Round 7: c is the call's stakes, r the reasoning score, t the signed points.

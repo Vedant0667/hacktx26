@@ -191,12 +191,12 @@ export const IDEAS: Record<FactorId, RegExp[]> = {
 // Broader terms per idea: a Muse credit survives only if the transcript holds one of these (or the idea itself).
 export const GROUND_TERMS: Record<FactorId, RegExp> = {
   tyre_age:
-    /\b(tyres?|tires?|rubber|softs?|mediums?|hards?|compound|deg\w*|wear\w*|worn|grip|stint|old|fresh|last|once more|again|another|anyway|stops?|two[- ]stop)\b/i,
+    /\b(tyres?|tires?|rubber|softs?|mediums?|hards?|compound|deg\w*|wear\w*|worn|grip|stint|old tyres?|fresh tyres?|once more|pit again|stop again|another stop|one more stop|stops? (owed|left|to go)|two[- ]stop)\b/i,
   cheap_stop_under_sc: CHEAP,
   cheap_stop_under_vsc: CHEAP,
   similar_cars_pitted:
-    /\b(every(one|body)|field|others?|rivals?|pitted|pitting|boxed|boxing|competitors?|pack|cars?|they('re| are| all)?|cover\w*|undercut|verstappen|max|norris|lando|leclerc|russell|hamilton|antonelli|piastri|oscar|sainz|alonso)\b/i,
-  track_position: /\b(track position|positions?|places?|lead\w*|traffic|air|overtak\w*|pass\w*|rejoin|front|ahead|behind|p\d{1,2})\b/i,
+    /\b(every(one|body)|the field|rivals?|pitted|pitting|boxed|boxing|competitors?|the pack|they('re| are) (pitting|boxing|stopping|coming in)|they all|cover\w*|undercut|verstappen|max|norris|lando|leclerc|russell|hamilton|antonelli|piastri|oscar|sainz|alonso)\b/i,
+  track_position: /\b(track position|lose (the )?(lead|positions?|places?)|keep (the )?(lead|positions?|places?)|traffic|dirty air|clean air|overtak\w*|pass\w*|rejoin|p\d{1,2})\b/i,
 };
 
 export function groundedIn(id: string, transcript: string): boolean {
