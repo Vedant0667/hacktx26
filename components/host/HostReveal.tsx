@@ -2,10 +2,12 @@
 // Reveal (four steps; ArrowRight or Next skips) and the scoreboard for the host screen. Renders only from
 // useReveal's full decision and frames, so race and team names may appear from here on.
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { COPY, factorLabel } from "@/lib/copy";
 import { api, type CampsResponse, type LeaderboardResponse, type LobbyStateResponse, type RevealResponse } from "@/lib/client/api";
 import { revealFor } from "@/lib/client/drivers";
+import { DUEL_SPEAK_MS, DUEL_START_MS, duelStage, speakLeft, useDuel } from "@/lib/client/duel";
+import { DuelPerson, DuelTally } from "../Duel";
 import { benchmarksFor, carOf, carsInPlay } from "./cars";
 import { MAX_TOTAL, PLAYED_OUT_MS, badgesFor, fmtSeconds, playedOutLap, splitCalls, tla } from "@/lib/client/race";
 import type { Call, DecisionPoint, LapFrame, Submission } from "@/lib/types";
@@ -17,8 +19,12 @@ import { NeighbourList } from "../Telemetry";
 import { neighbourCalls, telemetry } from "@/lib/client/telemetry";
 import { callMomentFrames } from "@/lib/client/race";
 
-// Room split, team and engine, outcome bars playing out (held 6 s after they finish), verdict table.
-const STEP_AT = [0, 7000, 13000, 13000 + PLAYED_OUT_MS + 6000];
+// Room split; then (Round 5) the duel on the phones' shared schedule: A speaks, B speaks, the room votes until the
+// host moves on; then team and engine, the outcome bars playing out (held 6 s after they finish), the verdict.
+// Without a duel the room split holds 7 s.
+const ROOM_ONLY_MS = 7000;
+const OUTCOME_AT = 6000;
+const VERDICT_AT = OUTCOME_AT + PLAYED_OUT_MS + 6000;
 
 // `code` is this lobby: the route fills the team and engine rows only once it has revealed.
 function useLeaderboard(decisionId: string, code: string, when: boolean) {
@@ -41,15 +47,15 @@ function useLeaderboard(decisionId: string, code: string, when: boolean) {
   return lb;
 }
 
-function Steps({ step, onNext }: { step: number; onNext: () => void }) {
+function Steps({ step, total, onNext }: { step: number; total: number; onNext: () => void }) {
   return (
     <span className="flex items-center gap-4">
-      <span className="flex gap-1.5" role="img" aria-label={COPY.host.step(step + 1, STEP_AT.length)}>
-        {STEP_AT.map((_, i) => (
+      <span className="flex gap-1.5" role="img" aria-label={COPY.host.step(step + 1, total)}>
+        {Array.from({ length: total }, (_, i) => (
           <span key={i} className={`size-3 ${i <= step ? "bg-current" : "border-2 border-current"}`} />
         ))}
       </span>
-      {step < STEP_AT.length - 1 && (
+      {step < total - 1 && (
         <Button variant="quiet" onClick={onNext}>
           {COPY.host.next} ›
         </Button>
@@ -97,21 +103,40 @@ export function HostReveal({
   const cars = carsInPlay(lobby);
   const [skip, setSkip] = useState(0);
   const at = elapsed + skip;
-  const step = STEP_AT.filter((s) => at >= s).length - 1;
+  const { duel } = useDuel(code, lobby.phase);
+  const hasDuel = !!duel?.pair;
+  const duelPending = !duel || duel.pending;
+  // When the post-duel part starts (host time). Set by Next during the vote, or by Next on a held room split.
+  const [postAt, setPostAt] = useState<number | null>(null);
+  const P = postAt ?? (hasDuel || duelPending ? null : ROOM_ONLY_MS);
+  const view: "room" | "a" | "b" | "vote" | "post" =
+    P != null && at >= P ? "post" : hasDuel && at >= DUEL_START_MS ? (duelStage(at) as "a" | "b" | "vote") : "room";
+  const tp = P != null ? at - P : 0;
+  const step = view !== "post" ? 0 : tp < OUTCOME_AT ? 1 : tp < VERDICT_AT ? 2 : 3;
+  const duelIdx = { room: 0, a: 1, b: 2, vote: 3, post: 0 }[view];
+  const stepIdx = view === "post" ? step + (hasDuel ? 3 : 0) : duelIdx;
+  const stepTotal = hasDuel ? 7 : 4;
+  const jump = (target: number) => setSkip((k) => k + Math.max(0, target - at));
   const advance = () => {
-    const next = STEP_AT.find((s) => s > at);
-    if (next != null) setSkip((k) => k + (next - at));
+    if (view === "room") return hasDuel ? jump(DUEL_START_MS) : setPostAt(at);
+    if (view === "a") return jump(DUEL_START_MS + DUEL_SPEAK_MS);
+    if (view === "b") return jump(DUEL_START_MS + DUEL_SPEAK_MS * 2);
+    if (view === "vote") return setPostAt(at);
+    if (P == null) return;
+    if (tp < OUTCOME_AT) return jump(P + OUTCOME_AT);
+    if (tp < VERDICT_AT) return jump(P + VERDICT_AT);
   };
-
+  const advanceRef = useRef(advance);
+  useEffect(() => {
+    advanceRef.current = advance;
+  });
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "ArrowRight") return;
-      const next = STEP_AT.find((s) => s > at);
-      if (next != null) setSkip((k) => k + (next - at));
+      if (e.key === "ArrowRight") advanceRef.current();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [at]);
+  }, []);
 
   const lb = useLeaderboard(decision.id, code, step >= 1);
   const [camps, setCamps] = useState<CampsResponse | null>(null);
@@ -124,7 +149,7 @@ export function HostReveal({
   const players = lobby.players.map((p) => ({ name: p.name, sub: byName.get(p.name) ?? null }));
   const { box, stay } = splitCalls(subs);
 
-  const lap = step < 2 ? decision.lap : step === 2 ? playedOutLap(decision, at - STEP_AT[2]) : decision.reveal_to_lap;
+  const lap = step < 2 ? decision.lap : step === 2 ? playedOutLap(decision, tp - OUTCOME_AT) : decision.reveal_to_lap;
   const total = decision.total_laps;
 
 
@@ -136,17 +161,71 @@ export function HostReveal({
     return { t, revealed: neighbourCalls(frames, decision, { ahead: t.neighbours.ahead?.number, behind: t.neighbours.behind?.number }) };
   }, [frames, decision]);
 
-  if (step === 3) return <Verdict decision={decision} carCode={carCode} correctFor={correctFor} lobby={lobby} lb={lb} camps={camps} onNext={onNext} mode={mode} modeToggle={<ModeToggle mode={mode} onChange={setMode} size="sm" />} gt={gt} />;
+  if (step === 3) return <Verdict stepTotal={stepTotal} decision={decision} carCode={carCode} correctFor={correctFor} lobby={lobby} lb={lb} camps={camps} onNext={onNext} mode={mode} modeToggle={<ModeToggle mode={mode} onChange={setMode} size="sm" />} gt={gt} />;
 
   const top = (
     <header className="flex items-center justify-between gap-6 font-mono text-lg font-bold uppercase">
-      <span>{COPY.host.revealTag(Math.min(step + 1, 3), 3, decision.race, decision.lap)}</span>
+      <span>
+        {view === "a" || view === "b" || view === "vote"
+          ? `${COPY.duel.title} · ${decision.race} · L${decision.lap}`
+          : COPY.host.revealTag(Math.min(step + 1, 3), 3, decision.race, decision.lap)}
+      </span>
       <span className="flex items-center gap-6 font-sans normal-case">
         <ModeToggle mode={mode} onChange={setMode} size="sm" onField={step > 0} />
-        <Steps step={step} onNext={advance} />
+        <Steps step={stepIdx} total={stepTotal} onNext={advance} />
       </span>
     </header>
   );
+
+  if ((view === "a" || view === "b" || view === "vote") && duel?.pair) {
+    const colours = Object.fromEntries(Object.entries(reveal.drivers ?? {}).map(([k, v]) => [k, v.team_colour]));
+    const left = speakLeft(at);
+    return (
+      <main className="grid h-dvh grid-rows-[auto_auto_1fr_auto] gap-y-8 overflow-hidden px-14 py-10">
+        {top}
+        {duel.prompt ? <p className="max-w-[60ch] text-2xl font-bold leading-snug">{duel.prompt}</p> : <span />}
+        <div className="grid min-h-0 grid-cols-2 gap-x-12">
+          {duel.pair.map((side, i) => {
+            const active = view === "vote" || (view === "a" ? i === 0 : i === 1);
+            const speaking = (view === "a" && i === 0) || (view === "b" && i === 1);
+            return (
+              <section key={side.name} className={`flex min-h-0 flex-col gap-6 border-t-[3px] pt-6 ${active ? "border-ink" : "border-line"}`}>
+                <div className="flex min-h-[7rem] items-end justify-between gap-6">
+                  {speaking ? (
+                    <>
+                      <span className="meta">{COPY.duel.speaking(tla(side.name))}</span>
+                      <span key={left} aria-live="polite" className={`nums text-[7rem] font-bold leading-none tracking-[-0.04em] ${left <= 3 ? "tick" : ""}`}>
+                        <span aria-label={COPY.duel.secondsLeft(left)}>
+                          {left}
+                          <span aria-hidden className="ml-2 text-[0.4em]">s</span>
+                        </span>
+                      </span>
+                    </>
+                  ) : view === "vote" ? (
+                    <span className="nums text-[4rem] font-bold leading-none">{duel.votes[i]}</span>
+                  ) : (
+                    <span />
+                  )}
+                </div>
+                <DuelPerson side={side} active={active} big cars={colours} />
+              </section>
+            );
+          })}
+        </div>
+        <footer className="flex flex-col gap-4">
+          {view === "vote" ? (
+            <>
+              <p className="text-xl font-bold">{COPY.duel.vote}</p>
+              <DuelTally duel={duel} big />
+            </>
+          ) : (
+            <p className="text-lg font-bold">{COPY.duel.listen}</p>
+          )}
+          {duel.source === "muse" && <p className="text-sm text-ink-2">{COPY.duel.museCredit}</p>}
+        </footer>
+      </main>
+    );
+  }
 
   // Step 1: the room's calls get the whole screen, each player's own words under their call, grouped by camp.
   if (step === 0) {
@@ -166,7 +245,7 @@ export function HostReveal({
     const many = players.length > 4;
     const crowd = players.length > 8;
     // Quotes that fit on one screen per side; the rest are listed by code.
-    const cap = crowd ? 4 : 6;
+    const cap = crowd ? 3 : 6;
     return (
       <main className="grid h-dvh grid-rows-[auto_auto_auto_1fr_auto] gap-y-6 overflow-hidden px-14 py-10">
         {top}
@@ -265,7 +344,10 @@ export function HostReveal({
         {step >= 2 ? (
           <div className="rise on-dark flex flex-col bg-ink px-6 pb-5 pt-0 text-white">
             <span className="mt-4 border-t-2 border-white pt-4 font-mono text-xs font-bold uppercase">{COPY.host.outcome}</span>
-            <span className="display nums mt-3 text-[4rem] leading-none">+{decision.ground_truth.swing_s.toFixed(1)} s</span>
+            <span className="display nums mt-3 text-[4rem] leading-none">
+              +{decision.ground_truth.swing_s.toFixed(1)}
+              <span className="ml-2 text-[0.5em]">s</span>
+            </span>
             <span className="mt-3 font-mono text-base">{COPY.host.worth(correct)}</span>
           </div>
         ) : (
@@ -334,6 +416,7 @@ export function HostReveal({
 }
 
 function Verdict({
+  stepTotal,
   decision,
   carCode,
   correctFor,
@@ -345,6 +428,7 @@ function Verdict({
   modeToggle,
   gt,
 }: {
+  stepTotal: number;
   decision: DecisionPoint;
   carCode: string | null;
   correctFor: (name: string) => Call;
@@ -400,12 +484,15 @@ function Verdict({
         <span className="meta text-sm">
           {decision.race} · {COPY.reveal.heading(decision.lap)}
         </span>
-        <Steps step={3} onNext={() => {}} />
+        <Steps step={stepTotal - 1} total={stepTotal} onNext={() => {}} />
       </header>
       <div className="col-span-12 flex items-end justify-between gap-10 border-b-2 border-ink pb-6">
         <h1 className="display text-[4.5rem] leading-none [text-wrap:nowrap]!">{COPY.reveal.verdict(correct)}</h1>
         <div className="flex min-w-0 items-end gap-6">
-          <span className="nums shrink-0 bg-field px-4 py-2 text-4xl font-bold leading-none text-on-field">+{decision.ground_truth.swing_s.toFixed(1)} s</span>
+          <span className="nums shrink-0 bg-field px-4 py-2 text-4xl font-bold leading-none text-on-field">
+            +{decision.ground_truth.swing_s.toFixed(1)}
+            <span className="ml-1.5 text-[0.55em]">s</span>
+          </span>
           <p className="max-w-[44ch] text-base">
             {COPY.reveal.swing(correct, decision.ground_truth.swing_s, decision.reveal_to_lap)} {COPY.reveal.outcome[decision.id] ?? ""}
           </p>
@@ -460,10 +547,11 @@ function Verdict({
             <span className="font-black">{COPY.reveal.bestReason(tla(s.player_name), bestK, factors.length)}</span> <q className="font-medium">{s.transcript}</q>
           </p>
         ))}
-        {mode === "advanced" && <Measured decision={decision} gt={gt} />}
+        {mode === "advanced" && !dense && <Measured decision={decision} gt={gt} />}
       </section>
 
       <section className="col-span-3 flex min-h-0 flex-col gap-3 overflow-hidden">
+        {mode === "advanced" && dense && <Measured decision={decision} gt={gt} size="sm" />}
         <span className="meta border-b-2 border-ink pb-2">{COPY.reveal.camps}</span>
         {camps?.labels_source === "muse" && camps.labels && camps.labels.length > 0 ? (
           <>
@@ -579,8 +667,9 @@ export function HostScoreboard({ code, reveal, carCode, lobby }: { code: string;
               </span>
             ))}
           </div>
-          {rows.map((r, i) => {
-            const p1 = i === 0 && r.kind === "player";
+          {rows.map((r) => {
+            // The round's winner gets the team-colour band, even when a benchmark row scored higher.
+            const p1 = r === lobbyPlayers[0];
             const on = sel?.key === r.key;
             const pctR = r.kind === "player" ? pctOf(r.name) : null;
             const call = r.sub?.call ?? (r.kind === "team" ? bench.team?.call : r.kind === "engine" ? bench.engine?.call : null) ?? null;

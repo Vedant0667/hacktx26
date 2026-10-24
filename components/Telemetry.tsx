@@ -106,7 +106,7 @@ export function LapChart({
         </g>
       ))}
       {laps.map((l, i) =>
-        i % labelStep(laps.length) === 0 || i === laps.length - 1 ? (
+        i % labelStep(laps.length) === 0 || (i === laps.length - 1 && i % labelStep(laps.length) > labelStep(laps.length) / 2) ? (
           <text key={l} x={x(i)} y={height - 3} fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity=".75" style={svgText}>
             {COPY.tele.lap(l)}
           </text>
@@ -349,10 +349,12 @@ export function IntervalChart({ t, height = 200 }: { t: Telemetry; height?: numb
   });
   ends.sort((a, b) => a.y - b.y);
   for (let j = 1; j < ends.length; j++) if (ends[j].y - ends[j - 1].y < 12) ends[j].y = ends[j - 1].y + 12;
-  const step = hi - lo > 4 ? 2 : 1;
+  // About four gridlines whatever the range.
+  const raw = (hi - lo) / 4;
+  const step = [0.5, 1, 2, 5, 10, 20].find((v) => v >= raw) ?? 20;
   return (
     <svg viewBox={`0 0 ${W} ${height}`} width="100%" className="block overflow-visible" role="img" aria-label={COPY.tele.intervals}>
-      {Array.from({ length: Math.floor((hi - lo) / step) + 1 }, (_, k) => lo + k * step).map((v) => (
+      {Array.from({ length: Math.floor((hi - Math.ceil(lo / step) * step) / step) + 1 }, (_, k) => Math.ceil(lo / step) * step + k * step).map((v) => (
         <g key={v}>
           <line x1={left} x2={right} y1={y(v)} y2={y(v)} stroke="currentColor" strokeOpacity=".18" />
           <text x={left - 6} y={y(v) + 3.5} fontSize="10" textAnchor="end" fill="currentColor" fillOpacity=".75" style={svgText}>

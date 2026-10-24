@@ -17,6 +17,8 @@ import type { LapFrame } from "@/lib/types";
 import { LapChart, NeighbourList, simpleChartLabel } from "../Telemetry";
 import { Brand, Check, ConnNotice, ErrorText, ModeToggle, ScChip, TrackStrip, TyreChip } from "../ui";
 import { CallPad } from "./CallPad";
+import { DuelVote } from "./DuelVote";
+import { DUEL_SPEAK_MS, DUEL_START_MS, duelStage, speakLeft, useDuel } from "@/lib/client/duel";
 import { PlayerResult } from "./PlayerResult";
 
 export function PlayScreen({ code }: { code: string }) {
@@ -38,6 +40,10 @@ export function PlayScreen({ code }: { code: string }) {
   const t = useTicker(serverNow, 200);
   const [mode, setMode] = useDataMode(code, "play");
   const reveal = useReveal(code, lobby?.phase);
+  const { duel, vote } = useDuel(code, lobby?.phase);
+  const [duelDone, setDuelDone] = useState(false);
+  // The tally screen shows right after this phone votes; a reload after voting goes straight to the result.
+  const [justVoted, setJustVoted] = useState(false);
 
   const decisionId = lobby?.decision_id;
   useEffect(() => {
@@ -119,6 +125,10 @@ export function PlayScreen({ code }: { code: string }) {
 
   const elapsed = t - lobby.phase_started_at;
   const phase = lobby.phase;
+  // The duel takes the phone once the room split is over (same schedule as the host), until this player
+  // votes and moves on. No pair: skipped.
+  const stage = duelStage(elapsed);
+  const showDuel = phase === "reveal" && !!duel?.pair && stage !== "before" && !duelDone && (duel.my_vote == null || justVoted);
 
   if (phase === "decision" && mine)
     return (
@@ -143,9 +153,24 @@ export function PlayScreen({ code }: { code: string }) {
       <ConnNotice conn={conn} code={code} />
       {phase === "waiting" && <Waiting lobby={lobby} decision={mine} me={me!} mode={mode} setMode={setMode} />}
       {phase === "replay" && mine && frames && <Replay decision={mine} frames={frames} elapsed={elapsed} mode={mode} setMode={setMode} me={me!} />}
+      {showDuel && duel && (
+        <DuelVote
+          duel={duel}
+          me={me!}
+          stage={stage}
+          left={speakLeft(elapsed)}
+          opensIn={Math.max(0, Math.ceil((DUEL_START_MS + 2 * DUEL_SPEAK_MS - elapsed) / 1000))}
+          vote={async (c) => {
+            await vote(c);
+            setJustVoted(true);
+          }}
+          onDone={() => setDuelDone(true)}
+        />
+      )}
       {(phase === "reveal" || phase === "done") &&
+        !showDuel &&
         (reveal && myReveal ? (
-          <PlayerResult code={code} me={me!} decision={myReveal.decision} frames={reveal.frames} lobby={lobby} mode={mode} setMode={setMode} gt={myReveal.gt} />
+          <PlayerResult code={code} me={me!} decision={myReveal.decision} frames={reveal.frames} lobby={lobby} mode={mode} setMode={setMode} gt={myReveal.gt} duel={duel} />
         ) : (
           <p className="px-5 pt-24 text-lg font-bold">{COPY.reveal.grading}</p>
         ))}

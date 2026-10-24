@@ -133,9 +133,32 @@ export interface DriverReveal extends Omit<BlindDriver, "blind_title"> {
 }
 export type DriverMode = "same" | "choose";
 
+// Round 5: the post-reveal "defend your call" duel.
+export interface DuelSide {
+  name: string;
+  driver_code: string | null;
+  call: Call | null;
+  summary: string;
+}
+export interface DuelResponse {
+  source: "muse" | "fallback";
+  pair: [DuelSide, DuelSide] | null;
+  prompt: string | null;
+  pending: boolean;
+  votes: [number, number];
+  my_vote: 0 | 1 | null;
+}
+
 export type JoinResponse = LobbyStateResponse & { player_token: string | null; rejoined: boolean };
 
 const enc = encodeURIComponent;
+
+// Player-only routes (the duel vote): the player token even when this browser also hosts.
+function playerAuth(code: string): Record<string, string> | undefined {
+  const name = recallName(code);
+  const player = name ? recallPlayerToken(code, name) : null;
+  return player ? { "x-player-token": player } : undefined;
+}
 
 // /reveal and leaderboard?lobby= need proof this device is in the lobby: the host token if it holds one,
 // otherwise the player token for the name it joined as.
@@ -166,6 +189,10 @@ export const api = {
     playerToken: string | null,
   ) => post<SubmitResponse>(`/api/lobby/${enc(code)}/submit`, body, tokenHeader("x-player-token", playerToken)),
   reveal: (code: string) => request<RevealResponse>(`/api/lobby/${enc(code)}/reveal`, { headers: lobbyAuth(code) }),
+  duel: (code: string) => request<DuelResponse>(`/api/lobby/${enc(code)}/duel`, { headers: lobbyAuth(code) }),
+  // Players only (x-player-token); the first vote counts.
+  duelVote: (code: string, choice: 0 | 1) =>
+    post<{ votes: [number, number]; my_vote: 0 | 1; duplicate: boolean }>(`/api/lobby/${enc(code)}/duel/vote`, { choice }, playerAuth(code)),
   // Host only: removes a player from the lobby (x-host-token).
   kick: (code: string, name: string, hostToken: string | null) =>
     post<LobbyStateResponse>(`/api/lobby/${enc(code)}/kick`, { name }, tokenHeader("x-host-token", hostToken)),

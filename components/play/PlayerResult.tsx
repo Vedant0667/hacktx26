@@ -14,6 +14,8 @@ import type { DataMode, GroundTruthFile } from "@/lib/client/mode";
 import type { LapFrame } from "@/lib/types";
 import { Measured } from "../Measured";
 import { NeighbourList } from "../Telemetry";
+import { DuelTally } from "../Duel";
+import type { DuelResponse } from "@/lib/client/api";
 import { Brand, CallWord, Check, ModeToggle, Section, Tag, clockText } from "../ui";
 
 export function PlayerResult({
@@ -25,6 +27,7 @@ export function PlayerResult({
   mode,
   setMode,
   gt,
+  duel,
 }: {
   code: string;
   me: string;
@@ -34,6 +37,7 @@ export function PlayerResult({
   mode: DataMode;
   setMode: (m: DataMode) => void;
   gt: GroundTruthFile | null;
+  duel?: DuelResponse | null;
 }) {
   const [lb, setLb] = useState<LeaderboardResponse | null>(null);
   const [camps, setCamps] = useState<CampsResponse | null>(null);
@@ -131,6 +135,12 @@ export function PlayerResult({
         </div>
 
         <div className="mt-4">
+          {duel?.pair && (
+            <Section title={COPY.duel.title} meta={<span className="nums">{COPY.duel.tally(duel.votes[0], duel.votes[1])}</span>} open>
+              <DuelTally duel={duel} />
+              {duel.source === "muse" && <p className="mt-3 text-xs text-ink-2">{COPY.duel.museCredit}</p>}
+            </Section>
+          )}
           {tele && calls && (
             <Section title={COPY.phone.neighbours} open>
               <NeighbourList t={tele} revealed={calls} />

@@ -18,7 +18,7 @@ import type { LapFrame } from "@/lib/types";
 import { RejoinCaveat, getBrief, type Brief } from "../DecisionBrief";
 import { FieldTyres, IntervalChart, LapChart, NeighbourList, Note, PitLoss, RejoinStrip, Sec, StintTable, UndercutClock, intervalNote, simpleChartLabel } from "../Telemetry";
 import { Tower } from "../Tower";
-import { Button, ConnNotice, ModeToggle, ScChip, TrackStrip, TyreChip, clockText } from "../ui";
+import { Brand, Button, ConnNotice, ModeToggle, ScChip, TrackStrip, TyreChip, clockText } from "../ui";
 import { LineChart } from "./HostCharts";
 import { HostQr } from "./HostQr";
 import { HostReveal, HostScoreboard } from "./HostReveal";
@@ -244,7 +244,16 @@ function Lobby({
   const r = decision.player_role;
   return (
     <main className="on-dark grid h-dvh grid-rows-[auto_1fr_auto] overflow-hidden bg-ink px-14 py-10 text-white">
-      <Top left={COPY.host.room(code)} right={COPY.host.playersCount(players.length, MAX_PLAYERS)} />
+      <Top
+        left={
+          <>
+            <Brand kind="wordmark" height={22} />
+            <span aria-hidden>·</span>
+            {COPY.host.room(code)}
+          </>
+        }
+        right={COPY.host.playersCount(players.length, MAX_PLAYERS)}
+      />
 
       <div className="grid min-h-0 grid-cols-12 items-center gap-x-6">
         <section className="col-span-6 flex flex-col">
@@ -257,7 +266,10 @@ function Lobby({
           </p>
           <div className="mt-8 flex items-end gap-6">
             {joinHref ? <HostQr value={joinHref} size={200} label={COPY.room.scanAlt(joinUrl)} /> : <div className="size-[200px] bg-[#222]" />}
-            <p className="font-mono text-[15px] leading-relaxed text-[#bdbdbd]">{joinUrl}</p>
+            <div className="flex flex-col items-start gap-4">
+              <Brand kind="mark" height={120} label={false} />
+              <p className="font-mono text-[15px] leading-relaxed text-[#bdbdbd]">{joinUrl}</p>
+            </div>
           </div>
         </section>
 
