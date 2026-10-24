@@ -95,6 +95,16 @@ test("verdictProblems: reject disagreement without luck, and ungrounded explanat
   assert.ok(verdictProblems({ ...good, explanation: "word ".repeat(21).trim() }, input, measured).some((p) => p.includes("over 20 words")));
   assert.ok(verdictProblems({ ...good, explanation: "the lap 39 VSC — a cheap stop" }, input, measured).includes("explanation punctuation"));
   assert.ok(verdictProblems({ ...good, explanation: "  " }, input, measured).includes("explanation empty"));
+  assert.ok(verdictProblems({ ...good, explanation: "the lap 39 VSC made STAY win" }, input, measured).includes("explanation names a call"));
+  // A flip needs the SC/VSC to have helped the measured winners: one of them stopped under it.
+  const facts = JSON.parse(input);
+  const winners = new Set([...(measured === "BOX" ? facts.measured.comparison_boxed : facts.measured.comparison_stayed), ...(facts.measured.your_real_call === measured ? [facts.at_the_call.you.code] : [])]);
+  const losersOnly = { ...facts, after_the_call: facts.after_the_call.map((e: { stopped_under_it: string[] }) => ({ ...e, stopped_under_it: e.stopped_under_it.filter((c) => !winners.has(c)) })) };
+  assert.ok(verdictProblems(good, JSON.stringify(losersOnly), measured).some((p) => p.includes("cannot have decided")));
+  const winnerStop = { ...facts, after_the_call: facts.after_the_call.map((e: object) => ({ ...e, stopped_under_it: [...winners].slice(0, 1) })) };
+  assert.ok(!verdictProblems(good, JSON.stringify(winnerStop), measured).some((p) => p.includes("cannot have decided")));
+  const red = { ...losersOnly, after_the_call: [...losersOnly.after_the_call, { lap: 39, kind: "RED_FLAG" }] };
+  assert.ok(!verdictProblems(good, JSON.stringify(red), measured).some((p) => p.includes("cannot have decided")), "red flag: free tyre change for all, no stop list");
   // The prompt input holds only call-moment facts, the post-call events and the measured result.
   assert.deepEqual(Object.keys(JSON.parse(input)), ["at_the_call", "after_the_call", "measured"]);
 });

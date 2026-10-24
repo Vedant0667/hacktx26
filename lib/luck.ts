@@ -61,7 +61,7 @@ export function luckView(x: Partial<LuckVerdict> & { correct: Call }): LuckVerdi
 // ---- The Muse request (scripts/ai-verdicts.mjs) ----
 
 export const EXPLANATION_WORDS = 20;
-export const VERDICT_PROMPT_VERSION = "v1";
+export const VERDICT_PROMPT_VERSION = "v2";
 
 export const VERDICT_TASK = `You judge one Formula 1 pit-stop call after the race. Output JSON only, matching the schema.
 Input: "at_the_call" is everything the pit wall knew when the call was due on that lap: position, gaps to the cars
@@ -69,14 +69,16 @@ ahead and behind, tyres and their ages, stops made and still owed, laps left, th
 call and under green, and what nearby cars had done. "after_the_call" lists events nobody could foresee (a safety
 car, virtual safety car, red flag, or rain starting or stopping) and, for a safety car or VSC, which comparison cars
 stopped under it. "measured" is the result in seconds against comparable cars: the call whose group gained time
-and the size of that gain (swing_s).
+and the size of that gain (swing_s), the comparison cars on each call, and the call this car really made.
 1. "right_call": BOX (stop inside box_window) or STAY, judged only on "at_the_call". Weigh tyre age and stops owed
    against laps left, the pit loss, the gaps, and what nearby cars had done.
-2. "luck_changed_outcome": true only if an event in "after_the_call" decided which group came out ahead, for example
-   cars that stayed out then got a much cheaper stop under it. If the measured winner would have won anyway, false.
+2. "luck_changed_outcome": true only if an event in "after_the_call" handed the measured winners their gain, for
+   example cars that stayed out then got a much cheaper stop under it. If the event helped the other group, or the
+   measured winners would have won anyway, false.
 3. right_call may differ from measured.right_call_by_measurement only when luck_changed_outcome is true.
 4. "explanation": one plain clause, at most ${EXPLANATION_WORDS} words, that names the event by lap and what it did, such as
-   which cars it gave a cheaper stop. Copy every lap, number and car code from the input. Never compute a number.
+   which cars it gave a cheaper stop. Do not write BOX or STAY. Copy every lap, number and car code from the input.
+   Never compute a number.
    No hedging words, no exclamation marks, no em dashes, no second person, never mention AI.`;
 
 export const VERDICT_SCHEMA = {
@@ -109,17 +111,36 @@ const EVENT_TERMS: { re: RegExp; needs: RegExp; what: string }[] = [
 ];
 const COMPOUNDS = /\b(soft|medium|hard|intermediate|inter|wet)s?\b/gi;
 
+interface InputShape {
+  at_the_call?: { you?: { code?: string } };
+  after_the_call?: { kind: string; stopped_under_it?: string[] }[];
+  measured?: { comparison_boxed?: string[]; comparison_stayed?: string[]; your_real_call?: Call };
+}
+
 // Problems with an answer, or [] when it may stand. Rejected: a different call from the measured one without
-// luck; an explanation that is empty, too long, uses dashes or exclamation marks, or cites a number, car, event
-// or compound that is not in the input.
+// luck, or one where every event was an SC/VSC and no car that made the measured winning call stopped under it
+// (then the event cannot have handed that group its gain); an explanation that is empty, too long, names a call,
+// uses dashes or exclamation marks, or cites a number, car, event or compound that is not in the input.
 export function verdictProblems(out: AiVerdict, input: string, measured: Call): string[] {
   const p: string[] = [];
   if (out.right_call !== measured && !out.luck_changed_outcome) p.push("right_call disagrees with the measured result but luck_changed_outcome is false");
+  if (out.right_call !== measured) {
+    const f = JSON.parse(input) as InputShape;
+    const m = f.measured ?? {};
+    const winners = new Set([...((measured === "BOX" ? m.comparison_boxed : m.comparison_stayed) ?? [])]);
+    if (m.your_real_call === measured && f.at_the_call?.you?.code) winners.add(f.at_the_call.you.code);
+    const ev = f.after_the_call ?? [];
+    const neutralised = ev.length > 0 && ev.every((e) => e.kind === "SC" || e.kind === "VSC");
+    if (neutralised && !ev.some((e) => (e.stopped_under_it ?? []).some((c) => winners.has(c)))) {
+      p.push(`no car that made the measured winning call (${measured}) stopped under the event, so it cannot have decided the result`);
+    }
+  }
   const e = out.explanation.trim();
   const words = e.split(/\s+/).filter(Boolean);
   if (!words.length) p.push("explanation empty");
   if (words.length > EXPLANATION_WORDS) p.push(`explanation over ${EXPLANATION_WORDS} words`);
   if (/[!—–]|--/.test(e)) p.push("explanation punctuation");
+  if (/\b(BOX|STAY)\b/.test(e)) p.push("explanation names a call");
   const numbers = new Set(input.match(/\d+(\.\d+)?/g) ?? []);
   for (const n of e.match(/\d+(\.\d+)?/g) ?? []) if (!numbers.has(n)) p.push(`number ${n} not in the input`);
   const codes = new Set(input.match(/"[A-Z]{3}"/g)?.map((c) => c.slice(1, -1)) ?? []);

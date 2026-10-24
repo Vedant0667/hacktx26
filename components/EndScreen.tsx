@@ -3,7 +3,6 @@
 // one moment). Host: a team-colour band with the winner, one ranked list (totals, shared ranks), and for races
 // a freeze-by-freeze breakdown beside it. Phone: your total and rank first, your calls, every moment, then the
 // ranking. Everything comes from GET /reveal?part=results (lib/client/results.ts).
-import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { COPY } from "@/lib/copy";
@@ -250,52 +249,134 @@ function HostAudibles({ list }: { list: SummaryAudible[] }) {
   );
 }
 
-// ---- Phone ----
+// ---- Phone (about one screen: result, ranking, your calls; everyone's calls behind one tap) ----
 
-function Why({ e, note }: { e: { said: string; verdict: string | null; reasoning: number; call: unknown }; note?: string | null }) {
-  if (!e.call) return null;
+const shortTrigger = (t: string) => COPY.end.triggerShort[t] ?? triggerText(t);
+const chevron = <span aria-hidden className="ml-1 inline-block text-ink-3 transition-transform group-open:rotate-90">›</span>;
+
+// "Engine wins with +132.", "You win with +117.", or a shared first place.
+function phoneWinnerLine(s: GameSummary, me: string): string {
+  const top = s.ranking.filter((r) => r.rank === 1);
+  if (!top.length) return COPY.end.noWinner;
+  const pts = top[0].points;
+  const mine = top.some((r) => r.kind === "player" && r.name === me);
+  const others = top.filter((r) => !(r.kind === "player" && r.name === me)).map((r) => label(r, s));
+  if (mine) return others.length ? COPY.end.youShare(others, pts) : COPY.end.youWin(pts);
+  return others.length > 1 ? COPY.end.tie(others, pts) : COPY.end.wins(others[0], pts);
+}
+
+// The short note in a call row: explains a wrong call that still scored, so it never looks like a bug.
+function rowNote(right: boolean | null, points: number): string | null {
+  if (right === null) return COPY.end.noCallRow;
+  if (!right && points > 0) return COPY.end.wrongStrong;
+  return null;
+}
+
+type MyRow =
+  | { kind: "moment"; lap: number; m: SummaryMoment; e: MomentEntry }
+  | { kind: "audible"; lap: number; a: SummaryAudible };
+
+function MyMomentRow({ m, e }: { m: SummaryMoment; e: MomentEntry }) {
+  const right = rightOf(m, e);
+  const car = carFor(m, e);
+  const note = rowNote(right, e.points);
+  const luck = luckNote(m, e);
   return (
-    <details className="group mt-1">
-      <summary className="cursor-pointer list-none text-sm font-bold underline underline-offset-4">{COPY.end.showWhy}</summary>
-      <div className="mt-2 flex flex-col gap-1.5">
-        {e.said.trim() ? <q className="text-base leading-snug">{e.said}</q> : <p className="text-sm text-ink-2">{COPY.end.noReason}</p>}
-        {e.said.trim() && (
-          <p className="text-sm leading-snug text-ink-2">
-            <b className="nums text-ink">{COPY.end.reasoning(e.reasoning)}</b>
+    <details className="group border-b border-soft-2">
+      <summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 py-2">
+        <b className="nums w-9 shrink-0 font-mono text-sm font-bold">L{m.lap}</b>
+        <span className="w-[4.5rem] shrink-0 truncate text-xs font-bold uppercase text-ink-2">{shortTrigger(m.triggers[0] ?? "")}</span>
+        <span className="flex min-w-0 flex-col">
+          <span className="text-base font-black">
+            <CallWord call={e.call} /> <RightMark right={right} />
+          </span>
+          {note && <span className="text-xs font-bold leading-tight text-ink-2">{note}</span>}
+        </span>
+        <span className="nums ml-auto shrink-0 text-lg font-black">{COPY.end.points(e.points)}</span>
+        {chevron}
+      </summary>
+      <div className="flex flex-col gap-1.5 pb-3 pl-12 text-sm leading-snug">
+        {car && <p className="font-bold">{COPY.end.rightSwing(car.final_right_call ?? car.correct, car.swing_s, car.stakes)}</p>}
+        {e.call && (
+          <p>
+            <b className="nums">{COPY.end.reasoning(e.reasoning)}</b>
             {e.verdict ? ` · ${e.verdict}` : ""}
           </p>
         )}
-        {note && <p className="text-sm font-bold leading-snug">{note}</p>}
+        {luck && <p className="font-bold">{luck}</p>}
+        {e.said.trim() && <q className="text-ink-2">{e.said}</q>}
       </div>
     </details>
   );
 }
 
-export function PhoneSummary({ summary: s, me }: { summary: GameSummary; me: string }) {
-  const single = s.moments.length === 1 && s.audibles.length === 0;
-  const meRow = s.ranking.find((r) => r.kind === "player" && r.name === me) ?? null;
-  const m0 = s.moments[0];
-  const mine0 = single && m0 ? (m0.entries.find((e) => e.kind === "player" && e.name === me) ?? null) : null;
-  const myCar = meRow?.driver_code ?? s.cars[0]?.code ?? null;
-  const engine = s.ranking.find((r) => r.kind === "engine" && r.driver_code === myCar);
-  const beatEngine = !!meRow && meRow.calls > 0 && !!engine && meRow.points > engine.points;
-  const myMoments = s.moments.map((m) => ({ m, e: m.entries.find((e) => e.kind === "player" && e.name === me) })).filter((x): x is { m: SummaryMoment; e: MomentEntry } => !!x.e);
-  const myAudibles = s.audibles.filter((a) => a.name === me);
-  const n = s.ranking.length;
+function MyAudibleRow({ a }: { a: SummaryAudible }) {
+  const scored = a.status === "scored";
+  return (
+    <div className="flex min-h-10 items-center gap-3 border-b border-soft-2 py-1.5 text-ink-2">
+      <b className="nums w-9 shrink-0 font-mono text-sm font-bold">L{a.lap}</b>
+      <span className="text-sm font-bold">{COPY.end.boxNow}</span>
+      <span className="text-sm">{scored ? audibleMark(a) : COPY.end.unscored}</span>
+      <span className="nums ml-auto text-base font-bold text-ink">{scored ? COPY.end.points(a.points) : "0"}</span>
+      <span aria-hidden className="ml-1 inline-block w-2" />
+    </div>
+  );
+}
 
-  let big: ReactNode;
-  let small: string;
-  if (single) {
-    big = (
-      <span className="display text-[5.5rem] leading-[0.85] tracking-[-0.05em]">
-        <CallWord call={mine0?.call ?? null} /> {m0 && mine0 && <RightMark right={rightOf(m0, mine0)} className="text-[0.6em]" />}
-      </span>
-    );
-    small = [meRow && COPY.end.rankLine(meRow.rank_label, n), mine0 && COPY.end.stakes(mine0.stakes)].filter(Boolean).join(" · ");
-  } else {
-    big = <span className="display nums text-[5.5rem] leading-[0.85] tracking-[-0.05em]">{COPY.end.points(meRow?.points ?? 0)}</span>;
-    small = [meRow && COPY.end.rankLine(meRow.rank_label, n), meRow && COPY.end.callsRight(meRow.right, meRow.calls)].filter(Boolean).join(" · ");
-  }
+// Everyone's calls, per moment; tapping a row shows that player's words and verdict. Collapsed by default.
+function Everyone({ s, myCar }: { s: GameSummary; myCar: string | null }) {
+  return (
+    <details className="group/all mt-5 border-t-2 border-ink">
+      <summary className="flex min-h-12 cursor-pointer list-none items-center justify-between text-base font-bold">
+        {COPY.end.seeAll}
+        <span aria-hidden className="inline-block transition-transform group-open/all:rotate-90">›</span>
+      </summary>
+      {s.moments.map((m) => {
+        const line = momentLine(s, m, myCar);
+        return (
+          <section key={m.lap} className="mt-3 flex flex-col">
+            <div className="flex flex-col gap-0.5 border-b-2 border-ink pb-1.5">
+              <span className="meta">
+                {COPY.end.momentHead(m.lap)} · {m.triggers.map(shortTrigger).join(" · ")}
+              </span>
+              <span className="text-base font-black leading-tight">{line.head}</span>
+              {line.luck && <span className="text-sm font-bold">{line.luck}</span>}
+            </div>
+            {m.entries.map((e) => (
+              <details key={`${e.kind}:${e.name}:${e.driver_code}`} className={`group border-b border-soft-2 ${e.kind === "player" ? "" : "text-ink-2"}`}>
+                <summary className="flex min-h-11 cursor-pointer list-none items-center gap-2.5 py-1.5">
+                  <b className={`min-w-0 truncate ${e.kind === "player" ? "text-base font-black" : "text-sm font-bold"}`}>{label(e, s)}</b>
+                  <span className="whitespace-nowrap text-sm font-bold">
+                    <CallWord call={e.call} /> {e.kind === "player" && <RightMark right={rightOf(m, e)} />}
+                  </span>
+                  {e.call && <span className="nums text-xs">{COPY.end.reasoning(e.reasoning)}</span>}
+                  <span className="nums ml-auto text-base font-black">{COPY.end.points(e.points)}</span>
+                  {chevron}
+                </summary>
+                <div className="flex flex-col gap-1 pb-2.5 text-sm leading-snug">
+                  {e.said.trim() ? <q>{e.said}</q> : <p className="text-ink-2">{COPY.end.noReason}</p>}
+                  {e.call && e.verdict && e.said.trim() && <p className="text-ink-2">{e.verdict}</p>}
+                  {luckNote(m, e) && <p className="font-bold">{luckNote(m, e)}</p>}
+                </div>
+              </details>
+            ))}
+          </section>
+        );
+      })}
+    </details>
+  );
+}
+
+export function PhoneSummary({ summary: s, me }: { summary: GameSummary; me: string }) {
+  const meRow = s.ranking.find((r) => r.kind === "player" && r.name === me) ?? null;
+  const myCar = meRow?.driver_code ?? s.cars[0]?.code ?? null;
+  const rows: MyRow[] = [
+    ...s.moments.flatMap((m) => {
+      const e = m.entries.find((x) => x.kind === "player" && x.name === me);
+      return e ? [{ kind: "moment" as const, lap: m.lap, m, e }] : [];
+    }),
+    ...s.audibles.filter((a) => a.name === me).map((a) => ({ kind: "audible" as const, lap: a.lap, a })),
+  ].sort((x, y) => x.lap - y.lap);
 
   return (
     <>
@@ -307,129 +388,53 @@ export function PhoneSummary({ summary: s, me }: { summary: GameSummary; me: str
           </span>
           <span className="meta text-[13px]">{tla(me)}</span>
         </div>
-        <div className="rise px-5 pb-6 pt-1.5">
-          <div className="meta mb-2">{single ? COPY.end.yourCall : COPY.end.yourTotal}</div>
-          <div className="flex items-baseline justify-between gap-4">
-            {big}
-            {single && meRow && <span className="nums text-[2.5rem] font-black leading-none">{COPY.end.points(meRow.points)}</span>}
-          </div>
-          {small && <p className="mt-3 text-base font-bold">{small}</p>}
+        <div className="rise px-5 pb-5 pt-1">
+          <div className="meta mb-1.5">{COPY.end.yourResult}</div>
+          <p className="display nums whitespace-nowrap text-[3.25rem] leading-[0.9] tracking-[-0.04em]">
+            {meRow ? COPY.end.placeTotal(COPY.end.place(meRow.rank, meRow.tied), meRow.points) : COPY.end.noCall}
+          </p>
+          <p className="mt-2.5 text-lg font-bold">{phoneWinnerLine(s, me)}</p>
         </div>
       </div>
 
       <div className="flex flex-col px-5 pb-6">
-        {single ? (
-          mine0?.call ? (
-            <div className="flex flex-col gap-1.5 border-b border-soft-2 py-4">
-              <span className="flex items-baseline justify-between gap-4">
-                <span className="meta">{COPY.end.reasoningLabel}</span>
-                <span className="nums text-[1.75rem] font-bold">{COPY.end.reasoning(mine0.reasoning)}</span>
-              </span>
-              {mine0.verdict && <p className="text-lg leading-snug">{mine0.verdict}</p>}
-              {m0 && luckNote(m0, mine0) && <p className="text-base font-bold leading-snug">{luckNote(m0, mine0)}</p>}
-            </div>
-          ) : (
-            <p className="border-b border-soft-2 py-4 text-xl font-black">{COPY.freeze.noCall}</p>
-          )
-        ) : (
-          <section className="flex flex-col pt-4">
-            <span className="meta border-b-2 border-ink pb-2">{COPY.end.yourCalls}</span>
-            {myMoments.map(({ m, e }) => (
-              <div key={m.lap} className="flex flex-col gap-1 border-b border-soft-2 py-3">
-                <div className="flex items-baseline gap-3">
-                  <b className="font-mono text-sm font-bold">L{m.lap}</b>
-                  <span className="text-lg font-black">
-                    <CallWord call={e.call} /> <RightMark right={rightOf(m, e)} />
-                  </span>
-                  <span className="nums ml-auto text-xl font-black">{COPY.end.points(e.points)}</span>
-                </div>
-                {e.call && (
-                  <p className="text-sm leading-snug">
-                    <b className="nums">{COPY.end.reasoning(e.reasoning)}</b>
-                    {e.verdict ? ` · ${e.verdict}` : ""}
-                  </p>
-                )}
-                {luckNote(m, e) && <p className="text-sm font-bold">{luckNote(m, e)}</p>}
-              </div>
-            ))}
-            {myAudibles.map((a) => (
-              <div key={a.lap} className="flex items-baseline gap-3 border-b border-soft-2 py-3">
-                <span className="text-base font-bold">{COPY.end.audibleRow(a.lap)}</span>
-                <span>{audibleMark(a)}</span>
-                {a.status === "scored" ? <span className="nums ml-auto text-xl font-black">{COPY.end.points(a.points)}</span> : <span className="ml-auto text-right text-sm font-bold">{COPY.race.audibleStatus[a.status] ?? ""}</span>}
-              </div>
-            ))}
-          </section>
-        )}
-        {beatEngine && <p className="pt-3 text-base font-bold">{COPY.end.beatEngine}</p>}
-
-        <p className="display mt-6 border-t-2 border-ink pt-4 text-[1.75rem] leading-tight">{winnerLine(s)}</p>
-
-        {s.moments.map((m) => {
-          const line = momentLine(s, m, myCar);
-          return (
-            <section key={m.lap} className="mt-5 flex flex-col">
-              <div className="flex flex-col gap-0.5 border-b-2 border-ink pb-2">
-                <span className="meta">
-                  {COPY.end.momentHead(m.lap)} · {m.triggers.map(triggerText).join(" · ")}
-                </span>
-                <span className="text-lg font-black leading-tight">{line.head}</span>
-                <span className="text-sm">{line.sub}</span>
-                {line.luck && <span className="text-sm font-bold">{line.luck}</span>}
-              </div>
-              <ol className="flex flex-col">
-                {m.entries.map((e) => (
-                  <li key={`${e.kind}:${e.name}:${e.driver_code}`} className={`flex flex-col border-b border-soft-2 py-2.5 ${e.kind === "player" ? "" : "text-ink-2"}`}>
-                    <div className="flex items-baseline gap-3">
-                      <b className={`min-w-0 truncate ${e.kind === "player" ? "text-lg font-black" : "text-base font-bold"}`}>{label(e, s)}</b>
-                      {e.kind === "player" && s.cars.length > 1 && <CarChip summary={s} code={e.driver_code} className="text-xs" />}
-                      <span className="whitespace-nowrap text-base font-bold">
-                        <CallWord call={e.call} /> {e.kind === "player" && <RightMark right={rightOf(m, e)} />}
-                      </span>
-                      {e.call && <span className="nums text-sm">{COPY.end.reasoning(e.reasoning)}</span>}
-                      <span className="nums ml-auto text-lg font-black">{COPY.end.points(e.points)}</span>
-                    </div>
-                    <Why e={e} note={luckNote(m, e)} />
-                  </li>
-                ))}
-              </ol>
-            </section>
-          );
-        })}
-
-        {s.audibles.length > 0 && (
-          <section className="mt-5 flex flex-col">
-            <span className="meta border-b-2 border-ink pb-2">{COPY.end.audibles}</span>
-            {s.audibles.map((a) => (
-              <div key={`${a.name}:${a.lap}`} className="flex items-baseline gap-3 border-b border-soft-2 py-2.5">
-                <b className="text-base font-black">{tla(a.name)}</b>
-                <span className="text-sm">{COPY.end.audibleRow(a.lap)}</span>
-                <span>{audibleMark(a)}</span>
-                {a.status === "scored" ? <span className="nums ml-auto text-lg font-black">{COPY.end.points(a.points)}</span> : <span className="ml-auto text-right text-sm font-bold">{COPY.race.audibleStatus[a.status] ?? ""}</span>}
-              </div>
-            ))}
-          </section>
-        )}
-
-        <section className="mt-6 flex flex-col">
-          <span className="meta border-b-2 border-ink pb-2">{COPY.end.ranking}</span>
+        <section className="mt-4 flex flex-col">
+          <span className="meta border-b-2 border-ink pb-1.5">{COPY.end.ranking}</span>
           {s.ranking.map((r) => {
             const mine = r.kind === "player" && r.name === me;
             const bench = r.kind !== "player";
             return (
               <div
                 key={`${r.kind}:${r.name}:${r.driver_code}`}
-                className={`grid min-h-11 grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-x-3 border-b ${mine ? "border-ink bg-ink px-1 text-white" : bench ? "border-soft-2 text-ink-2" : "border-soft-2"}`}
+                className={`grid min-h-9 grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-x-3 border-b ${mine ? "-mx-1 border-ink bg-ink px-1 text-white" : bench ? "border-soft-2 text-ink-2" : "border-soft-2"}`}
               >
-                <span className="nums text-base font-bold">{r.rank_label}</span>
-                <span className={`truncate ${bench ? "text-base font-bold" : "text-lg font-black"}`}>{label(r, s)}</span>
-                <span className="nums text-xl font-black">{COPY.end.points(r.points)}</span>
+                <span className="nums text-sm font-bold">{r.rank_label}</span>
+                <span className={`truncate ${bench ? "text-sm font-bold" : "text-base font-black"}`}>{label(r, s)}</span>
+                <span className="nums text-base font-black">{COPY.end.points(r.points)}</span>
               </div>
             );
           })}
         </section>
-        <p className="mt-5 text-sm text-ink-2">{COPY.end.how}</p>
-        <Link href="/leaderboard" className="on-dark mt-6 flex h-14 items-center justify-center bg-ink text-lg font-bold text-white hover:bg-[#262626]">
+
+        <section className="mt-5 flex flex-col">
+          <span className="meta border-b-2 border-ink pb-1.5">{COPY.end.yourCalls}</span>
+          {rows.length ? (
+            rows.map((r) => (r.kind === "moment" ? <MyMomentRow key={`m${r.lap}`} m={r.m} e={r.e} /> : <MyAudibleRow key={`a${r.lap}`} a={r.a} />))
+          ) : (
+            <p className="py-3 text-base font-bold">{COPY.freeze.noCall}</p>
+          )}
+        </section>
+
+        <Everyone s={s} myCar={myCar} />
+
+        <details className="group mt-2">
+          <summary className="cursor-pointer list-none py-2 text-sm font-bold text-ink-2">
+            {COPY.end.howTitle} {chevron}
+          </summary>
+          <p className="pb-2 text-sm text-ink-2">{COPY.end.how}</p>
+        </details>
+
+        <Link href="/leaderboard" className="on-dark mt-4 flex h-14 items-center justify-center bg-ink text-lg font-bold text-white hover:bg-[#262626]">
           {COPY.end.leaderboard}
         </Link>
       </div>

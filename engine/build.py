@@ -358,10 +358,12 @@ def call_facts(frames, L, code, inputs, stops, n_laps, triggers, cap=None):
     }
 
 
-def measured_facts(correct, swing_s, window, end, boxed, stayed):
-    """Round 9: the measured result the verdict is checked against (seconds vs comparable cars)."""
+def measured_facts(correct, swing_s, window, end, boxed, stayed, real_call):
+    """Round 9: the measured result the verdict is checked against (seconds vs comparable cars), with the call this
+    car's team really made (it is one of the measured group)."""
     return {"right_call_by_measurement": correct, "swing_s": swing_s, "box_window": list(window),
-            "measured_to_lap": end, "comparison_boxed": list(boxed), "comparison_stayed": list(stayed)}
+            "measured_to_lap": end, "comparison_boxed": list(boxed), "comparison_stayed": list(stayed),
+            "your_real_call": real_call}
 
 
 def call_moment_frame(clean, dp):
@@ -489,7 +491,8 @@ def main():
                                        [dp["trigger"]], track.get("max_stint_laps")),
                     "after_call": triggers.luck_after(ev, luck_src["periods"], stops_by_code, [x["code"]] + boxed + stayed),
                     "measured": measured_facts(tgx["correct"], tgx["swing_s"], dp["window"], end,
-                                               [c for c in boxed if c != x["code"]], [c for c in stayed if c != x["code"]]),
+                                               [c for c in boxed if c != x["code"]], [c for c in stayed if c != x["code"]],
+                                               tgx["player_call"]),
                 }
         mine = next(x for x in drivers if x["code"] == pcode)
         assert mine["scorable"] and mine["full"]["ground_truth_detail"] == tg, f"{dp['id']}: per-car answer drifted"

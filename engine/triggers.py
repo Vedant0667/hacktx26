@@ -120,7 +120,7 @@ def luck_after(events, periods, stops_by_code, cars):
     for e in events:
         if e["kind"] in ("SC", "VSC"):
             span = next(([a, b or a] for k, a, b in periods if k == e["kind"] and a == e["lap"]), [e["lap"], e["lap"]])
-            hit = sorted(c for c in cars if any(span[0] <= p <= span[1] for p in stops_by_code.get(c, [])))
+            hit = sorted({c for c in cars if any(span[0] <= p <= span[1] for p in stops_by_code.get(c, []))})
             out.append({**e, "laps": span, "stopped_under_it": hit})
         else:
             out.append(dict(e))
@@ -739,7 +739,8 @@ def race_mode(ctx, final):
                                          triggers=types, cap=ctx["cap"]),
                     "after_call": luck_after(full["luck_events"], ctx["periods"], stops_by_code, cars),
                     "measured": B.measured_facts(j["correct"], j["swing_s"], [w0, w1], end,
-                                                 full["comparison"]["boxed"], full["comparison"]["stayed"]),
+                                                 full["comparison"]["boxed"], full["comparison"]["stayed"],
+                                                 "BOX" if real_box else "STAY"),
                 }
             freezes.append({"race_key": key, "driver_code": code[d], "lap": L, "triggers": types, "blind": blind, "full": full})
     # Audible truth for every car on every lap it could press "box now" (visible lap A): the stop happens
