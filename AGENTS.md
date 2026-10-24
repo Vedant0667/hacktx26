@@ -3,7 +3,12 @@
 HackTX 2026 hackathon project. Reference docs live in `docs/`; ideas in `ideas.md`; plan in `tasks/todo.md`.
 
 ## Commands
-TBD once the stack is picked.
+- `npm run dev`: local dev at http://localhost:3000 (mic works on the laptop only).
+- `npm run dev:lan`: HTTPS dev on the LAN with a self-signed cert, so phones on the same Wi-Fi can use the mic. Open the host screen at https://<laptop LAN IP>:3000 so the QR code points phones there; phones must accept the certificate warning once.
+- `.claude/verify.sh`: the gate (tsc, eslint, engine tests). Hermetic, ~3 s.
+- `python3 engine/build.py`: rebuild public/data from data/ (Jolpica + OpenF1 + manual).
+- `node --env-file=.env.local scripts/migrate.mjs`: apply db/schema.sql to Neon.
+- Muse spend: GET /api/muse/usage; cap via MUSE_BUDGET_USD (default 5).
 
 ## Conventions
 - Read `docs/` before making scope decisions; the judging criteria and submission rules live there.
