@@ -1,0 +1,194 @@
+@import "tailwindcss";
+
+/* Visual system: docs/06-ui-rules.md section 1. Dark only, flat tokens, elevation by surface step. */
+@theme {
+  --color-*: initial;
+  --color-bg: #0c1010;
+  --color-surface: #161a1a;
+  --color-surface-2: #1e2323;
+  --color-rule: #353939;
+  --color-ink: #f3f6f6;
+  --color-ink-2: #b9bfbf;
+  --color-ink-3: #8e9393;
+  --color-ink-disabled: #525656;
+  --color-flag-yellow: #fbd530;
+  --color-flag-green: #50c76a;
+  --color-flag-red: #ea3d38;
+  --color-sector-purple: #a35de4;
+  --color-engine: #77cfd3;
+  --color-engine-deep: #096165;
+  --color-transparent: transparent;
+
+  --font-*: initial;
+  --font-sans: var(--font-archivo), system-ui, sans-serif;
+
+  /* Fixed type scale (px): 14 16 20 24 32 40 56 72 96. No clamp(). */
+  --text-*: initial;
+  --text-14: 0.875rem;
+  --text-16: 1rem;
+  --text-20: 1.25rem;
+  --text-24: 1.5rem;
+  --text-32: 2rem;
+  --text-40: 2.5rem;
+  --text-56: 3.5rem;
+  --text-72: 4.5rem;
+  --text-96: 6rem;
+
+  --leading-hero: 1;
+  --leading-row: 1.1;
+  --leading-body: 1.45;
+
+  --tracking-hero: 0.02em;
+  --tracking-label: 0.06em;
+  --tracking-code: 0.08em;
+
+  --radius-*: initial;
+  --radius-ctl: 2px;
+
+  --ease-quart: cubic-bezier(0.25, 1, 0.5, 1);
+}
+
+:root {
+  --z-sticky: 10;
+  --z-banner: 20;
+  --z-dialog: 30;
+  --z-toast: 40;
+  color-scheme: dark;
+}
+
+@utility stretch-62 {
+  font-stretch: 62%;
+}
+@utility stretch-75 {
+  font-stretch: 75%;
+}
+@utility stretch-100 {
+  font-stretch: 100%;
+}
+@utility stretch-112 {
+  font-stretch: 112%;
+}
+@utility stretch-125 {
+  font-stretch: 125%;
+}
+@utility nums {
+  font-variant-numeric: tabular-nums slashed-zero;
+}
+
+html,
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  line-height: var(--leading-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+.on-yellow :focus-visible {
+  outline-color: var(--color-bg);
+}
+
+/* Motion table, docs/06. */
+.tower-row {
+  transition:
+    transform 320ms var(--ease-quart),
+    color 200ms var(--ease-quart),
+    background-color 120ms var(--ease-quart);
+}
+.tower-dim .tower-row {
+  color: var(--color-ink-3);
+}
+.tower-dim .tower-swatch {
+  opacity: 0.4;
+}
+.tower-swatch {
+  transition: opacity 200ms var(--ease-quart);
+}
+
+.status-strip {
+  transition: background-color 200ms var(--ease-quart);
+}
+
+@keyframes wipe-in {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0);
+  }
+}
+.wipe-in {
+  animation: wipe-in 240ms var(--ease-quart) both;
+}
+
+@keyframes countdown {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+.countdown-bar {
+  transform-origin: left;
+  animation: countdown linear both;
+}
+
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.row-in {
+  animation: row-in 240ms var(--ease-quart) both;
+}
+
+@keyframes slide-in {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+.slide-in {
+  animation: slide-in 320ms var(--ease-quart) both;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tower-row {
+    transition: color 120ms linear;
+  }
+  .wipe-in,
+  .row-in,
+  .slide-in {
+    animation: fade-in 120ms linear both;
+  }
+  .countdown-bar {
+    display: none;
+  }
+}

@@ -1,0 +1,3 @@
+components/**/*.tsx
+app/**/*.tsx
+lib/copy.ts

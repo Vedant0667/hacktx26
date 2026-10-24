@@ -1,0 +1,30 @@
+{
+  "race": "2026 Singapore GP",
+  "note": "OpenF1 was locked (401, live session) when this was written. Facts below are hand-entered from the cited sources. Stints not covered here have compound = null in frames.json.",
+  "track_status": {
+    "VSC": {"laps": [39, 40],
+      "source": "Derived from data/jolpica/2026-singapore/laps.json: leaders lap 96.9-97.4 s on lap 38, 117-125 s on lap 39, 110-125 s on lap 40, back to 95-97 s on lap 41. Cars at the back slowed during lap 38, so the VSC began late in the leaders' lap 38. VSC for Stroll's stopped Aston Martin (Jolpica results: STR retired after 36 laps). One report says 'lap 39': https://www.timeslive.co.za/motoring/2026-10-12-hamilton-apologises-as-pit-lane-miss-costs-ferrari-double-podium-in-singapore/"},
+    "pit_window_laps": [38, 39, 40]
+  },
+  "compounds": [
+    {"driver": "hamilton", "stint": 1, "compound": "MEDIUM", "source": "https://racingnews365.com/lewis-hamilton-reveals-error-over-ferrari-disaster-in-singapore-gp"},
+    {"driver": "hamilton", "stint": 2, "compound": "SOFT", "source": "https://racingnews365.com/lewis-hamilton-reveals-error-over-ferrari-disaster-in-singapore-gp"},
+    {"driver": "max_verstappen", "stint": 1, "compound": "SOFT", "source": "https://racingnews365.com/lewis-hamilton-reveals-error-over-ferrari-disaster-in-singapore-gp"},
+    {"driver": "leclerc", "stint": 1, "compound": "SOFT", "source": "https://racingnews365.com/lewis-hamilton-reveals-error-over-ferrari-disaster-in-singapore-gp"},
+    {"driver": "leclerc", "stint": 2, "compound": "MEDIUM", "source": "https://www.timeslive.co.za/motoring/2026-10-12-hamilton-apologises-as-pit-lane-miss-costs-ferrari-double-podium-in-singapore/"},
+    {"driver": "leclerc", "stint": 3, "compound": "SOFT", "source": "https://www.timeslive.co.za/motoring/2026-10-12-hamilton-apologises-as-pit-lane-miss-costs-ferrari-double-podium-in-singapore/"}
+  ],
+  "team_call": {
+    "player": "hamilton",
+    "call": "STAY",
+    "reasons": [
+      "Hamilton after the race: \"my call.\"",
+      "Stayed out on 21-lap-old softs."
+    ],
+    "sources": ["https://racingnews365.com/lewis-hamilton-reveals-error-over-ferrari-disaster-in-singapore-gp",
+                "https://www.nst.com.my/amp/sports/motor-sports/2026/10/1553403/sorry-boys-hamilton-takes-blame-botched-tyre-call"]
+  },
+  "pit_loss_prior": {
+    "source": "Green-flag stops in this race before lap 38 (laps 18-35), Jolpica https://api.jolpi.ca/ergast/f1/2026/17/pitstops/ and /laps/. Uses only data before the decision lap."
+  }
+}

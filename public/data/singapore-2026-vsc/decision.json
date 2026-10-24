@@ -1,0 +1,44 @@
+{
+ "id": "singapore-2026-vsc",
+ "race": "2026 Singapore GP",
+ "blind_title": "Lap 39. Virtual safety car. You're in P3 on 21-lap-old softs.",
+ "lap": 39,
+ "trigger": "VSC",
+ "player_role": {
+  "team": "Ferrari",
+  "driver": "Hamilton",
+  "number": 44
+ },
+ "options": [
+  "BOX",
+  "STAY"
+ ],
+ "replay_from_lap": 1,
+ "reveal_to_lap": 62,
+ "ground_truth": {
+  "correct": "BOX",
+  "swing_s": 15.1
+ },
+ "factors": [
+  "tyre_age",
+  "cheap_stop_under_vsc",
+  "similar_cars_pitted",
+  "track_position"
+ ],
+ "team": {
+  "call": "STAY",
+  "reasons": [
+   "Hamilton after the race: \"my call.\"",
+   "Stayed out on 21-lap-old softs."
+  ]
+ },
+ "engine": {
+  "call": "BOX",
+  "confidence": 0.86,
+  "reasons": [
+   "3 of 18 cars pitted under the VSC, 2 of the 5 most similar.",
+   "VSC stop costs 17.6 s, green-flag stop 23.5 s.",
+   "Tyres 21 laps old, field median 8, 23 laps left."
+  ]
+ }
+}

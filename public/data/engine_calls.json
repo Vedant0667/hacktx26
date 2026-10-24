@@ -1,0 +1,54 @@
+{
+ "qatar-2025-l7": {
+  "call": "BOX",
+  "confidence": 0.98,
+  "reasons": [
+   "16 of 18 cars pitted under the SC, 4 of the 5 most similar.",
+   "SC stop costs 14.2 s, green-flag stop 28.3 s.",
+   "Tyres 7 laps old, 50 laps left, 25-lap cap: 2 more stops owed."
+  ],
+  "inputs": {
+   "track_status": "SC",
+   "field_share_weighted": 0.839,
+   "pitted_count": 16,
+   "rivals": 18,
+   "similar_top5_pitted": 4,
+   "normal_pit_loss_s": 28.3,
+   "reduced_pit_loss_s": 14.2,
+   "tyre_age": 7,
+   "field_median_tyre_age": 7,
+   "laps_left": 50,
+   "stops_owed": 2,
+   "places_at_risk": 1,
+   "score": 3.757,
+   "p_box": 0.977,
+   "radio_delta": 0.0
+  }
+ },
+ "singapore-2026-vsc": {
+  "call": "BOX",
+  "confidence": 0.86,
+  "reasons": [
+   "3 of 18 cars pitted under the VSC, 2 of the 5 most similar.",
+   "VSC stop costs 17.6 s, green-flag stop 23.5 s.",
+   "Tyres 21 laps old, field median 8, 23 laps left."
+  ],
+  "inputs": {
+   "track_status": "VSC",
+   "field_share_weighted": 0.535,
+   "pitted_count": 3,
+   "rivals": 18,
+   "similar_top5_pitted": 2,
+   "normal_pit_loss_s": 23.5,
+   "reduced_pit_loss_s": 17.6,
+   "tyre_age": 21,
+   "field_median_tyre_age": 8,
+   "laps_left": 23,
+   "stops_owed": null,
+   "places_at_risk": 1,
+   "score": 1.79,
+   "p_box": 0.857,
+   "radio_delta": 0.0
+  }
+ }
+}

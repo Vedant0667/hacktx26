@@ -1,0 +1,31 @@
+{
+  "race": "2025 Qatar GP",
+  "note": "OpenF1 was locked (401, live session) when this was written. Facts below are hand-entered from the cited sources. Laps not covered here have compound = null in frames.json.",
+  "track_status": {
+    "SC": {"laps": [7, 8, 9, 10],
+      "source": "Derived from data/jolpica/2025-qatar/laps.json: field median lap 88.0 s on lap 6, 107.5 s on lap 7, 133.9-141.2 s on laps 8-10, 88.2 s on lap 11. SC on lap 7 for the Hulkenberg/Gasly contact: https://www.ferrari.com/en-EN/formula1/articles/qatar-grand-prix-2025-sunday-report"}
+  },
+  "rules": {
+    "max_stint_laps": 25,
+    "source": "https://www.the-race.com/formula-1/f1-introduces-qatar-only-rule-change/ ; 'Pirelli mandated 25-lap-maximum stints in Qatar's 57-lap contest' https://www.the-race.com/formula-1/nine-things-we-learned-from-f1-2025s-qatar-grand-prix/"
+  },
+  "compounds": [
+    {"driver": "leclerc", "stint": 1, "compound": "MEDIUM", "source": "https://www.ferrari.com/en-EN/formula1/articles/qatar-grand-prix-2025-sunday-report"},
+    {"driver": "hamilton", "stint": 1, "compound": "SOFT", "source": "https://www.ferrari.com/en-EN/formula1/articles/qatar-grand-prix-2025-sunday-report"},
+    {"driver": "albon", "stint": 1, "compound": "HARD", "source": "https://www.the-race.com/formula-1/nine-things-we-learned-from-f1-2025s-qatar-grand-prix/"},
+    {"driver": "albon", "stint": 3, "compound": "MEDIUM", "source": "https://www.grandprix247.com/formula-1-news/f1-news-qatar-grand-prix-teams-drivers-report-from-lusail-formula-1-max-verstappen"}
+  ],
+  "team_call": {
+    "player": "piastri",
+    "call": "STAY",
+    "reasons": [
+      "Kept track position: P1 and P3 on the road at the SC.",
+      "Stella after the race: \"it wasn't the correct decision.\""
+    ],
+    "sources": ["https://www.skysports.com/f1/news/12040/13477418/qatar-gp-max-verstappen-wins",
+                "https://www.motorsportmagazine.com/articles/single-seaters/f1/mark-hughes-mclarens-attempt-at-fairness-gifted-qatar-win-to-verstappen/"]
+  },
+  "pit_loss_prior": {
+    "source": "Green-flag stops in the 2024 Qatar GP, Jolpica https://api.jolpi.ca/ergast/f1/2024/23/pitstops/ and /laps/ (cached in data/jolpica/2024-qatar/). Pre-race knowledge, so no lookahead."
+  }
+}
