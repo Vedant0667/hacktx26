@@ -1,5 +1,5 @@
 // Pure request checks for POST /api/lobby/[code]/transcribe (no I/O), unit-tested in scripts/test-voice.ts.
-// Order in the route: content type (415) -> declared length (413) -> name (400) -> token (403) -> call phase
+// Order in the route: content type (415) -> declared length (413) -> token (403) -> call phase
 // (409) -> rate limits (429) -> body read with a hard cap (413, 400) -> Muse (503 with fallback: true).
 import type { LobbyMeta } from "@/lib/db";
 import { ASR_MAX_BYTES, ASR_MIN_BYTES } from "@/lib/muse/asr";
@@ -25,12 +25,6 @@ export function checkDeclaredLength(req: Request, max = ASR_MAX_BYTES): void {
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) throw new HttpError(400, "Bad Content-Length");
   if (n > max) throw new HttpError(413, `Recording too long (max ${max} bytes, 30 s)`);
-}
-
-export function playerName(req: Request): string {
-  const name = new URL(req.url).searchParams.get("player")?.trim() ?? "";
-  if (!name || name.length > 24) throw new HttpError(400, "player: 1 to 24 characters");
-  return name;
 }
 
 export interface CallTarget {
