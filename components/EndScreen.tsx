@@ -122,7 +122,7 @@ function momentLine(s: GameSummary, m: SummaryMoment, carCode: string | null): {
   const main = m.cars.find((c) => c.code === carCode) ?? m.cars[0];
   if (!main) return { head: COPY.end.momentHead(m.lap), sub: "", luck: null, stakes: null };
   const right = main.final_right_call ?? main.correct;
-  const others = m.cars.filter((c) => c !== main).map((c) => COPY.end.carRight(c.code, c.final_right_call ?? c.correct, c.swing_s));
+  const others = m.cars.filter((c) => c !== main).map((c) => COPY.end.carRight(c.code, c.final_right_call ?? c.correct, c.swing_s, c.stakes));
   return {
     head: COPY.end.wasRight(right, main.swing_s),
     sub: [COPY.end.teamDid(main.team, main.team_call), `${COPY.end.stakes(main.stakes)}.`, ...others.map((o) => `${o}.`)].join(" "),
@@ -159,7 +159,7 @@ export function HostSummary({ summary: s, code, carCode }: { summary: GameSummar
   const line = single && m0 ? momentLine(s, m0, carCode) : null;
   const rows = boardRows(s);
   const ranks = playerRanks(s.ranking);
-  const size = rows.length <= 5 ? "lg" : rows.length <= 8 ? "md" : rows.length <= 10 ? "sm" : "xs";
+  const size = rows.length <= 3 ? "lg" : rows.length <= 6 ? "md" : rows.length <= 10 ? "sm" : "xs";
   return (
     <main className="grid h-dvh grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
       <header className="bg-field px-14 pb-6 pt-7 text-on-field">
@@ -168,7 +168,7 @@ export function HostSummary({ summary: s, code, carCode }: { summary: GameSummar
           <span>{COPY.host.room(code)}</span>
         </div>
         <h1 className="display mt-3 text-[4.5rem] leading-[0.95]">{winnerLine(s)}</h1>
-        <p className="mt-3 text-2xl font-bold">
+        <p className="mt-2 text-xl font-bold">
           {line ? (
             <>
               {line.head} <span className="font-medium">{line.sub}</span>
@@ -187,7 +187,7 @@ export function HostSummary({ summary: s, code, carCode }: { summary: GameSummar
           ))}
         </div>
         {!single && (
-          <div className="col-span-5 flex min-h-0 flex-col gap-2.5 overflow-hidden border-t-2 border-ink pt-3">
+          <div className="col-span-5 flex min-h-0 flex-col gap-2.5 overflow-y-auto border-t-2 border-ink pt-3">
             <span className="meta text-ink-2">{COPY.end.moments}</span>
             {s.moments.map((m) => (
               <HostMoment key={m.lap} m={m} s={s} carCode={carCode} />
@@ -197,9 +197,9 @@ export function HostSummary({ summary: s, code, carCode }: { summary: GameSummar
         )}
       </section>
 
-      <footer className="flex items-end justify-between gap-6 px-14 pb-7 pt-4">
+      <footer className="flex items-end justify-between gap-6 border-t border-line px-14 pb-6 pt-3">
         <div className="flex max-w-[100ch] flex-col gap-1">
-          <p className="text-lg font-bold leading-snug">{howText}</p>
+          <p className="text-base font-bold leading-snug">{howText}</p>
           <p className="text-base font-medium">{COPY.end.engineNote}</p>
           <p className="text-xs text-ink-2">{COPY.end.credit}</p>
         </div>
@@ -245,7 +245,7 @@ function HostRow({ r, s, rank, size, single }: { r: RankRow; s: GameSummary; ran
             ) : (
               <span className={`${z.quote} text-ink-2`}>{e?.call ? COPY.end.noReason : ""}</span>
             )}
-            {sp && <span className={`nums font-bold ${z.sub} ${bench ? "" : "text-ink"}`}>{COPY.end.split(sp)}</span>}
+            {sp && <span className={`tnum font-bold ${z.sub} ${bench ? "" : "text-ink"}`}>{COPY.end.split(sp)}</span>}
             {sub && <span className={`line-clamp-1 ${z.sub} text-ink-2`}>{sub}</span>}
           </span>
         </>
@@ -268,7 +268,7 @@ function RaceRowMiddle({ r, s, subClass }: { r: RankRow; s: GameSummary; subClas
         {COPY.end.callsRight(t.right, t.calls)}
         {a.n > 0 && <span className="font-medium"> · {COPY.end.audiblesLine(a.n, a.points)}</span>}
       </span>
-      <span className={`nums font-medium ${subClass}`}>{COPY.end.sums(sums.call, sums.reasoning, sums.total)}</span>
+      <span className={`tnum font-medium ${subClass}`}>{COPY.end.sums(sums.call, sums.reasoning, sums.total)}</span>
     </span>
   );
 }
@@ -287,7 +287,7 @@ function HostMoment({ m, s, carCode }: { m: SummaryMoment; s: GameSummary; carCo
       <span className="flex flex-wrap gap-x-4 gap-y-0.5">
         {m.entries.map((e) => (
           <span key={`${e.kind}:${e.name}:${e.driver_code}`} className={`text-base ${e.kind === "player" ? "font-bold" : "text-ink-2"}`}>
-            {e.kind === "player" ? e.name : e.kind === "engine" ? COPY.end.engine : e.name} {e.call ? (rightOf(m, e) ? "✓" : "✗") : "–"}{" "}
+            {e.kind === "player" ? e.name : e.kind === "engine" ? label(e, s) : e.name} {e.call ? (rightOf(m, e) ? "✓" : "✗") : "–"}{" "}
             <span className="nums">{COPY.end.points(e.points)}</span>
           </span>
         ))}
@@ -350,14 +350,13 @@ function MyMomentRow({ m, e }: { m: SummaryMoment; e: MomentEntry }) {
           <span className="text-base font-black">
             <CallWord call={e.call} /> <RightMark right={right} />
           </span>
-          <span className="nums text-xs font-bold leading-tight text-ink-2">{sp ? COPY.end.split(sp, false) : COPY.end.noCallRow}</span>
+          <span className="tnum text-xs font-bold leading-tight text-ink-2">{sp ? COPY.end.split(sp) : COPY.end.noCallRow}</span>
         </span>
         <span className="nums ml-auto shrink-0 text-lg font-black">{COPY.end.points(e.points)}</span>
         {chevron}
       </summary>
       <div className="flex flex-col gap-1.5 pb-3 pl-[3.75rem] text-sm leading-snug">
         {car && <p className="font-bold">{COPY.end.rightSwing(car.final_right_call ?? car.correct, car.swing_s, car.stakes)}</p>}
-        {sp && <p className="nums font-bold">{COPY.end.split(sp)}</p>}
         {e.call && e.verdict && <p>{e.verdict}</p>}
         {luck && <p className="font-bold">{luck}</p>}
         {e.said.trim() && <q className="text-ink-2">{e.said}</q>}
@@ -372,13 +371,13 @@ function MyAudibleRow({ a }: { a: SummaryAudible }) {
     <div className="flex min-h-12 items-center gap-3 border-b border-soft-2 py-1.5 text-ink-2">
       <span className="flex w-12 shrink-0 flex-col">
         <b className="nums font-mono text-sm font-bold">L{a.lap}</b>
-        <span className="text-[11px] font-bold uppercase">{COPY.end.audibles}</span>
+        <span className="text-[11px] font-bold uppercase">{COPY.race.audible.title}</span>
       </span>
       <span className="flex min-w-0 flex-col">
         <span className="text-sm font-bold">
           {COPY.end.boxNow} {audibleMark(a)}
         </span>
-        <span className="nums text-xs font-bold leading-tight">{sp ? COPY.end.split(sp, false) : (COPY.race.audibleStatus[a.status] ?? COPY.end.unscored)}</span>
+        <span className="tnum text-xs font-bold leading-tight">{sp ? COPY.end.split(sp, false) : (COPY.race.audibleStatus[a.status] ?? COPY.end.unscored)}</span>
       </span>
       <span className="nums ml-auto text-base font-bold text-ink">{COPY.end.points(a.points)}</span>
       <span aria-hidden className="ml-1 inline-block w-2" />
@@ -418,7 +417,7 @@ function Everyone({ s, myCar }: { s: GameSummary; myCar: string | null }) {
                           <CallWord call={e.call} /> <RightMark right={rightOf(m, e)} />
                         </span>
                       </span>
-                      {sp && <span className="nums text-xs leading-tight">{COPY.end.split(sp, false)}</span>}
+                      {sp && <span className="tnum text-xs leading-tight">{COPY.end.split(sp, false)}</span>}
                     </span>
                     <span className="nums ml-auto shrink-0 text-base font-black">{COPY.end.points(e.points)}</span>
                     {chevron}
@@ -445,6 +444,7 @@ export function PhoneSummary({ summary: s, me }: { summary: GameSummary; me: str
   const myCar = meRow?.driver_code ?? s.cars[0]?.code ?? null;
   const race = s.mode === "race" || s.moments.length > 1;
   const tally = meRow ? freezeTally(s, meRow) : null;
+  const myAudibles = audibleTally(s, me);
   const rows: MyRow[] = [
     ...s.moments.flatMap((m) => {
       const e = m.entries.find((x) => x.kind === "player" && x.name === me);
@@ -472,6 +472,7 @@ export function PhoneSummary({ summary: s, me }: { summary: GameSummary; me: str
             <p className="nums mt-2.5 text-base font-bold">
               {COPY.end.rankLine(rankText(myRank), myRank.of)}
               {race && tally ? ` · ${COPY.end.callsRight(tally.right, tally.calls)}` : ""}
+              {myAudibles.n > 0 ? ` · ${COPY.end.audiblesLine(myAudibles.n, myAudibles.points)}` : ""}
             </p>
           )}
           <p className="mt-1 text-lg font-bold">{phoneWinnerLine(s, me)}</p>
@@ -494,7 +495,7 @@ export function PhoneSummary({ summary: s, me }: { summary: GameSummary; me: str
                 <span className="nums text-sm font-bold">{!bench && rk ? rankText(rk) : ""}</span>
                 <span className="flex min-w-0 flex-col">
                   <span className={`truncate ${bench ? "text-sm font-bold" : "text-base font-black"}`}>{label(r, s)}</span>
-                  <span className="nums truncate text-xs">{COPY.end.sums(sums.call, sums.reasoning, sums.total)}</span>
+                  <span className="tnum truncate text-xs">{COPY.end.sums(sums.call, sums.reasoning, sums.total)}</span>
                 </span>
                 <span className="nums text-base font-black">{COPY.end.points(r.points)}</span>
               </div>

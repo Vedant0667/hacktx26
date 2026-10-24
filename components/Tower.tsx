@@ -1,4 +1,5 @@
 // The running order as a clean table: hairline rows in absolute slots, so an overtake animates as translateY.
+// Rows are opaque, so a row sliding past another mid-animation covers it instead of printing over it.
 // The player's row is inverted. Simple: position, swatch, code, gap. Advanced adds interval, tyre and pit.
 import { COPY } from "@/lib/copy";
 import { fmtGap } from "@/lib/client/race";
@@ -76,7 +77,7 @@ export function Tower({
           return (
             <li
               key={d.number}
-              className={`tower-row absolute inset-x-0 grid items-center gap-x-3 border-b px-2 ${text} ${mine ? "border-ink bg-ink text-white" : "border-line"}`}
+              className={`tower-row absolute inset-x-0 grid items-center gap-x-3 border-b px-2 ${text} ${mine ? "z-[1] border-ink bg-ink text-white" : "border-line bg-bg"}`}
               style={{ height: ROW, transform: `translateY(${(slot.get(d.number) ?? 0) * ROW}px)`, gridTemplateColumns: cols.replaceAll("_", " ") }}
               aria-current={mine || undefined}
             >

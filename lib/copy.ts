@@ -649,7 +649,7 @@ export const COPY = {
     gameLine: (moments: number, audibles: number) =>
       `${moments} ${moments === 1 ? "freeze" : "freezes"}${audibles ? `, ${audibles} ${audibles === 1 ? "audible" : "audibles"}` : ""}.`,
     momentHead: (lap: number) => `Lap ${lap}`,
-    carRight: (code: string, c: Call, swing: number) => `${code}: ${gainWord(c).toLowerCase()} gained ${swing.toFixed(1)} s`,
+    carRight: (code: string, c: Call, swing: number, stakes: number) => `${code}: ${gainWord(c).toLowerCase()} gained ${swing.toFixed(1)} s, ${stakes}-point stakes`,
     // Round 9 luck: a later red flag, SC/VSC or rain changed the result.
     unlucky: "Right call, unlucky:",
     lucky: "Lucky:",
@@ -666,7 +666,7 @@ export const COPY = {
     // A total across several calls.
     sums: (call: number, reasoning: number, total: number) => `Calls ${pts(call)} · Reasoning ${pts(reasoning)} = ${pts(total)}`,
     engineNote: "Engine: our strategy model, scored like a player. Engine and the real team are not ranked.",
-    audiblesLine: (n: number, points: number) => `${n} ${n === 1 ? "audible" : "audibles"} ${pts(points)}`,
+    audiblesLine: (n: number, points: number) => `${n} ${n === 1 ? "audible" : "audibles"} scored ${pts(points)}`,
     stakesTag: (n: number) => `stakes ${n}`,
     right: "Right call",
     wrong: "Wrong call",

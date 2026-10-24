@@ -9,7 +9,7 @@ import { playFreezeTone } from "@/lib/client/cue";
 import { fieldStyle } from "@/lib/client/field";
 import { noopSubscribe } from "@/lib/client/identity";
 import { useDataMode, type DataMode } from "@/lib/client/mode";
-import { CALL_WINDOW_S, tla } from "@/lib/client/race";
+import { CALL_WINDOW_S } from "@/lib/client/race";
 import {
   REVEAL_HOLD_MS,
   clockLap,
@@ -31,7 +31,7 @@ import { kickPlayer } from "@/lib/client/session";
 import { lapTimeText, telemetry } from "@/lib/client/telemetry";
 import { useTicker, type Conn } from "@/lib/client/useLobby";
 import type { LapFrame } from "@/lib/types";
-import { Centered, DarkModeToggle, Freeze, PlayerSlots, Top } from "../host/HostScreen";
+import { Centered, DarkModeToggle, Freeze, PlayerSlots, Top, retryLater } from "../host/HostScreen";
 import { LineChart } from "../host/HostCharts";
 import { HostQr } from "../host/HostQr";
 import { Tower } from "../Tower";
@@ -100,15 +100,16 @@ export function RaceHost({
   useEffect(() => {
     const k = `${phase}:${race.phase_started_at}`;
     if (advanced.current === k) return;
+    // A failed request clears the latch after a pause (retryLater), so the race never sticks until a reload.
     if (phase === "replay" && segmentDone(race, t)) {
       advanced.current = k;
-      void setPhase(nextAfterReplay(r), r.freeze_index);
+      void setPhase(nextAfterReplay(r), r.freeze_index).then((e) => retryLater(advanced, k, e));
     } else if (phase === "freeze" && (elapsed >= (CALL_WINDOW_S + 1.5) * 1000 || (allIn && elapsed > 1500))) {
       advanced.current = k;
-      void setPhase("reveal_freeze", r.freeze_index);
+      void setPhase("reveal_freeze", r.freeze_index).then((e) => retryLater(advanced, k, e));
     } else if (phase === "reveal_freeze" && elapsed >= REVEAL_HOLD_MS) {
       advanced.current = k;
-      void setPhase("replay", r.freeze_index);
+      void setPhase("replay", r.freeze_index).then((e) => retryLater(advanced, k, e));
     }
   }, [phase, race, r, t, elapsed, allIn, setPhase]);
 
@@ -153,6 +154,11 @@ export function RaceHost({
           <>
             <ModeToggle mode={mode} onChange={setMode} size="sm" />
             {muteBtn("secondary")}
+            {segmentDone(race, t) && (
+              <Button variant="secondary" size="sm" onClick={() => void setPhase(nextAfterReplay(r), r.freeze_index)}>
+                {COPY.race.continue}
+              </Button>
+            )}
           </>
         }
       />
@@ -297,7 +303,7 @@ function RaceLobbyView({
           {!same && (
             <p className="mt-2 font-mono text-sm text-[#bdbdbd]">
               {picks.length
-                ? picks.map((c) => COPY.host.drives(c, race.players.filter((p) => carFor(p.name) === c).map((p) => tla(p.name)))).join(" · ")
+                ? picks.map((c) => COPY.host.drives(c, race.players.filter((p) => carFor(p.name) === c).map((p) => p.name))).join(" · ")
                 : COPY.race.pickWait}
             </p>
           )}
@@ -414,10 +420,7 @@ function ReplayView({
             {watch && (
               <div className="border-t-2 border-ink pt-2">
                 <span className="meta">{COPY.host.gapTitle(watch.code, watchSide)}</span>
-                <p className="nums mt-1 text-[1.875rem] font-bold leading-none">
-                  {watchSide === "behind" ? "+" : "−"}
-                  {watch.now?.toFixed(1) ?? "–"}
-                </p>
+                <p className="nums mt-1 text-[1.875rem] font-bold leading-none">{watch.now != null ? COPY.tele.gapS(watch.now) : "–"}</p>
                 <p className="nums mt-1 text-sm">{COPY.host.rate(watch.rate)}</p>
               </div>
             )}
@@ -430,7 +433,9 @@ function ReplayView({
                 <p className="nums mt-1 text-sm">{tele.deg.best != null ? COPY.host.bestSoFar(lapTimeText(tele.deg.best)) : COPY.host.noTimes}</p>
               </div>
             )}
-            <p className="border-t-2 border-ink pt-2 text-base">{COPY.race.audible.hint}</p>
+            <p className="border-t-2 border-ink pt-2 text-xl leading-snug">
+              <b className="font-black">{COPY.race.audible.title}.</b> {COPY.race.audible.hint}
+            </p>
           </div>
         </div>
       </section>

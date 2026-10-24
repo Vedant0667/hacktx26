@@ -3,7 +3,7 @@
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
 import { forwardRef } from "react";
 import { COPY } from "@/lib/copy";
-import { compoundLetter, type Badges } from "@/lib/client/race";
+import { compoundLetter } from "@/lib/client/race";
 import type { TrackStatus } from "@/lib/types";
 import type { Conn } from "@/lib/client/useLobby";
 
@@ -218,38 +218,6 @@ export function TrackStrip({ status, size = "phone" }: { status: TrackStatus; si
 export function ScChip({ status, className = "" }: { status: TrackStatus; className?: string }) {
   if (status === "GREEN") return null;
   return <span className={`inline-flex items-center border-2 border-ink bg-[#FBD530] px-1.5 font-mono text-[0.7em] font-bold leading-[1.3] text-ink ${className}`}>{status}</span>;
-}
-
-const badgeNames = (b: Badges) =>
-  [b.winning && COPY.badges.winning.name, b.team && COPY.badges.team.name, b.engine && COPY.badges.engine.name].filter(Boolean) as string[];
-
-export function BadgeList({ badges, className = "" }: { badges: Badges; className?: string }) {
-  const list = badgeNames(badges);
-  if (!list.length) return null;
-  return (
-    <ul className={`flex flex-col ${className}`}>
-      {list.map((b) => (
-        <li key={b} className="flex min-h-11 items-center gap-3 border-b border-line text-base font-bold">
-          <span className="inline-grid size-6 place-items-center bg-ink text-white">
-            <Check />
-          </span>
-          {b}
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-export function BadgeMark({ badges }: { badges: Badges }) {
-  const list = badgeNames(badges);
-  if (!list.length) return null;
-  return (
-    <span className="inline-flex min-w-0 items-center gap-1.5 text-sm" aria-label={list.join(", ")}>
-      <Check className="shrink-0" />
-      <span className="truncate">{list[0]}</span>
-      {list.length > 1 && <span className="nums text-xs">+{list.length - 1}</span>}
-    </span>
-  );
 }
 
 export function ConnNotice({ conn, code }: { conn: Conn; code: string }) {
