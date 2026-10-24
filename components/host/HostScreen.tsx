@@ -6,10 +6,11 @@ import { data } from "@/lib/client/api";
 import { noopSubscribe, rememberHost } from "@/lib/client/identity";
 import { CALL_WINDOW_S, callMomentFrames, contextAt, frameAt, raceControl, replayDoneMs, replayLap, tla } from "@/lib/client/race";
 import { useLobby, useTicker } from "@/lib/client/useLobby";
+import { advRows, advancedFigures, useDataMode, type DataMode, type GroundTruthFile } from "@/lib/client/mode";
 import type { DecisionPoint, LapFrame } from "@/lib/types";
 import { QrCode } from "../QrCode";
 import { Tower } from "../Tower";
-import { Button, ConnNotice, Label, StatusStrip } from "../ui";
+import { Button, ConnNotice, Figures, Label, ModeToggle, StatusStrip } from "../ui";
 import { HostReveal, HostScoreboard } from "./HostReveal";
 
 export function HostScreen({ code }: { code: string }) {
@@ -17,6 +18,8 @@ export function HostScreen({ code }: { code: string }) {
   const [decision, setDecision] = useState<DecisionPoint | null>(null);
   const [frames, setFrames] = useState<LapFrame[] | null>(null);
   const [dataErr, setDataErr] = useState(false);
+  const [gt, setGt] = useState<GroundTruthFile | null>(null);
+  const [mode, setMode] = useDataMode(code, "host");
   const t = useTicker(serverNow, 100);
   const origin = useSyncExternalStore(noopSubscribe, () => window.location.origin, () => "");
 
@@ -33,12 +36,14 @@ export function HostScreen({ code }: { code: string }) {
         setFrames(f);
       })
       .catch(() => setDataErr(true));
+    // Optional: only the Advanced pit-loss figures and post-reveal numbers need it.
+    data.groundTruth(decisionId).then(setGt).catch(() => {});
   }, [decisionId]);
 
   const phase = lobby?.phase;
   const elapsed = lobby ? t - lobby.phase_started_at : 0;
 
-  // Auto-advance: replay freezes on the decision lap; the call window closes after 20 s (or when everyone is in).
+  // Auto-advance: replay freezes on the decision lap; the call window closes after CALL_WINDOW_S, 40 s (or when everyone is in).
   const advanced = useRef<string>("");
   useEffect(() => {
     if (!lobby || !decision) return;
@@ -66,7 +71,7 @@ export function HostScreen({ code }: { code: string }) {
     <>
       <ConnNotice conn={conn} code={code} />
       {phase === "waiting" && (
-        <Waiting code={code} joinUrl={joinUrl} joinHref={joinHref} decision={decision} players={lobby.players} onStart={() => setPhase("replay")} />
+        <Waiting code={code} joinUrl={joinUrl} joinHref={joinHref} decision={decision} players={lobby.players} onStart={() => setPhase("replay")} modeToggle={<ModeToggle mode={mode} onChange={setMode} />} />
       )}
       {(phase === "replay" || phase === "decision") && (
         <RaceView
@@ -79,10 +84,13 @@ export function HostScreen({ code }: { code: string }) {
           players={lobby.players}
           submitted={new Set(lobby.submissions.map((s) => s.player_name))}
           onAdvance={() => setPhase(phase === "replay" ? "decision" : "reveal")}
+          mode={mode}
+          modeToggle={<ModeToggle mode={mode} onChange={setMode} size="sm" />}
+          gt={gt}
         />
       )}
       {phase === "reveal" && (
-        <HostReveal code={code} decision={decision} frames={frames} lobby={lobby} elapsed={elapsed} onNext={() => setPhase("done")} />
+        <HostReveal code={code} decision={decision} frames={frames} lobby={lobby} elapsed={elapsed} onNext={() => setPhase("done")} mode={mode} modeToggle={<ModeToggle mode={mode} onChange={setMode} size="sm" />} gt={gt} />
       )}
       {phase === "done" && <HostScoreboard code={code} decision={decision} lobby={lobby} />}
     </>
@@ -100,6 +108,7 @@ function Waiting({
   decision,
   players,
   onStart,
+  modeToggle,
 }: {
   code: string;
   joinUrl: string;
@@ -107,6 +116,7 @@ function Waiting({
   decision: DecisionPoint;
   players: { name: string; joined_at: number }[];
   onStart: () => void;
+  modeToggle: React.ReactNode;
 }) {
   const [busy, setBusy] = useState(false);
   const r = decision.player_role;
@@ -124,8 +134,9 @@ function Waiting({
         </div>
         <p className="text-40 font-semibold leading-row stretch-75">{COPY.room.share(joinUrl)}</p>
         <p className="text-24 text-ink-2">{COPY.waiting.race(decision.race, r.team, r.driver, r.number)}</p>
+        <div className="mt-auto flex items-center gap-8">
         <Button
-          className="mt-auto h-14 self-start text-24"
+          className="h-14 text-24"
           busy={busy}
           onClick={async () => {
             setBusy(true);
@@ -135,6 +146,8 @@ function Waiting({
         >
           {COPY.waiting.hostButton}
         </Button>
+        {modeToggle}
+        </div>
       </section>
 
       <section className="col-span-5 flex min-h-0 flex-col gap-4">
@@ -164,6 +177,9 @@ function RaceView({
   players,
   submitted,
   onAdvance,
+  mode,
+  modeToggle,
+  gt,
 }: {
   code: string;
   decision: DecisionPoint;
@@ -174,21 +190,25 @@ function RaceView({
   players: { name: string }[];
   submitted: Set<string>;
   onAdvance: () => void;
+  mode: DataMode;
+  modeToggle: React.ReactNode;
+  gt: GroundTruthFile | null;
 }) {
   const seen = callMomentFrames(frames, decision);
   const frame = frameAt(seen, lap);
   const total = frames[frames.length - 1]?.lap ?? lap;
   const msgs = raceControl(seen, lap, decision.replay_from_lap).slice(0, 8);
   const ctx = contextAt(decision, seen);
+  const adv = frozen && mode === "advanced" ? advancedFigures(decision, seen, total, gt) : null;
   const left = Math.max(0, Math.ceil(CALL_WINDOW_S - elapsed / 1000));
   const r = decision.player_role;
 
   return (
     <main className="grid h-dvh grid-cols-[minmax(420px,5fr)_7fr] gap-12 overflow-hidden p-12">
       <section className="min-h-0">
-        {frame && <Tower drivers={frame.drivers} playerNumber={r.number} dim={frozen} />}
+        {frame && <Tower drivers={frame.drivers} playerNumber={r.number} dim={frozen} mode={mode} />}
       </section>
-      <section className="flex min-h-0 flex-col gap-6">
+      <section className={`flex min-h-0 flex-col ${frozen && mode === "advanced" ? "gap-4" : "gap-6"}`}>
         <div className="flex items-end justify-between gap-6">
           <div className="flex min-w-0 flex-col gap-1">
             <span className="text-24 font-semibold">{decision.race}</span>
@@ -215,15 +235,18 @@ function RaceView({
                 ))}
               </ol>
             </div>
-            <Button variant="secondary" className="h-14 self-start text-20" onClick={onAdvance}>
-              {COPY.replay.skip}
-            </Button>
+            <div className="flex items-center gap-8">
+              <Button variant="secondary" className="h-14 text-20" onClick={onAdvance}>
+                {COPY.replay.skip}
+              </Button>
+              {modeToggle}
+            </div>
           </>
         ) : (
           <>
             {/* At 5 s and below the banner turns red; numerals stay bg (4.7:1), docs/06 flag-red rule. */}
             <div
-              className={`wipe-in relative z-20 flex h-[120px] items-center gap-6 px-6 text-bg transition-colors duration-200 ${left <= 5 ? "bg-flag-red" : "on-yellow bg-flag-yellow"}`}
+              className={`wipe-in relative z-20 flex h-[120px] shrink-0 items-center gap-6 px-6 text-bg transition-colors duration-200 ${left <= 5 ? "bg-flag-red" : "on-yellow bg-flag-yellow"}`}
             >
               <span
                 className={`min-w-0 flex-1 whitespace-nowrap font-extrabold uppercase tracking-hero leading-hero ${decision.trigger === "VSC" ? "text-40 stretch-62" : "text-56 stretch-75"}`}
@@ -239,7 +262,10 @@ function RaceView({
               />
             </div>
             <h2 className="text-72 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.freeze.question}</h2>
-            {ctx && (
+            {ctx && mode === "simple" && (
+              <p className="text-24 text-ink-2">{COPY.mode.hostLine(r.driver, ctx.pos, ctx.age, decision.trigger)}</p>
+            )}
+            {ctx && mode === "advanced" && (
               <p className="text-24 text-ink-2">
                 {COPY.freeze.context({
                   driver: r.driver,
@@ -251,12 +277,16 @@ function RaceView({
                 })}
               </p>
             )}
+            {mode === "advanced" && adv && <Figures cols={2} rows={advRows(decision.trigger, adv)} />}
             <p className="nums text-24 font-semibold">{left === 0 ? COPY.freeze.timeUp : COPY.freeze.waitingOn(Math.max(0, players.length - submitted.size))}</p>
             <div className="mt-auto flex flex-col gap-4">
               <LobbyStrip players={players} submitted={submitted} />
-              <Button variant="secondary" className="h-14 self-start text-20" onClick={onAdvance}>
-                {COPY.freeze.showCalls}
-              </Button>
+              <div className="flex items-center gap-8">
+                <Button variant="secondary" className="h-14 text-20" onClick={onAdvance}>
+                  {COPY.freeze.showCalls}
+                </Button>
+                {modeToggle}
+              </div>
             </div>
           </>
         )}
@@ -284,3 +314,4 @@ function LobbyStrip({ players, submitted }: { players: { name: string }[]; submi
     </ol>
   );
 }
+

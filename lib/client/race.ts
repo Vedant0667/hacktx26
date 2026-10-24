@@ -1,8 +1,8 @@
 // Pure helpers for the replay clock, the timing tower and scoreboard facts.
-import { CALL_WINDOW_S } from "@/lib/scoring";
+import { CALL_WINDOW_S, VOICE_NOTE_MAX_S } from "@/lib/scoring";
 import type { Call, DecisionPoint, LapFrame, Submission } from "@/lib/types";
 
-export { CALL_WINDOW_S };
+export { CALL_WINDOW_S, VOICE_NOTE_MAX_S };
 export const LAP_MS = 1200; // replay speed before the call
 export const PLAYED_OUT_MS = 6000; // lap L to reveal_to_lap after the call (docs/06 motion table)
 // Call 100 + reasoning 50 (docs/05 scoring; lib/scoring.ts). TODO(backend): export these from lib/scoring.ts.

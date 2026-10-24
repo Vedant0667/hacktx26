@@ -7,8 +7,24 @@ import { recallResult } from "@/lib/client/identity";
 import { MAX_TOTAL, badgesFor, tla } from "@/lib/client/race";
 import type { DecisionPoint } from "@/lib/types";
 import { BadgeTags, CallWord, Label } from "../ui";
+import { Measured } from "../host/HostReveal";
+import type { DataMode, GroundTruthFile } from "@/lib/client/mode";
 
-export function PlayerResult({ code, me, decision, lobby }: { code: string; me: string; decision: DecisionPoint; lobby: LobbyStateResponse }) {
+export function PlayerResult({
+  code,
+  me,
+  decision,
+  lobby,
+  mode,
+  gt,
+}: {
+  code: string;
+  me: string;
+  decision: DecisionPoint;
+  lobby: LobbyStateResponse;
+  mode: DataMode;
+  gt: GroundTruthFile | null;
+}) {
   const [lb, setLb] = useState<LeaderboardResponse | null>(null);
   const [stored] = useState(() => recallResult(code, decision.id));
 
@@ -104,13 +120,14 @@ export function PlayerResult({ code, me, decision, lobby }: { code: string; me: 
         <div className="flex flex-col gap-1 bg-engine-deep p-4">
           <Label className="text-ink">{COPY.reveal.engine}</Label>
           <span className="nums text-24 font-bold">{COPY.reveal.engineRow(decision.engine.call, Math.round(decision.engine.confidence * 100))}</span>
-          <ol className="flex list-decimal flex-col gap-1 pl-5 text-16">
-            {decision.engine.reasons.map((r) => (
+          <ol className={`flex flex-col gap-1 text-16 ${mode === "advanced" ? "list-decimal pl-5" : ""}`}>
+            {(mode === "advanced" ? decision.engine.reasons : decision.engine.reasons.slice(0, 1)).map((r) => (
               <li key={r}>{r}</li>
             ))}
           </ol>
         </div>
       </div>
+      {mode === "advanced" && <Measured decision={decision} gt={gt} size="sm" />}
     </section>
   );
 }

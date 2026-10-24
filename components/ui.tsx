@@ -135,3 +135,60 @@ export function CallWord({ call, className = "" }: { call: "BOX" | "STAY" | null
     </span>
   );
 }
+
+// Simple / Advanced data mode. Same control vocabulary as the call buttons: rule border, ink fill when on.
+export function ModeToggle({
+  mode,
+  onChange,
+  size = "md",
+}: {
+  mode: "simple" | "advanced";
+  onChange: (m: "simple" | "advanced") => void;
+  size?: "sm" | "md";
+}) {
+  const h = size === "sm" ? "h-9 px-3 text-14" : "h-10 px-4 text-16";
+  return (
+    <div role="group" aria-label={COPY.mode.label} className="inline-flex shrink-0 items-center gap-2">
+      <span className="text-14 font-semibold uppercase tracking-label text-ink-3">{COPY.mode.label}</span>
+      <span className="inline-flex">
+        {(["simple", "advanced"] as const).map((m, i) => (
+          <button
+            key={m}
+            type="button"
+            aria-pressed={mode === m}
+            onClick={() => onChange(m)}
+            className={`${h} border font-semibold transition-colors duration-[120ms] ${i === 0 ? "rounded-l-ctl" : "-ml-px rounded-r-ctl"} ${
+              mode === m ? "border-ink bg-ink text-bg" : "border-rule text-ink-2 hover:bg-surface-2 hover:text-ink active:bg-surface"
+            }`}
+          >
+            {COPY.mode[m]}
+          </button>
+        ))}
+      </span>
+    </div>
+  );
+}
+
+// Label and value rows in the tower's grammar (surface rows, 2 px gaps), for the Advanced figures.
+export function Figures({
+  rows,
+  cols = 1,
+  size = "md",
+}: {
+  // wide: the row spans both columns in a two-column grid.
+  rows: { label: string; value: string; wide?: boolean }[];
+  cols?: 1 | 2;
+  size?: "sm" | "md";
+}) {
+  const text = size === "sm" ? "text-16" : "text-20";
+  return (
+    <dl className={`grid gap-0.5 ${cols === 2 ? "grid-cols-2" : "grid-cols-1"}`}>
+      {rows.map((r) => (
+        <div key={r.label} className={`flex min-h-9 items-center justify-between gap-3 bg-surface px-3 ${text} ${r.wide && cols === 2 ? "col-span-2" : ""}`}>
+          <dt className="min-w-0 text-ink-2">{r.label}</dt>
+          <dd className="nums whitespace-nowrap font-semibold">{r.value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}

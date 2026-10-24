@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from 
 import { COPY } from "@/lib/copy";
 import { api } from "@/lib/client/api";
 import { recallResult, rememberResult } from "@/lib/client/identity";
-import { CALL_WINDOW_S } from "@/lib/client/race";
+import { CALL_WINDOW_S, VOICE_NOTE_MAX_S } from "@/lib/client/race";
 import { METER_SEGMENTS, useSpeech } from "@/lib/client/useSpeech";
 import type { Call, DecisionPoint } from "@/lib/types";
 import { Button } from "../ui";
@@ -27,6 +27,7 @@ export function CallPad({
   elapsed,
   players,
   submittedNames,
+  situation,
 }: {
   code: string;
   me: string;
@@ -34,6 +35,8 @@ export function CallPad({
   elapsed: number;
   players: number;
   submittedNames: string[];
+  // Position, gap, tyres and track state for the current data mode (components/play/Situation.tsx).
+  situation?: React.ReactNode;
 }) {
   const [call, setCall] = useState<Call | null>(null);
   const [why, setWhy] = useState("");
@@ -114,13 +117,22 @@ export function CallPad({
     }
   });
 
+  // One voice note per call: stop at the cap, and when the window closes.
+  const recordingNow = speech.status === "recording";
+  const talkMs = speech.startedAt && recordingNow ? now - speech.startedAt : 0;
+  useEffect(() => {
+    if (recordingNow && (talkMs >= VOICE_NOTE_MAX_S * 1000 || left === 0)) speech.stop();
+  }, [recordingNow, talkMs, left, speech]);
+
   function onSubmit(e: FormEvent) {
     e.preventDefault();
     void send();
   }
 
   const recording = speech.status === "recording";
-  const recSecs = speech.startedAt && recording ? Math.floor((now - speech.startedAt) / 1000) : 0;
+  const recSecs = Math.min(VOICE_NOTE_MAX_S, Math.floor(talkMs / 1000));
+  // A finished note can be replaced while the window is open.
+  const hasNote = speech.status === "done" && !!why.trim();
   const slow = speech.status === "transcribing" && speech.releasedAt != null && now - speech.releasedAt > SLOW_MS;
 
   const onKey = (down: boolean) => (e: KeyboardEvent) => {
@@ -163,6 +175,7 @@ export function CallPad({
     <section className="flex flex-col gap-4">
       {countdown}
       {left <= 5 && left > 0 && <p className="text-20 font-semibold text-flag-red">{COPY.freeze.fiveLeft}</p>}
+      {situation}
       <h1 className="text-32 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.freeze.question}</h1>
 
       <button
@@ -176,7 +189,7 @@ export function CallPad({
         onKeyDown={onKey(true)}
         onKeyUp={onKey(false)}
         onContextMenu={(e) => e.preventDefault()}
-        disabled={speech.status === "denied" || speech.status === "unsupported" || speech.status === "no_mic"}
+        disabled={left === 0 || speech.status === "denied" || speech.status === "unsupported" || speech.status === "no_mic"}
         className={`flex h-40 w-full touch-none select-none flex-col items-center justify-center gap-3 rounded-ctl text-32 font-extrabold uppercase stretch-125 disabled:bg-surface-2 disabled:text-ink-disabled ${
           recording ? "bg-flag-red text-bg" : "bg-ink text-bg hover:bg-ink-2"
         }`}
@@ -185,7 +198,7 @@ export function CallPad({
         <MicGlyph />
         {recording ? (
           <>
-            <span className="nums">{COPY.freeze.rec(`0:${String(recSecs).padStart(2, "0")}`)}</span>
+            <span className="nums">{COPY.freeze.rec(recSecs, VOICE_NOTE_MAX_S)}</span>
             <span className="flex gap-1" aria-hidden>
               {Array.from({ length: METER_SEGMENTS }, (_, i) => (
                 <span key={i} className={`h-4 w-3 ${i < speech.level ? "bg-bg" : "bg-bg/30"}`} />
@@ -193,7 +206,7 @@ export function CallPad({
             </span>
           </>
         ) : (
-          <span>{COPY.freeze.ptt}</span>
+          <span>{hasNote ? COPY.freeze.reRecord : COPY.freeze.ptt}</span>
         )}
       </button>
 
@@ -206,7 +219,7 @@ export function CallPad({
             ? slow
               ? COPY.freeze.slow
               : COPY.freeze.released
-            : (micNote ?? note)}
+            : (micNote ?? note ?? COPY.freeze.noteCap(VOICE_NOTE_MAX_S))}
       </p>
 
       <form onSubmit={onSubmit} className="flex flex-col gap-4" noValidate>

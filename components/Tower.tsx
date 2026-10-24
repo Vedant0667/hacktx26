@@ -1,6 +1,7 @@
 // The broadcast timing tower. Rows sit in absolute slots so a position change animates as translateY.
 import { COPY } from "@/lib/copy";
 import { fmtGap } from "@/lib/client/race";
+import { intervals, type DataMode } from "@/lib/client/mode";
 import type { DriverFrame } from "@/lib/types";
 import { Tyre } from "./ui";
 
@@ -15,6 +16,7 @@ export function Tower({
   maxRows = 20,
   centerOn,
   showPit = true,
+  mode = "advanced",
 }: {
   drivers: DriverFrame[];
   playerNumber: number;
@@ -25,6 +27,8 @@ export function Tower({
   centerOn?: number;
   // The phone drops the PIT column so the tower fits 390 px.
   showPit?: boolean;
+  // Simple: position, swatch, code, gap. Advanced adds interval (host), tyre and pit.
+  mode?: DataMode;
 }) {
   const sorted = [...drivers].sort((a, b) => a.position - b.position);
   let visible = sorted;
@@ -37,7 +41,19 @@ export function Tower({
   // Render in a stable order (by car number) so React moves nothing and CSS animates the slot change.
   const stable = [...visible].sort((a, b) => a.number - b.number);
   const height = visible.length * (ROW + GAP) - GAP;
-  const cols = showPit ? "grid-cols-[32px_6px_1fr_88px_72px_48px]" : "grid-cols-[32px_6px_1fr_80px_64px]";
+  const adv = mode === "advanced";
+  // The interval column is host-only (showPit); after the reveal the PIT cell carries the outcome tags in both modes.
+  const showInt = adv && showPit;
+  const showTyre = adv;
+  const showPitCol = showPit && (adv || !!pitTags);
+  const ints = showInt ? intervals(drivers) : null;
+  const cols = !adv
+    ? showPitCol
+      ? "grid-cols-[32px_6px_1fr_88px_96px]"
+      : "grid-cols-[32px_6px_1fr_88px]"
+    : showPit
+      ? "grid-cols-[32px_6px_1fr_88px_72px_72px_48px]"
+      : "grid-cols-[32px_6px_1fr_80px_64px]";
 
   return (
     <div className={dim ? "tower-dim" : ""}>
@@ -46,8 +62,9 @@ export function Tower({
         <span />
         <span>{COPY.replay.columns.driver}</span>
         <span className="text-right">{COPY.replay.columns.gap}</span>
-        <span>{COPY.replay.columns.tyre}</span>
-        {showPit && <span>{COPY.replay.columns.pit}</span>}
+        {showInt && <span className="text-right">{COPY.mode.interval}</span>}
+        {showTyre && <span>{COPY.replay.columns.tyre}</span>}
+        {showPitCol && <span>{COPY.replay.columns.pit}</span>}
       </div>
       <ol className="relative" style={{ height }}>
         {stable.map((d) => {
@@ -72,8 +89,11 @@ export function Tower({
               />
               <span className="font-bold uppercase">{d.code}</span>
               <span className="nums text-right font-semibold">{gap ?? <span className="text-14 uppercase tracking-label">{COPY.replay.leader}</span>}</span>
-              <Tyre compound={d.compound} age={d.tyre_age} inverted={mine} />
-              {showPit && (
+              {showInt && (
+                <span className="nums text-right">{ints?.get(d.number) != null ? `+${ints.get(d.number)!.toFixed(1)}` : ""}</span>
+              )}
+              {showTyre && <Tyre compound={d.compound} age={d.tyre_age} inverted={mine} />}
+              {showPitCol && (
                 <span className="text-14 font-semibold uppercase tracking-label">
                   {tag ? (
                     <span className="nums">{tag}</span>

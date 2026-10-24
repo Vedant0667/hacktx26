@@ -6,11 +6,13 @@ import { ApiError, api, data, type LobbyStateResponse } from "@/lib/client/api";
 import { noopSubscribe, recallName, rememberName } from "@/lib/client/identity";
 import { callMomentFrames, frameAt, replayLap, tla } from "@/lib/client/race";
 import { useLobby, useTicker } from "@/lib/client/useLobby";
+import { useDataMode, type DataMode, type GroundTruthFile } from "@/lib/client/mode";
 import type { DecisionPoint, LapFrame } from "@/lib/types";
 import { Tower } from "../Tower";
-import { Button, ConnNotice, Label, StatusStrip } from "../ui";
+import { Button, ConnNotice, Label, ModeToggle, StatusStrip } from "../ui";
 import { CallPad } from "./CallPad";
 import { PlayerResult } from "./PlayerResult";
+import { Situation } from "./Situation";
 
 export function PlayScreen({ code }: { code: string }) {
   const { lobby, conn, serverNow, apply } = useLobby(code);
@@ -20,6 +22,8 @@ export function PlayScreen({ code }: { code: string }) {
   const [decision, setDecision] = useState<DecisionPoint | null>(null);
   const [frames, setFrames] = useState<LapFrame[] | null>(null);
   const t = useTicker(serverNow, 200);
+  const [mode, setMode] = useDataMode(code, "play");
+  const [gt, setGt] = useState<GroundTruthFile | null>(null);
 
   const decisionId = lobby?.decision_id;
   useEffect(() => {
@@ -30,6 +34,7 @@ export function PlayScreen({ code }: { code: string }) {
         setFrames(f);
       })
       .catch(() => {});
+    data.groundTruth(decisionId).then(setGt).catch(() => {});
   }, [decisionId]);
 
   const joined = !!me && !!lobby?.players.some((p) => p.name === me);
@@ -59,17 +64,19 @@ export function PlayScreen({ code }: { code: string }) {
   return (
     <Shell>
       <ConnNotice conn={conn} code={code} />
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-3">
         <span className="nums text-20 font-extrabold uppercase stretch-125 tracking-code">{code}</span>
+        <ModeToggle mode={mode} onChange={setMode} size="sm" />
         <span className="bg-ink px-2 text-20 font-bold uppercase text-bg stretch-75">{myTla}</span>
       </div>
 
       {lobby.phase === "waiting" && <Waiting lobby={lobby} decision={decision} me={me!} />}
 
-      {lobby.phase === "replay" && decision && frames && <ReplayMini decision={decision} frames={frames} elapsed={elapsed} />}
+      {lobby.phase === "replay" && decision && frames && <ReplayMini decision={decision} frames={frames} elapsed={elapsed} mode={mode} />}
 
       {lobby.phase === "decision" && decision && (
         <CallPad
+          situation={frames && <Situation decision={decision} frames={frames} mode={mode} gt={gt} />}
           code={code}
           me={me!}
           decision={decision}
@@ -80,7 +87,7 @@ export function PlayScreen({ code }: { code: string }) {
       )}
 
       {(lobby.phase === "reveal" || lobby.phase === "done") && decision && (
-        <PlayerResult code={code} me={me!} decision={decision} lobby={lobby} />
+        <PlayerResult code={code} me={me!} decision={decision} lobby={lobby} mode={mode} gt={gt} />
       )}
     </Shell>
   );
@@ -111,7 +118,7 @@ function Waiting({ lobby, decision, me }: { lobby: LobbyStateResponse; decision:
   );
 }
 
-function ReplayMini({ decision, frames, elapsed }: { decision: DecisionPoint; frames: LapFrame[]; elapsed: number }) {
+function ReplayMini({ decision, frames, elapsed, mode }: { decision: DecisionPoint; frames: LapFrame[]; elapsed: number; mode: DataMode }) {
   const lap = replayLap(decision, elapsed);
   const f = frameAt(callMomentFrames(frames, decision), lap);
   const total = frames[frames.length - 1]?.lap ?? lap;
@@ -120,7 +127,7 @@ function ReplayMini({ decision, frames, elapsed }: { decision: DecisionPoint; fr
     <section className="flex flex-col gap-4">
       <StatusStrip status={f.track_status} size="phone" />
       <span className="nums text-40 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.replay.lap(lap, total)}</span>
-      <Tower drivers={f.drivers} playerNumber={decision.player_role.number} maxRows={10} centerOn={decision.player_role.number} showPit={false} />
+      <Tower drivers={f.drivers} playerNumber={decision.player_role.number} maxRows={10} centerOn={decision.player_role.number} showPit={false} mode={mode} />
     </section>
   );
 }

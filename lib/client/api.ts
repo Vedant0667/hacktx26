@@ -1,5 +1,6 @@
 // Browser-side fetchers for the lobby API (app/api/**) and the static race data (public/data/**).
 import type { LobbyStateResponse } from "@/lib/db";
+import type { GroundTruthFile } from "./mode";
 import type { Call, DecisionIndexEntry, DecisionPoint, LapFrame, Submission } from "@/lib/types";
 
 export type { LobbyStateResponse };
@@ -105,4 +106,6 @@ export const data = {
   },
   decision: (id: string) => staticJson<DecisionPoint>(`/data/${enc(id)}/decision.json`),
   frames: (id: string) => staticJson<LapFrame[]>(`/data/${enc(id)}/frames.json`),
+  // Read for pit_loss before the reveal; the comparison numbers render only after it.
+  groundTruth: (id: string) => staticJson<GroundTruthFile>(`/data/${enc(id)}/ground_truth.json`),
 };

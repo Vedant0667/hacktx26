@@ -9,6 +9,9 @@ const callWord = (c: Call) => (c === "BOX" ? "Box" : "Stay out");
 const callPast = (c: Call) => (c === "BOX" ? "Boxed" : "Stayed out");
 const callGerund = (c: Call) => (c === "BOX" ? "Pitting" : "Staying out");
 
+const clock = (s: number) => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
+const signed = (n: number) => `${n > 0 ? "+" : ""}${n.toFixed(1)}`;
+
 export function ordinal(n: number): string {
   const s = ["th", "st", "nd", "rd"];
   const v = n % 100;
@@ -91,7 +94,10 @@ export const COPY = {
     ptt: "Hold to talk",
     pttKeyboard: "Hold space to talk",
     recording: "Recording. Say box or stay out, and why.",
-    rec: (s: string) => `Rec ${s}`,
+    // Talk time used against the voice-note cap: "Rec 0:12 / 0:30".
+    rec: (s: number, max: number) => `Rec ${clock(s)} / ${clock(max)}`,
+    reRecord: "Hold to record again", // added: one voice note per call; a new one replaces it
+    noteCap: (max: number) => `One voice note per call, up to ${max} s.`, // added
     released: "Copy. Reading your call.",
     parsed: (c: Call, transcript: string) => `Heard: ${callWord(c)}. "${transcript}"`,
     unclear: "Didn't catch box or stay out. Hold and say it again, or type it.",
@@ -214,6 +220,46 @@ export const COPY = {
     similar_cars_pitted: "Similar cars pitted",
     track_position: "Track position",
   } as Record<string, string>,
+  // added: Simple / Advanced data mode
+  mode: {
+    label: "Data",
+    simple: "Simple",
+    advanced: "Advanced",
+    position: (pos: number) => `P${pos}`,
+    carBehind: (s: string) => `Car behind ${s} s`,
+    noCarBehind: "No car behind",
+    tyres: (age: number) => `Tyres ${age} laps old`,
+    trackWords: {
+      GREEN: "Green flag: a stop costs the full time.",
+      SC: "Safety car: a stop costs about half the usual time.",
+      VSC: "Virtual safety car: a stop costs about three quarters of the usual time.",
+    } satisfies Record<TrackStatus, string>,
+    // Host freeze, Simple: one plain sentence.
+    hostLine: (driver: string, pos: number, age: number | null, trigger: "SC" | "VSC") =>
+      `${driver} is P${pos}${age != null ? ` on tyres ${age} laps old` : ""}, and a stop under the ${
+        trigger === "SC" ? "safety car costs about half" : "virtual safety car costs about three quarters of"
+      } the usual time.`,
+    // Advanced figures, label then value.
+    pitLossLabel: (trigger: "SC" | "VSC") => `Pit loss under ${trigger}`,
+    pitLoss: (under: number, normal: number) => `${under.toFixed(1)} s (normal ${normal.toFixed(1)} s)`,
+    lapsLeft: "Laps left",
+    medianAge: "Field median tyre age",
+    laps: (n: number) => `${n} laps`,
+    within: "Cars within one pit loss behind",
+    compound: "Compound",
+    gapAhead: "Gap ahead",
+    gapBehind: "Gap behind",
+    seconds: (s: string) => `${s} s`,
+    interval: "Int",
+    // After the reveal.
+    measured: "How the winning call was measured",
+    pairs: (n: number, from: number, to: number, mean: number, c: Call) =>
+      `${n} pairs of cars within 3 places, lap ${from} to ${to}: ${callGerund(c).toLowerCase()} gained ${mean.toFixed(1)} s on average.`,
+    places: (who: string, s: { n_box: number; n_stay: number; box_mean_gain: number; stay_mean_gain: number }, lap: number) =>
+      `${who}: ${s.n_box} boxed, ${s.n_stay} stayed out. Places gained by lap ${lap}: box ${signed(s.box_mean_gain)}, stay out ${signed(s.stay_mean_gain)}.`,
+    field: "Whole field",
+    cohort: "Cars on similar tyres",
+  },
   compounds: { SOFT: "Soft", MEDIUM: "Medium", HARD: "Hard", INTERMEDIATE: "Inter", WET: "Wet" } as Record<string, string>,
 } as const;
 

@@ -17,6 +17,7 @@ import {
 import type { Call, DecisionPoint, LapFrame, Submission } from "@/lib/types";
 import { Tower } from "../Tower";
 import { BadgeTags, Button, CallWord, Label } from "../ui";
+import type { DataMode, GroundTruthFile } from "@/lib/client/mode";
 
 const STEP_AT = [0, 7000, 13000, 13000 + PLAYED_OUT_MS + 800];
 
@@ -47,6 +48,9 @@ export function HostReveal({
   lobby,
   elapsed,
   onNext,
+  mode,
+  modeToggle,
+  gt,
 }: {
   code: string;
   decision: DecisionPoint;
@@ -54,6 +58,9 @@ export function HostReveal({
   lobby: LobbyStateResponse;
   elapsed: number;
   onNext: () => void;
+  mode: DataMode;
+  modeToggle: React.ReactNode;
+  gt: GroundTruthFile | null;
 }) {
   const [skip, setSkip] = useState(0);
   const at = elapsed + skip;
@@ -100,11 +107,14 @@ export function HostReveal({
   const team = decision.team;
   const engine = decision.engine;
 
-  if (step === 3) return <Verdict decision={decision} lobby={lobby} lb={lb} camps={camps} onNext={onNext} />;
+  if (step === 3) return <Verdict decision={decision} lobby={lobby} lb={lb} camps={camps} onNext={onNext} mode={mode} modeToggle={modeToggle} gt={gt} />;
 
   const header = (
     <div className="flex items-end justify-between gap-6">
-      <span className="text-24 font-semibold">{COPY.reveal.heading(decision.lap)}</span>
+      <span className="flex flex-col items-start gap-3">
+        <span className="text-24 font-semibold">{COPY.reveal.heading(decision.lap)}</span>
+        {modeToggle}
+      </span>
       <span className="nums shrink-0 whitespace-nowrap text-72 font-extrabold uppercase stretch-125 tracking-hero leading-hero">{COPY.replay.lap(lap, total)}</span>
     </div>
   );
@@ -133,7 +143,7 @@ export function HostReveal({
   return (
     <main className="grid h-dvh grid-cols-[minmax(420px,5fr)_7fr] gap-12 overflow-hidden p-12">
       <section className="min-h-0">
-        {frame && <Tower drivers={frame.drivers} playerNumber={decision.player_role.number} dim={step < 2} pitTags={step >= 2 ? pitTags : undefined} />}
+        {frame && <Tower drivers={frame.drivers} playerNumber={decision.player_role.number} dim={step < 2} pitTags={step >= 2 ? pitTags : undefined} mode={mode} />}
       </section>
       <section className="flex min-h-0 flex-col gap-6">
         {header}
@@ -147,7 +157,9 @@ export function HostReveal({
             <span className="nums text-56 font-extrabold uppercase stretch-125 tracking-hero leading-hero text-engine">
               {COPY.reveal.engineRow(engine.call, Math.round(engine.confidence * 100))}
             </span>
-            {engine.reasons.length ? (
+            {engine.reasons.length && mode === "simple" ? (
+              <span className="text-20 text-ink-2">{engine.reasons[0]}</span>
+            ) : engine.reasons.length ? (
               <ol className="flex list-decimal flex-col gap-1 pl-6 text-20 text-ink-2">
                 {engine.reasons.map((r) => (
                   <li key={r}>{r}</li>
@@ -172,6 +184,29 @@ export function HostReveal({
   );
 }
 
+// Advanced, after the reveal: the ground-truth comparison numbers behind the verdict.
+export function Measured({ decision, gt, size = "md" }: { decision: DecisionPoint; gt: GroundTruthFile | null; size?: "sm" | "md" }) {
+  const sec = gt?.seconds;
+  const pos = gt?.positions_reference;
+  const lines: string[] = [];
+  if (sec) lines.push(COPY.mode.pairs(sec.pairs.length, sec.start_lap_end, sec.end_lap, sec.mean_delta_s_player_call_vs_other, decision.ground_truth.correct));
+  if (pos?.field) lines.push(COPY.mode.places(COPY.mode.field, pos.field, pos.end_lap));
+  const same = (x?: { n_box: number; n_stay: number; box_mean_gain: number; stay_mean_gain: number }, y?: typeof x) =>
+    !!x && !!y && x.n_box === y.n_box && x.n_stay === y.n_stay && x.box_mean_gain === y.box_mean_gain && x.stay_mean_gain === y.stay_mean_gain;
+  if (pos?.cohort && !same(pos.cohort, pos.field)) lines.push(COPY.mode.places(COPY.mode.cohort, pos.cohort, pos.end_lap));
+  if (!lines.length) return null;
+  return (
+    <div className="flex flex-col gap-1">
+      <Label>{COPY.mode.measured}</Label>
+      {lines.map((l) => (
+        <p key={l} className={`nums ${size === "sm" ? "text-16" : "text-20"} text-ink-2`}>
+          {l}
+        </p>
+      ))}
+    </div>
+  );
+}
+
 function FactorDots({ named, factors, onDeep = false }: { named: string[]; factors: string[]; onDeep?: boolean }) {
   return (
     <>
@@ -190,12 +225,18 @@ function Verdict({
   lb,
   camps,
   onNext,
+  mode,
+  modeToggle,
+  gt,
 }: {
   decision: DecisionPoint;
   lobby: LobbyStateResponse;
   lb: LeaderboardResponse | null;
   camps: CampsResponse | null;
   onNext: () => void;
+  mode: DataMode;
+  modeToggle: React.ReactNode;
+  gt: GroundTruthFile | null;
 }) {
   const correct = decision.ground_truth.correct;
   const subs = [...lobby.submissions].sort((a, b) => b.total - a.total || a.seconds_to_call - b.seconds_to_call);
@@ -280,6 +321,7 @@ function Verdict({
               <q className="text-ink">{s.transcript}</q>
             </p>
           ))}
+          {mode === "advanced" && <Measured decision={decision} gt={gt} />}
         </section>
 
         <section className="col-span-3 flex min-h-0 flex-col gap-3 overflow-hidden">
@@ -303,9 +345,12 @@ function Verdict({
       </div>
 
       <div className="flex shrink-0 items-end justify-between gap-6">
-        <Button className="h-14 text-20" onClick={onNext}>
-          {COPY.reveal.showScores}
-        </Button>
+        <span className="flex items-center gap-8">
+          <Button className="h-14 text-20" onClick={onNext}>
+            {COPY.reveal.showScores}
+          </Button>
+          {modeToggle}
+        </span>
         <p className="text-14 text-ink-3">{COPY.reveal.credit}</p>
       </div>
     </main>
