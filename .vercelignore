@@ -1,0 +1,8 @@
+data/
+engine/
+docs/
+tasks/
+.agents/
+.claude/
+certificates/
+ideas.md
