@@ -633,6 +633,7 @@ export const COPY = {
     pickTitle: "Pick your driver",
     pick: "Pick a driver to join.",
     pickHint: "Ordered by position at the call. Several players can pick the same driver.",
+    pickHintRace: "Ordered by start position, with the number of calls each car gets. Several players can pick the same driver.",
     picked: (code: string) => `Driving ${code}`,
     sameMode: "Everyone plays the same driver",
     chooseMode: "Each player picks a driver",

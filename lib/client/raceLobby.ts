@@ -21,6 +21,9 @@ import {
   type RaceState,
 } from "./api";
 
+// The freeze reveal holds this long on the host, then the replay resumes (the host can resume earlier).
+export const REVEAL_HOLD_MS = 20000;
+
 export type RaceLobby = LobbyStateResponse & { race: RaceState };
 export const isRaceLobby = (l: LobbyStateResponse | null | undefined): l is RaceLobby => !!l && l.mode === "race" && !!l.race;
 // LobbyStateResponse.phase is typed for moment lobbies; a race lobby carries a RacePhase string.

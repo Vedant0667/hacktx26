@@ -20,6 +20,7 @@ import { CallPad } from "./CallPad";
 import { DuelVote } from "./DuelVote";
 import { DUEL_SPEAK_MS, DUEL_START_MS, duelStage, speakLeft, useDuel } from "@/lib/client/duel";
 import { PlayerResult } from "./PlayerResult";
+import { RacePlay } from "../race/RacePlay";
 
 export function PlayScreen({ code }: { code: string }) {
   const [removed, setRemoved] = useState(false);
@@ -39,15 +40,17 @@ export function PlayScreen({ code }: { code: string }) {
   const [drivers, setDrivers] = useState<BlindDriver[] | null>(null);
   const t = useTicker(serverNow, 200);
   const [mode, setMode] = useDataMode(code, "play");
-  const reveal = useReveal(code, lobby?.phase);
-  const { duel, vote } = useDuel(code, lobby?.phase);
+  // Race lobbies (Round 6) have their own reveal routes; the moment reveal and duel answer 409 for them.
+  const momentPhase = lobby?.mode === "race" ? undefined : lobby?.phase;
+  const reveal = useReveal(code, momentPhase);
+  const { duel, vote } = useDuel(code, momentPhase);
   const [duelDone, setDuelDone] = useState(false);
   // The tally screen shows right after this phone votes; a reload after voting goes straight to the result.
   const [justVoted, setJustVoted] = useState(false);
 
   const decisionId = lobby?.decision_id;
   useEffect(() => {
-    if (!decisionId) return;
+    if (!decisionId || decisionId.startsWith("race:")) return;
     Promise.all([data.decision(decisionId), data.frames(decisionId)])
       .then(([d, f]) => {
         setDecision(d);
@@ -101,6 +104,25 @@ export function PlayScreen({ code }: { code: string }) {
       <main className="mx-auto min-h-dvh max-w-[480px]">
         <ConnNotice conn={conn} code={code} />
       </main>
+    );
+
+  if (lobby.mode === "race")
+    return (
+      <RacePlay
+        code={code}
+        lobby={lobby}
+        conn={conn}
+        serverNow={serverNow}
+        me={me}
+        joined={joined}
+        onRemoved={() => setRemoved(true)}
+        onJoined={(name, state) => {
+          setMe(name);
+          apply(state, Date.now());
+        }}
+        mode={mode}
+        setMode={setMode}
+      />
     );
 
   if (!joined)
@@ -179,7 +201,7 @@ export function PlayScreen({ code }: { code: string }) {
 }
 
 // Black band pinned to the bottom of the phone: the one thing to do or wait for.
-function Foot({ title, meta, progress }: { title: string; meta?: string; progress?: number }) {
+export function Foot({ title, meta, progress }: { title: string; meta?: string; progress?: number }) {
   return (
     <div className="on-dark sticky bottom-0 mt-auto flex h-24 items-center justify-between bg-ink px-6 pb-[env(safe-area-inset-bottom)] text-white">
       {progress != null && <div className="absolute left-0 top-0 h-1 bg-field transition-[width] duration-700 ease-out" style={{ width: `${Math.round(progress * 100)}%` }} aria-hidden />}
@@ -189,7 +211,7 @@ function Foot({ title, meta, progress }: { title: string; meta?: string; progres
   );
 }
 
-function FieldHead({ status, right, children }: { status: React.ReactNode; right: React.ReactNode; children: React.ReactNode }) {
+export function FieldHead({ status, right, children }: { status: React.ReactNode; right: React.ReactNode; children: React.ReactNode }) {
   return (
     <div className="bg-field text-on-field">
       <div className="flex h-[52px] items-center justify-between gap-3 px-5">
@@ -312,7 +334,8 @@ function Replay({ decision, frames, elapsed, mode, setMode, me }: { decision: Bl
   );
 }
 
-function JoinForm({
+// Exported for race lobbies, which pass the race's drivers and `metaFor` (calls per car) instead of frames.
+export function JoinForm({
   code,
   players,
   choose,
@@ -321,6 +344,7 @@ function JoinForm({
   initialName,
   onRemoved,
   onJoined,
+  metaFor,
 }: {
   code: string;
   players: number;
@@ -330,6 +354,7 @@ function JoinForm({
   initialName: string;
   onRemoved: () => void;
   onJoined: (name: string, state: JoinResponse) => void;
+  metaFor?: (code: string) => React.ReactNode;
 }) {
   const [name, setName] = useState(initialName);
   const [pick, setPick] = useState<string | null>(null);
@@ -406,7 +431,7 @@ function JoinForm({
           )}
         </p>
 
-        {choose && <DriverPicker drivers={drivers} frames={frames} pick={pick} onPick={setPick} />}
+        {choose && <DriverPicker drivers={drivers} frames={frames} pick={pick} onPick={setPick} metaFor={metaFor} />}
 
         <label className="mt-5 flex cursor-pointer items-start gap-3.5 text-base leading-[1.4]">
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="peer sr-only" />
@@ -442,12 +467,24 @@ function JoinForm({
 }
 
 // Driver picker for "choose" lobbies: scorable cars by position at the call, with team swatch and tyre chip.
-function DriverPicker({ drivers, frames, pick, onPick }: { drivers: BlindDriver[] | null; frames: LapFrame[] | null; pick: string | null; onPick: (c: string) => void }) {
+function DriverPicker({
+  drivers,
+  frames,
+  pick,
+  onPick,
+  metaFor,
+}: {
+  drivers: BlindDriver[] | null;
+  frames: LapFrame[] | null;
+  pick: string | null;
+  onPick: (c: string) => void;
+  metaFor?: (code: string) => React.ReactNode;
+}) {
   const moment = frames?.[frames.length - 1];
   return (
     <fieldset className="mt-7">
       <legend className="meta">{COPY.drivers.pickTitle}</legend>
-      <p className="mt-1 text-sm text-ink-2">{COPY.drivers.pickHint}</p>
+      <p className="mt-1 text-sm text-ink-2">{metaFor ? COPY.drivers.pickHintRace : COPY.drivers.pickHint}</p>
       {!drivers ? (
         <p className="mt-3 text-sm font-bold">{COPY.drivers.loading}</p>
       ) : (
@@ -467,7 +504,7 @@ function DriverPicker({ drivers, frames, pick, onPick }: { drivers: BlindDriver[
                 <span className="h-6 w-[5px]" style={d.team_colour ? { backgroundColor: d.team_colour } : undefined} aria-hidden />
                 <b className="text-lg font-black tracking-tight">{d.code}</b>
                 <span className="truncate text-sm font-medium">{d.name}</span>
-                <TyreChip compound={f?.compound ?? null} age={f?.tyre_age ?? null} size="sm" />
+                {metaFor ? metaFor(d.code) : <TyreChip compound={f?.compound ?? null} age={f?.tyre_age ?? null} size="sm" />}
               </label>
             );
           })}

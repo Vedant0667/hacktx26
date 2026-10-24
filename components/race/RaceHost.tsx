@@ -12,6 +12,7 @@ import { noopSubscribe } from "@/lib/client/identity";
 import { useDataMode, type DataMode } from "@/lib/client/mode";
 import { CALL_WINDOW_S, tla } from "@/lib/client/race";
 import {
+  REVEAL_HOLD_MS,
   clockLap,
   featuredCar,
   freezeDecision,
@@ -42,8 +43,6 @@ import { Brand, Button, CallWord, ConnNotice, ModeToggle, ScChip, TrackStrip } f
 import { RaceProgress, Triggers } from "./parts";
 
 const MAX_PLAYERS = 12;
-// The freeze reveal holds this long, then the replay resumes (the host can resume earlier).
-const REVEAL_HOLD_MS = 20000;
 
 export function RaceHost({
   code,
