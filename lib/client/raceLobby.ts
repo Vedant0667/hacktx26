@@ -11,18 +11,16 @@ import {
   type BlindDecision,
   type BlindFreeze,
   type FreezeResponse,
-  type FreezeRevealResponse,
   type LobbyStateResponse,
   type PitLoss,
   type RaceEntry,
-  type RaceLeaderboardResponse,
   type RacePhase,
-  type RaceRevealResponse,
   type RaceState,
 } from "./api";
 
-// The freeze reveal holds this long on the host, then the replay resumes (the host can resume earlier).
-export const REVEAL_HOLD_MS = 20000;
+// Round 7: the "calls locked" beat after a freeze (no answers until the flag). Just over the server's 5 s
+// minimum in reveal_freeze, then the host resumes the replay.
+export const REVEAL_HOLD_MS = 5500;
 
 export type RaceLobby = LobbyStateResponse & { race: RaceState };
 export const isRaceLobby = (l: LobbyStateResponse | null | undefined): l is RaceLobby => !!l && l.mode === "race" && !!l.race;
@@ -214,75 +212,6 @@ export function useRaceFreeze(code: string, lobby: LobbyStateResponse | null): F
     };
   }, [code, open, idx]);
   return open && freeze?.freeze_index === idx ? freeze : null;
-}
-
-// One freeze's reveal (409 until the server has revealed that lap; retried).
-export function useFreezeReveal(code: string, lap: number | null): FreezeRevealResponse | null {
-  const [rev, setRev] = useState<FreezeRevealResponse | null>(null);
-  useEffect(() => {
-    if (lap == null) return;
-    let alive = true;
-    let t: ReturnType<typeof setTimeout>;
-    const load = () =>
-      api
-        .freezeReveal(code, lap)
-        .then((r) => alive && setRev(r))
-        .catch((e) => {
-          if (alive && !(e instanceof ApiError && (e.status === 404 || e.status === 403))) t = setTimeout(load, retryMs(e, 1200));
-        });
-    load();
-    return () => {
-      alive = false;
-      clearTimeout(t);
-    };
-  }, [code, lap]);
-  return rev && rev.lap === lap ? rev : null;
-}
-
-// The full race reveal at the flag.
-export function useRaceReveal(code: string, open: boolean): RaceRevealResponse | null {
-  const [rev, setRev] = useState<RaceRevealResponse | null>(null);
-  useEffect(() => {
-    if (!open || rev) return;
-    let alive = true;
-    let t: ReturnType<typeof setTimeout>;
-    const load = () =>
-      api
-        .raceReveal(code)
-        .then((r) => alive && setRev(r))
-        .catch((e) => {
-          if (alive) t = setTimeout(load, retryMs(e));
-        });
-    load();
-    return () => {
-      alive = false;
-      clearTimeout(t);
-    };
-  }, [code, open, rev]);
-  return rev;
-}
-
-// The lobby's race scoreboard (revealed freezes only; audibles at done). Refetched when `version` changes.
-export function useRaceBoard(raceKey: string | null | undefined, code: string, version: string, enabled = true): RaceLeaderboardResponse | null {
-  const [board, setBoard] = useState<RaceLeaderboardResponse | null>(null);
-  useEffect(() => {
-    if (!raceKey || !enabled) return;
-    let alive = true;
-    let t: ReturnType<typeof setTimeout>;
-    const load = () =>
-      api
-        .raceLeaderboard(raceKey, code)
-        .then((b) => alive && setBoard(b))
-        .catch((e) => {
-          if (alive) t = setTimeout(load, retryMs(e, 3000));
-        });
-    load();
-    return () => {
-      alive = false;
-      clearTimeout(t);
-    };
-  }, [raceKey, code, version, enabled]);
-  return board;
 }
 
 // ---- Audible cooldown (per device, per lobby and player; survives a reload) ----

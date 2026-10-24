@@ -81,6 +81,46 @@ def sc_periods(rc):
     return out
 
 
+def red_flags(rc):
+    """Laps with a red flag shown, from race control (flag RED, or a RED FLAG message)."""
+    return sorted({m["lap_number"] for m in rc if m.get("lap_number")
+                   and (m.get("flag") == "RED" or "RED FLAG" in (m.get("message") or "").upper())})
+
+
+# ---------------------------------------------------------------- luck (Round 9, build-time only)
+
+def luck_events(periods, reds, rain, L, end, own=()):
+    """Events nobody could know at a call on lap L that happened before its measurement ended (lap `end`):
+    an SC or VSC deployed, a red flag, or rainfall starting or stopping, on laps L..end. A deployment on lap L
+    that is the moment's own trigger (`own`, e.g. {"SC"}) was known at the call and is not luck. Rain changes
+    count from lap L: the RAIN trigger already sees a change on lap L-1. Returns [{lap, kind}] by lap."""
+    ev = []
+    for kind, a, _ in periods:
+        if L <= a <= end and not (a == L and kind in own):
+            ev.append({"lap": a, "kind": kind})
+    for k in reds:
+        if L <= k <= end:
+            ev.append({"lap": k, "kind": "RED_FLAG"})
+    for k in range(max(L, 2), end + 1):
+        before, now = rain.get(k - 1, 0), rain.get(k, 0)
+        if before != now:
+            ev.append({"lap": k, "kind": "RAIN_START" if now else "RAIN_STOP"})
+    return sorted(ev, key=lambda e: (e["lap"], e["kind"]))
+
+
+def luck_after(events, periods, stops_by_code, cars):
+    """Post-call context for each luck event: for an SC/VSC, its laps and which of `cars` stopped under it."""
+    out = []
+    for e in events:
+        if e["kind"] in ("SC", "VSC"):
+            span = next(([a, b or a] for k, a, b in periods if k == e["kind"] and a == e["lap"]), [e["lap"], e["lap"]])
+            hit = sorted(c for c in cars if any(span[0] <= p <= span[1] for p in stops_by_code.get(c, [])))
+            out.append({**e, "laps": span, "stopped_under_it": hit})
+        else:
+            out.append(dict(e))
+    return out
+
+
 def lap_of_time(of1_laps):
     """Leader lap start times -> function(date) -> lap number in progress."""
     starts = {}
@@ -122,21 +162,36 @@ def stint_tyres(race, results, of1_stints):
     return out, bad
 
 
+def rain_by_lap(spec):
+    """lap -> 1 if any weather sample during that lap (leader's lap) reported rainfall, else 0."""
+    lap_at = lap_of_time(load_of1(spec["of1"], "laps.json"))
+    rain = {}
+    for w in load_of1(spec["of1"], "weather.json"):
+        k = lap_at(w["date"])
+        rain[k] = max(rain.get(k, 0), 1 if w["rainfall"] else 0)
+    return rain
+
+
+def luck_source(key):
+    """SC/VSC periods, red-flag laps and rain by lap for a cached race (engine/build.py's moment decisions)."""
+    spec = next((s for s in RACES if s["key"] == key), None)
+    if spec is None:
+        return None
+    rc = load_of1(spec["of1"], "race_control.json")
+    return {"periods": sc_periods(rc), "reds": red_flags(rc), "rain": rain_by_lap(spec)}
+
+
 def load_ctx(spec):
     race = B.load_race(spec["key"])
     results = race["results"]
     _, man = B.manual_compounds(spec["key"])
     tyres, bad = stint_tyres(race, results, load_of1(spec["of1"], "stints.json"))
     rc = load_of1(spec["of1"], "race_control.json")
-    lap_at = lap_of_time(load_of1(spec["of1"], "laps.json"))
-    rain = {}
-    for w in load_of1(spec["of1"], "weather.json"):
-        k = lap_at(w["date"])
-        rain[k] = max(rain.get(k, 0), 1 if w["rainfall"] else 0)
+    rain = rain_by_lap(spec)
     team = {r["Driver"]["driverId"]: r["Constructor"]["name"] for r in results}
     code = {r["Driver"]["driverId"]: r["Driver"]["code"] for r in results}
     return {"spec": spec, "race": race, "results": results, "tyres": tyres, "bad_compound": bad,
-            "rc": rc, "periods": sc_periods(rc), "rain": rain, "team": team, "code": code,
+            "rc": rc, "periods": sc_periods(rc), "reds": red_flags(rc), "rain": rain, "team": team, "code": code,
             "cap": man.get("rules", {}).get("max_stint_laps"), "n_laps": race["n_laps"]}
 
 
@@ -667,6 +722,19 @@ def race_mode(ctx, final):
                     "team_call": {"call": "BOX" if real_box else "STAY", "lap": real_lap,
                                   "reasons": [f"Pitted on lap {real_lap}."] if real_box else [f"Stayed out on laps {w0}-{w1}."]},
                     "engine": eng_call, "engine_inputs": eng_inputs, "detail": tg}
+            # Round 9: luck between the call and the end of the measurement (full only, never blind).
+            end = max(w1, j["end_lap"])
+            full["luck_events"] = luck_events(ctx["periods"], ctx["reds"], ctx["rain"], L, end, set(types))
+            if full["luck_events"]:
+                stops_by_code = {code[x]: sl for x, sl in ctx["race"]["stops"].items()}
+                cars = [code[x] for x in [d] + j["boxed"] + j["stayed"]]
+                full["luck_facts"] = {
+                    "call": B.call_facts(eframes, L, code[d], eng_inputs, ctx["race"]["stops"], n_laps=ctx["n_laps"],
+                                         triggers=types, cap=ctx["cap"]),
+                    "after_call": luck_after(full["luck_events"], ctx["periods"], stops_by_code, cars),
+                    "measured": B.measured_facts(j["correct"], j["swing_s"], [w0, w1], end,
+                                                 full["comparison"]["boxed"], full["comparison"]["stayed"]),
+                }
             freezes.append({"race_key": key, "driver_code": code[d], "lap": L, "triggers": types, "blind": blind, "full": full})
     # Audible truth for every car on every lap it could press "box now" (visible lap A): the stop happens
     # after what the player has seen, so judge at L' = A+1 with the window A+1..A+3; the baseline is the

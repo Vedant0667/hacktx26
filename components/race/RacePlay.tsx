@@ -29,7 +29,7 @@ import type { LapFrame } from "@/lib/types";
 import { CallPad } from "../play/CallPad";
 import { FieldHead, Foot, JoinForm } from "../play/PlayScreen";
 import { LapChart, NeighbourList, simpleChartLabel } from "../Telemetry";
-import { CallWord, ConnNotice, ErrorText, ModeToggle, ScChip, TrackStrip, TyreChip } from "../ui";
+import { ConnNotice, ErrorText, ModeToggle, ScChip, TrackStrip, TyreChip } from "../ui";
 import { RaceProgress, Triggers } from "./parts";
 import { PhoneSummary, Scoring } from "../EndScreen";
 import { useSummary } from "@/lib/client/results";

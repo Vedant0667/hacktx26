@@ -324,6 +324,43 @@ def driver_answers(race, results, frames, dp, track, team_manual):
     return out
 
 
+def call_facts(frames, L, code, inputs, stops, n_laps, triggers, cap=None):
+    """Round 9: what the pit wall knew at a call on lap L, for the offline luck verdict (scripts/ai-verdicts.mjs).
+    Order, gaps and tyres at the end of lap L-1 (tyre ages +1, as at the call), lap L's flag, stops made before
+    lap L, and the engine's pit-loss and stops-owed inputs (built from the same call-moment view). frames rows
+    carry the Jolpica driverId as "id"; stops is keyed by it."""
+    order = sorted(frames[L - 2]["drivers"], key=lambda d: d["position"])
+    i = next(k for k, d in enumerate(order) if d["code"] == code)
+
+    def car(d):
+        sl = [p for p in stops.get(d["id"], []) if p < L]
+        return {"code": d["code"], "position": d["position"], "compound": d["compound"],
+                "tyre_age": (d["tyre_age"] or 0) + 1, "stops_made": len(sl), "last_stop_lap": sl[-1] if sl else None}
+
+    me = car(order[i])
+    gap = lambda a, b: None if a["gap_to_leader_s"] is None or b["gap_to_leader_s"] is None else round(a["gap_to_leader_s"] - b["gap_to_leader_s"], 1)
+    ahead = [car(d) for d in order[max(0, i - 5):i]]
+    owed = inputs.get("stops_owed")
+    return {
+        "lap": L, "laps_left": n_laps - L, "flag_at_call": frames[L - 1]["track_status"], "triggers": list(triggers),
+        "you": me,
+        "car_ahead": ahead[-1] if ahead else None, "gap_ahead_s": gap(order[i], order[i - 1]) if i else None,
+        "car_behind": car(order[i + 1]) if i + 1 < len(order) else None,
+        "gap_behind_s": gap(order[i + 1], order[i]) if i + 1 < len(order) else None,
+        "pit_loss_s": {"green": inputs.get("normal_pit_loss_s"), "under_flag_at_call": inputs.get("reduced_pit_loss_s")},
+        "stops_owed": owed if owed is not None else (1 if me["stops_made"] == 0 else 0),
+        "stops_owed_rule": f"{cap}-lap stint cap" if cap else "two dry compounds: one stop needed if none made yet",
+        "cars_ahead_nearest": ahead,
+        "cars_ahead_stopped": sum(1 for c in ahead if c["stops_made"]), "cars_ahead_listed": len(ahead),
+    }
+
+
+def measured_facts(correct, swing_s, window, end, boxed, stayed):
+    """Round 9: the measured result the verdict is checked against (seconds vs comparable cars)."""
+    return {"right_call_by_measurement": correct, "swing_s": swing_s, "box_window": list(window),
+            "measured_to_lap": end, "comparison_boxed": list(boxed), "comparison_stayed": list(stayed)}
+
+
 def call_moment_frame(clean, dp):
     """What the pit wall sees when the call is due (same rule as lib/client/race.ts callMomentFrames):
     the order and gaps at the end of lap L-1, tyre ages +1, lap L's track status, and stops on lap L only by
