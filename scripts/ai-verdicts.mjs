@@ -2,7 +2,8 @@
 // decision car whose full row has luck_events (engine/build.py: an SC/VSC deployed, a red flag or a rain change
 // after the call, before its measurement ended), asks Muse Spark once which call was right given only what was
 // knowable at the call. The answer is checked (lib/luck.ts verdictProblems: no flip without luck, explanation
-// grounded in the input and at most 20 words), re-asked once on a problem, else the measured answer stands.
+// grounded in the input and at most 20 words), re-asked once on a problem, else the measured answer stands; a
+// flip of the measured call must be confirmed by a second, fresh answer.
 // Results go to table ai_verdicts with the model and time. Rows without luck events get no call: their right
 // call is the measured one. Idempotent: a row whose input is unchanged is not asked again (a 'no_answer' row,
 // from a failed or over-budget call, is retried). Spend goes through lib/muse/client.ts (budget reservation).
@@ -19,7 +20,7 @@ const opt = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : null
 const race = opt("--race");
 const force = args.includes("--force");
 const dry = args.includes("--dry");
-const VERDICT_TOKENS = 1200; // minimal effort still reasons for a few hundred tokens
+const VERDICT_TOKENS = 2000; // minimal effort still reasons; 1200 ran out on 4 of 30 rows
 const TIMEOUT_MS = 30_000;
 
 const sql = neon(process.env.DATABASE_URL);
@@ -65,22 +66,32 @@ async function ask(row, input, note) {
   });
 }
 
-// At most two asks: a problem is re-asked once with the problems listed; then the measured answer stands.
+// A problem is re-asked once with the problems listed; then the measured answer stands. An answer that flips the
+// measured call is asked once more, fresh, and the flip stands only if that answer is valid and flips the same
+// way (single answers flipped different rows from run to run). So a row costs 1 call, 2 on a problem or a flip,
+// at most 3.
 async function judge(row, input) {
   let note = null;
   let last = null;
   let problems = [];
   let attempts = 0;
-  for (let i = 0; i < 2; i++) {
+  let out = null;
+  for (let i = 0; i < 2 && !out; i++) {
     attempts++;
-    const out = await ask(row, input, note);
-    if (!out) return { status: last ? "rejected" : "no_answer", out: last, problems: last ? problems : ["no answer from Muse"], attempts };
-    last = out;
-    problems = verdictProblems(out, input, row.measured);
-    if (!problems.length) return { status: "accepted", out, problems, attempts };
-    note = problems.join("; ");
+    const a = await ask(row, input, note);
+    if (!a) return { status: last ? "rejected" : "no_answer", out: last, problems: last ? problems : ["no answer from Muse"], attempts };
+    last = a;
+    problems = verdictProblems(a, input, row.measured);
+    if (!problems.length) out = a;
+    else note = problems.join("; ");
   }
-  return { status: "rejected", out: last, problems, attempts };
+  if (!out) return { status: "rejected", out: last, problems, attempts };
+  if (out.right_call === row.measured) return { status: "accepted", out, problems: [], attempts };
+  attempts++;
+  const again = await ask(row, input, null);
+  if (!again) return { status: "no_answer", out, problems: ["flip not confirmed: no second answer from Muse"], attempts };
+  if (again.right_call === out.right_call && !verdictProblems(again, input, row.measured).length) return { status: "accepted", out, problems: [], attempts };
+  return { status: "rejected", out, problems: [`flip not confirmed: second answer ${again.right_call}${again.luck_changed_outcome ? " with luck" : ""}`], attempts };
 }
 
 if (!museEnabled() && !dry) throw new Error("MODEL_API_KEY is not set");
