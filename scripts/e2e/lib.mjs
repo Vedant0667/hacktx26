@@ -49,6 +49,16 @@ export function makeApi(base, password) {
 }
 
 // ---- DB ----
+// Which database the target server writes to: production (outpacef1.vercel.app) uses PROD_DATABASE_URL when it is
+// set, everything else DATABASE_URL (the dev database). --db prod|dev overrides the guess.
+export const PROD_BASE = "https://outpacef1.vercel.app";
+export function dbUrlFor(base, override) {
+  if (override && !["prod", "dev"].includes(override)) throw new Error(`--db must be prod or dev, got ${override}`);
+  const prod = override ? override === "prod" : base.replace(/\/$/, "") === PROD_BASE;
+  const url = prod ? (process.env.PROD_DATABASE_URL ?? process.env.DATABASE_URL) : process.env.DATABASE_URL;
+  if (!url) throw new Error(`${prod ? "PROD_DATABASE_URL / " : ""}DATABASE_URL is not set (run with --env-file=.env.local)`);
+  return { url, which: prod ? (process.env.PROD_DATABASE_URL ? "prod (PROD_DATABASE_URL)" : "prod (DATABASE_URL)") : "dev (DATABASE_URL)" };
+}
 export function makeDb(url) {
   const sql = neon(url);
   return sql;
@@ -166,7 +176,7 @@ export async function shot(page, { out, ui, scenario, step, vp, settle = 450 }) 
   let bad = [];
   for (let attempt = 0; attempt < 3; attempt++) {
     const issues = await page.evaluate(findLayoutIssues, OVERLAP_PX);
-    bad = [...issues.overlaps.map((s) => "overlap: " + s), ...issues.clipped.map((s) => "clipped: " + s), ...(issues.hscroll ? ["hscroll: " + issues.hscroll] : [])];
+    bad = [...issues.overlaps.map((s) => "overlap: " + s), ...issues.clipped.map((s) => "clipped: " + s), ...(issues.occluded ?? []).map((s) => "occluded: " + s), ...(issues.hscroll ? ["hscroll: " + issues.hscroll] : [])];
     if (!bad.length) break;
     await sleep(700);
   }

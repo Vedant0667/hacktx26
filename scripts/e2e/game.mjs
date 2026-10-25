@@ -3,14 +3,14 @@
 //
 //   NODE_TLS_REJECT_UNAUTHORIZED=0 node --env-file=.env.local scripts/e2e/game.mjs \
 //     --base http://localhost:3120 --ui classic|racenight \
-//     --puppeteer /Users/vedant/baskaran-edge/node_modules/puppeteer-core --out <dir>
+//     --puppeteer /Users/vedant/baskaran-edge/node_modules/puppeteer-core --out <dir> [--db prod|dev]
 //
 // NOT hermetic: needs a running server and the shared Neon DB (DATABASE_URL, SITE_PASSWORD from .env.local),
 // so it is not part of .claude/verify.sh. Run it before every ship, once per UI mode.
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { selectorsFor } from "./selectors.mjs";
-import { bodyText, ensureDir, hostShot, launch, makeApi, makeDb, newPage, pageIssues, press, record, results, shot, sleep, waitLocate, locate } from "./lib.mjs";
+import { bodyText, dbUrlFor, ensureDir, hostShot, launch, makeApi, makeDb, newPage, pageIssues, press, record, results, shot, sleep, waitLocate, locate } from "./lib.mjs";
 
 // ---- args ----
 const args = Object.fromEntries(
@@ -34,7 +34,8 @@ const need = (k) => {
   return process.env[k];
 };
 
-const sql = makeDb(need("DATABASE_URL"));
+const DB = dbUrlFor(BASE, args.db);
+const sql = makeDb(DB.url);
 const api = makeApi(BASE, need("SITE_PASSWORD"));
 const codes = [];
 ensureDir(OUT);
@@ -319,7 +320,7 @@ const scenarios = [
 
 let fatal = null;
 try {
-  console.log(`e2e: ui=${UI} base=${BASE} out=${OUT}`);
+  console.log(`e2e: ui=${UI} base=${BASE} db=${DB.which} out=${OUT}`);
   await sql`delete from rate_limits where bucket = 'lobby_create_ip' and key in ('127.0.0.1', '::1', '0:0:0:0::/64', 'unknown')`;
   gate = await api.unlock();
   record("setup", "unlock the password gate", true);
