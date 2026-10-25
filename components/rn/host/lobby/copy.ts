@@ -7,6 +7,7 @@ export const LOBBY_COPY = {
   scan: "Scan to join",
   orOpen: "or open",
   race: "Race",
+  laps: (n: number) => `${n} laps`,
   everyoneDrives: (code: string) => `Everyone drives ${code}`,
   eachPicks: "Each player picks a car",
   dataOnScreen: "Data on screen",

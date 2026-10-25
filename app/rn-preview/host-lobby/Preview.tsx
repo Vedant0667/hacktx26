@@ -36,8 +36,9 @@ function raceLobby(n: number, choose: boolean, marks = false): RaceLobby {
   } as unknown as RaceLobby;
 }
 
-export function Preview({ state }: { state: string }) {
-  const [mode, setMode] = useState<DataMode>("simple");
+export function Preview({ state: raw }: { state: string }) {
+  const state = raw.replace(/-adv$/, "");
+  const [mode, setMode] = useState<DataMode>(raw.endsWith("-adv") ? "advanced" : "simple");
   const common = { code: "DCFH", colourOf, onKick: noop, mode, setMode };
   const join = { joinUrl: "outpacef1.vercel.app/play/DCFH", joinHref: "https://outpacef1.vercel.app/play/DCFH" };
   switch (state) {
@@ -62,6 +63,8 @@ export function Preview({ state }: { state: string }) {
       return <RNHostReplay {...common} decision={decision} frames={frames} lap={30} onAdvance={() => {}} controls={null} />;
     case "replay-vsc":
       return <RNHostReplay {...common} decision={decision} frames={frames} lap={39} onAdvance={() => {}} controls={null} />;
+    case "replay-empty":
+      return <RNRaceReplay {...common} race={raceLobby(6, false, true)} frames={[]} lap={31} followed="GAS" controls={null} />;
     case "race-replay":
       return <RNRaceReplay {...common} race={raceLobby(6, false, true)} frames={frames} lap={31} followed="GAS" controls={null} />;
     default:

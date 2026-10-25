@@ -164,12 +164,13 @@
   display: inline-flex;
   align-items: center;
   flex-shrink: 0;
-  opacity: 0.55;
+  text-decoration: underline;
+  text-decoration-color: rgba(255, 255, 255, 0.3);
+  text-underline-offset: 3px;
 }
 .rnl-row:hover .rnl-kick,
-.rnl-kick:focus-visible,
-.rnl-kick[data-confirm] {
-  opacity: 1;
+.rnl-kick:focus-visible {
+  color: #fff;
 }
 .rnl-kick:focus-visible {
   outline: 2px solid #fff;
@@ -276,7 +277,8 @@
 }
 .rnl-note {
   max-width: 100%;
-  font-size: 13px;
+  font-size: 12px;
+  line-height: 1.35;
   font-weight: 600;
   color: var(--on-team);
 }

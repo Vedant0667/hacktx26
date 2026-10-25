@@ -8,6 +8,9 @@
   --u: calc(100vh / 720);
   display: grid;
   grid-template-columns: calc(216 * var(--u)) 1fr 24vw;
+}
+.rn.rnr[data-mode="advanced"] {
+  grid-template-columns: calc(270 * var(--u)) 1fr 24vw;
   grid-template-rows: auto 1fr;
   column-gap: calc(40 * var(--u));
   padding: calc(40 * var(--u)) 4.4vw calc(24 * var(--u));
@@ -221,4 +224,42 @@
 }
 .rnr-controls {
   flex-shrink: 0;
+}
+.rn.rnr-loading {
+  height: 100dvh;
+  display: grid;
+  place-items: center;
+  background: var(--rn-ground);
+  color: var(--rn-ink);
+  font-size: 28px;
+  font-weight: 700;
+}
+.rnr .rnr-tower .rn-row > span:last-child {
+  width: 52px !important;
+  font-size: 13px !important;
+}
+.rnr-pit {
+  background: #fff;
+  color: var(--rn-ground);
+  padding: 0 3px;
+  font-weight: 800;
+}
+.rnr-watch {
+  margin-top: calc(26 * var(--u));
+  border-top: 2px solid var(--on-team);
+  padding-top: 8px;
+}
+.rnr-watch .rn-lbl {
+  color: var(--on-team);
+  opacity: 0.85;
+}
+.rnr-watch p {
+  font-family: var(--rn-display, inherit);
+  font-weight: 900;
+  font-size: calc(30 * var(--u));
+  margin-top: 4px;
+}
+.rnr-watch p span {
+  font-size: 0.5em;
+  font-weight: 700;
 }

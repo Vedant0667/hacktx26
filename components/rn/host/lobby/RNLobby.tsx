@@ -273,7 +273,7 @@ export function RNRaceLobby({
       team={same ? (car?.team_colour ?? null) : null}
       trackId={r.race_key}
       heading={r.name}
-      sub={COPY.race.raceLine(r.name, r.total_laps).split(" · ").slice(1).join(" · ") || COPY.race.raceLine(r.name, r.total_laps)}
+      sub={L.laps(r.total_laps)}
       carHeading={same ? L.everyoneDrives(car?.code ?? race.driver_code ?? "") : COPY.race.lobbyChoose}
       carSub={
         same
@@ -284,7 +284,7 @@ export function RNRaceLobby({
             ? picks.map((c) => COPY.host.drives(c, race.players.filter((p) => carFor(p.name) === c).map((p) => p.name))).join(" · ")
             : COPY.race.pickWait
       }
-      note={err}
+      note={err ?? COPY.race.lobbyNote}
     />
   );
 }

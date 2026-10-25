@@ -6,8 +6,8 @@ import { COPY } from "@/lib/copy";
 import type { BlindDecision } from "@/lib/client/api";
 import type { DataMode } from "@/lib/client/mode";
 import { callMomentFrames, frameAt } from "@/lib/client/race";
-import { numberOf, type RaceLobby } from "@/lib/client/raceLobby";
-import { lapTimeText } from "@/lib/client/telemetry";
+import { numberOf, replayDecision, type RaceLobby } from "@/lib/client/raceLobby";
+import { lapTimeText, telemetry } from "@/lib/client/telemetry";
 import { leaderFractionFor, placeCars, trackFor } from "@/lib/tracks";
 import type { LapFrame } from "@/lib/types";
 import { Banner, GapValue, Label, Logo, OutlineNumber, RNRoot, RN_KIT_COPY, SkewButton, TowerRow, TyreBadge } from "../../kit";
@@ -28,12 +28,22 @@ export interface RNReplayViewProps {
   progress: { from: number; to: number; marks: number[]; endLabel: string };
   line: ReactNode; // the race-control line under the map
   lineLabel?: string;
+  showPit?: boolean; // Advanced race tower: the pit cell (legacy Tower showPit)
+  watch?: { code: string; side: "ahead" | "behind"; now: number | null; rate: number | null } | null; // Advanced gap-watch panel
 }
 
 const statusText = (s: LapFrame["track_status"]) => (s === "SC" ? L.sc : s === "VSC" ? L.vsc : L.green);
 
 export function RNReplayView(p: RNReplayViewProps) {
   const frame = p.frame;
+  const adv = p.mode === "advanced";
+  if (!frame) {
+    return (
+      <RNRoot as="main" className="rnr-loading">
+        <p role="status">{COPY.race.loading}</p>
+      </RNRoot>
+    );
+  }
   const drivers = frame ? [...frame.drivers].sort((a, b) => a.position - b.position) : [];
   const me = drivers.find((d) => d.number === p.followedNumber) ?? null;
   const myGap = me?.gap_to_leader_s ?? null;
@@ -50,7 +60,7 @@ export function RNReplayView(p: RNReplayViewProps) {
   const status = frame?.track_status ?? "GREEN";
   const caution = status === "SC" || status === "VSC";
   return (
-    <RNRoot as="main" team={me?.team_colour ?? null} className="rnr" data-status={status}>
+    <RNRoot as="main" team={me?.team_colour ?? null} className="rnr" data-status={status} data-mode={p.mode}>
       {caution ? <Banner kind={status === "SC" ? "sc" : "vsc"} text={status === "SC" ? L.sc : L.vsc} className="rnr-banner" /> : <div aria-hidden className="rnr-green" />}
       <div aria-hidden className="rnr-slab" />
       {me && <OutlineNumber value={me.number} size={300} className="rnr-outline" />}
@@ -87,6 +97,14 @@ export function RNReplayView(p: RNReplayViewProps) {
               me={d.number === p.followedNumber}
               size="host-sm"
               gap={d.number === p.followedNumber ? RN_KIT_COPY.you : <GapValue delta={dl} unit={false} />}
+              trend={
+                adv ? (
+                  <>
+                    {d.tyre_age != null && <span className="rn-num">{RN_KIT_COPY.tyreAge(d.tyre_age)}</span>}
+                    {p.showPit && d.pitted_this_lap && <span className="rnr-pit">{COPY.replay.pit}</span>}
+                  </>
+                ) : undefined
+              }
             />
           );
         })}
@@ -162,6 +180,14 @@ export function RNReplayView(p: RNReplayViewProps) {
                 </p>
               ) : null,
             )}
+            {adv && p.watch && (
+              <div className="rnr-watch">
+                <Label tone="ink">{COPY.host.gapTitle(p.watch.code, p.watch.side)}</Label>
+                <p className="rn-num">
+                  {p.watch.now != null ? COPY.tele.gapS(p.watch.now) : COPY.tele.none} <span>{COPY.host.rate(p.watch.rate)}</span>
+                </p>
+              </div>
+            )}
           </>
         )}
       </section>
@@ -191,6 +217,8 @@ export function RNHostReplay({
   const frame = frameAt(seen, lap) ?? null;
   const me = frame?.drivers.find((d) => d.number === decision.player_role.number);
   const lapsToCall = decision.lap - lap;
+  const tele = mode === "advanced" ? telemetry(seen.filter((f) => f.lap <= lap), { ...decision, lap }, 60) : null;
+  const w = tele?.gapBehind ?? tele?.gapAhead ?? null;
   return (
     <RNReplayView
       code={code}
@@ -202,6 +230,7 @@ export function RNHostReplay({
       mode={mode}
       controls={controls}
       onAdvance={onAdvance}
+      watch={w ? { code: w.code, side: tele?.gapBehind ? "behind" : "ahead", now: w.now, rate: w.rate } : null}
       progress={{ from: decision.replay_from_lap, to: decision.lap, marks: [], endLabel: COPY.host.callAt(decision.lap) }}
       line={
         <>
@@ -233,6 +262,8 @@ export function RNRaceReplay({
   const r = race.race;
   const frame = frames.find((f) => f.lap === lap) ?? frames.at(-1) ?? null;
   const n = numberOf(frames, followed) ?? -1;
+  const tele = frame && n >= 0 && mode === "advanced" ? telemetry(frames.filter((f) => f.lap <= frame.lap), replayDecision(r, n, frame.lap), 8) : null;
+  const w = tele?.gapAhead ?? tele?.gapBehind ?? null;
   return (
     <RNReplayView
       code={code}
@@ -243,6 +274,8 @@ export function RNRaceReplay({
       trackId={r.race_key}
       mode={mode}
       controls={controls}
+      showPit={mode === "advanced"}
+      watch={w ? { code: w.code, side: tele?.gapAhead ? "ahead" : "behind", now: w.now, rate: w.rate } : null}
       progress={{ from: 0, to: r.total_laps, marks: r.past_freeze_laps, endLabel: L.flagAt(r.total_laps) }}
       line={
         <>
