@@ -1,5 +1,6 @@
 import { Suspense } from "react";
-import { gateMisconfigured, safeNext } from "@/lib/gate";
+import { redirect } from "next/navigation";
+import { gateMisconfigured, gateOpen, safeNext } from "@/lib/gate";
 import { GATE_COPY } from "@/lib/copy-gate";
 import { Brand } from "@/components/ui";
 
@@ -20,6 +21,8 @@ export default function UnlockPage({ searchParams }: PageProps<"/unlock">) {
 
 async function UnlockForm({ searchParams }: { searchParams: PageProps<"/unlock">["searchParams"] }) {
   const params = await searchParams;
+  // Old /unlock links once the site is public: go straight on.
+  if (gateOpen()) redirect(safeNext(typeof params.next === "string" ? params.next : "/"));
   if (gateMisconfigured()) {
     return (
       <div className="flex w-full max-w-md flex-col gap-4 border-t-2 border-ink pt-4">

@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { CRON_PURGE_PATH, cronAuthorized, GATE_COOKIE, gateMisconfigured, gatePassword, verifyGateToken } from "@/lib/gate";
+import { CRON_PURGE_PATH, cronAuthorized, GATE_COOKIE, gateMisconfigured, gateOpen, gatePassword, verifyGateToken } from "@/lib/gate";
 
 // Exact paths that skip the gate: the unlock page and its form handler, and the public logo and icon files. Checked here as
 // whole paths rather than matcher prefixes, so a future /unlock-foo or /iconic.json stays gated.
@@ -9,6 +9,7 @@ export const GATE_OPEN_PATHS: ReadonlySet<string> = new Set(["/unlock", "/api/un
 export function proxy(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const isApi = pathname === "/api" || pathname.startsWith("/api/");
+  if (gateOpen()) return NextResponse.next(); // public: every route does its own auth and rate limiting
 
   // On Vercel without SITE_PASSWORD: refuse rather than open up (H1). The unlock route refuses too.
   if (gateMisconfigured()) {

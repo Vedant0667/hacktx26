@@ -1,5 +1,6 @@
 // Shared-password gate for test deployments. Off when SITE_PASSWORD is unset, but only off Vercel:
 // on Vercel (VERCEL_ENV set) a missing password means a misconfigured deployment, and the gate refuses.
+// SITE_GATE=off opens the site on purpose (public launch); unset it to put the password back.
 import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 
 export const GATE_COOKIE = "site_gate";
@@ -10,9 +11,14 @@ export function gatePassword(): string | null {
   return p && p.length > 0 ? p : null;
 }
 
-// True when the gate should refuse everything: deployed on Vercel without a password.
+// True only for the exact value "off", so a typo keeps the gate up.
+export function gateOpen(): boolean {
+  return process.env.SITE_GATE === "off";
+}
+
+// True when the gate should refuse everything: deployed on Vercel without a password and not opened on purpose.
 export function gateMisconfigured(): boolean {
-  return !gatePassword() && Boolean(process.env.VERCEL_ENV);
+  return !gateOpen() && !gatePassword() && Boolean(process.env.VERCEL_ENV);
 }
 
 function sign(password: string, exp: number): string {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { hitRateLimit } from "@/lib/db";
-import { GATE_COOKIE, GATE_MAX_AGE_S, gateMisconfigured, gatePassword, gateToken, safeEqual, safeNext } from "@/lib/gate";
+import { GATE_COOKIE, GATE_MAX_AGE_S, gateMisconfigured, gateOpen, gatePassword, gateToken, safeEqual, safeNext } from "@/lib/gate";
 import { clientIp } from "../_lib/http";
 
 // 50 failed attempts per 10 minutes per IP (IPv6: per /64). The password is checked first, so the right
@@ -20,6 +20,7 @@ const back = (error: string, next: string) => redirect(`/unlock?error=${error}&n
 
 // Form POST from /unlock. A wrong password also waits 600 ms.
 export async function POST(request: Request) {
+  if (gateOpen()) return redirect("/");
   if (gateMisconfigured()) {
     return NextResponse.json({ error: "Gate misconfigured: SITE_PASSWORD is not set" }, { status: 503 });
   }

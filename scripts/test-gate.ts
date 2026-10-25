@@ -151,6 +151,28 @@ async function handlers() {
   assert.equal((await purge(new Request("https://x.test/api/cron/purge", { headers: { authorization: "Bearer " } }))).status, 401);
 }
 
+// Public launch: SITE_GATE=off opens every path (even on Vercel with no password); any other value keeps the gate.
+{
+  const saved = { gate: process.env.SITE_GATE, pw: process.env.SITE_PASSWORD, env: process.env.VERCEL_ENV };
+  process.env.SITE_PASSWORD = "test-password";
+  for (const typo of ["OFF", "of", "false", "0", " off"]) {
+    process.env.SITE_GATE = typo;
+    assert.equal(run("https://x.test/host/ABCD").status, 307, `SITE_GATE=${JSON.stringify(typo)} opened the gate`);
+  }
+  process.env.SITE_GATE = "off";
+  assert.ok(passes(run("https://x.test/host/ABCD")), "SITE_GATE=off left the page gated");
+  assert.ok(passes(run("https://x.test/api/lobby/ABCD")), "SITE_GATE=off left the API gated");
+  delete process.env.SITE_PASSWORD;
+  process.env.VERCEL_ENV = "production";
+  assert.ok(passes(run("https://x.test/")), "SITE_GATE=off on Vercel without a password should be open, not misconfigured");
+  delete process.env.SITE_GATE;
+  assert.equal(run("https://x.test/").status, 503, "on Vercel without a password and without SITE_GATE=off the gate must refuse");
+  for (const [k, v] of [["SITE_GATE", saved.gate], ["SITE_PASSWORD", saved.pw], ["VERCEL_ENV", saved.env]] as const) {
+    if (v === undefined) delete process.env[k];
+    else process.env[k] = v;
+  }
+}
+
 handlers().then(
   () => console.log("ok test_gate"),
   (err) => {
