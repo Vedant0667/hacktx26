@@ -21,8 +21,8 @@ export function CarChip({ summary, code, className = "" }: { summary: GameSummar
   if (!code) return null;
   const colour = colourOf(summary, code);
   return (
-    <span className={`inline-flex shrink-0 items-center gap-1.5 font-mono text-sm font-bold ${className}`}>
-      {colour && <span aria-hidden className="inline-block h-3.5 w-1.5" style={{ backgroundColor: colour }} />}
+    <span className={`inline-flex shrink-0 items-center gap-1.5 text-sm font-bold tracking-[0.01em] ${className}`}>
+      {colour && <span aria-hidden className="inline-block h-3.5 w-[3px]" style={{ backgroundColor: colour }} />}
       {code}
     </span>
   );
@@ -145,7 +145,7 @@ export function Scoring({ elapsedMs, failed, big = false }: { elapsedMs: number;
   return (
     <div className={`flex flex-col gap-3 ${big ? "px-14 pt-40" : "px-5 pt-24"}`} aria-live="polite">
       <p className={`display leading-none ${big ? "text-[4.5rem]" : "text-[2.5rem]"}`}>{COPY.end.scoring}</p>
-      <p className={`nums ${big ? "text-2xl" : "text-lg"} text-ink-2`}>{failed ? COPY.end.retry : COPY.end.scoringFor(Math.max(0, Math.floor(elapsedMs / 1000)))}</p>
+      <p className={`nums font-medium ${big ? "text-2xl" : "text-lg"} text-ink-2`}>{failed ? COPY.end.retry : COPY.end.scoringFor(Math.max(0, Math.floor(elapsedMs / 1000)))}</p>
     </div>
   );
 }
@@ -163,12 +163,12 @@ export function HostSummary({ summary: s, code, carCode }: { summary: GameSummar
   return (
     <main className="grid h-dvh grid-rows-[auto_minmax(0,1fr)_auto] overflow-hidden">
       <header className="bg-field px-14 pb-6 pt-7 text-on-field">
-        <div className="flex items-center justify-between gap-6 font-mono text-lg font-bold uppercase">
+        <div className="nums flex items-center justify-between gap-6 text-lg font-bold tracking-[-0.01em]">
           <span>{COPY.end.status(s.race)}</span>
           <span>{COPY.host.room(code)}</span>
         </div>
         <h1 className="display mt-3 text-[4.5rem] leading-[0.95]">{winnerLine(s)}</h1>
-        <p className="mt-2 text-xl font-bold">
+        <p className="nums mt-3 text-xl font-bold">
           {line ? (
             <>
               {line.head} <span className="font-medium">{line.sub}</span>
@@ -197,11 +197,11 @@ export function HostSummary({ summary: s, code, carCode }: { summary: GameSummar
         )}
       </section>
 
-      <footer className="flex items-end justify-between gap-6 border-t border-line px-14 pb-6 pt-3">
+      <footer className="flex items-end justify-between gap-8 border-t border-line px-14 pb-6 pt-4">
         <div className="flex max-w-[100ch] flex-col gap-1">
-          <p className="text-base font-bold leading-snug">{howText}</p>
-          <p className="text-base font-medium">{COPY.end.engineNote}</p>
-          <p className="text-xs text-ink-2">{COPY.end.credit}</p>
+          <p className="nums text-base font-semibold leading-snug">{howText}</p>
+          <p className="text-base font-medium text-ink-2">{COPY.end.engineNote}</p>
+          <p className="mt-0.5 text-xs font-medium text-ink-2">{COPY.end.credit}</p>
         </div>
         <Button variant="primary" size="md" onClick={() => router.push("/")}>
           {COPY.end.newLobby}
@@ -228,7 +228,7 @@ function HostRow({ r, s, rank, size, single }: { r: RankRow; s: GameSummary; ran
   const sub = e?.call ? (luckNote(m!, e) ?? e.verdict) : null;
   return (
     <div className={`grid ${z.h} shrink-0 items-center gap-x-6 border-b border-line py-1.5 ${bench ? "text-ink-2" : ""}`} style={{ gridTemplateColumns: cols }}>
-      <span className={`nums font-bold ${z.rank}`}>{rank ? rankText(rank) : ""}</span>
+      <span className={`nums font-extrabold tracking-[-0.02em] ${z.rank}`}>{rank ? rankText(rank) : ""}</span>
       <span className="flex min-w-0 items-baseline gap-3">
         <span className={bench ? `line-clamp-2 font-bold leading-tight ${size === "sm" || size === "xs" ? "text-base" : "text-xl"}` : `display truncate leading-none ${z.name}`}>{label(r, s)}</span>
         {r.kind === "player" && s.cars.length > 1 && <CarChip summary={s} code={r.driver_code} />}
@@ -245,7 +245,7 @@ function HostRow({ r, s, rank, size, single }: { r: RankRow; s: GameSummary; ran
             ) : (
               <span className={`${z.quote} text-ink-2`}>{e?.call ? COPY.end.noReason : ""}</span>
             )}
-            {sp && <span className={`tnum font-bold ${z.sub} ${bench ? "" : "text-ink"}`}>{COPY.end.split(sp)}</span>}
+            {sp && <span className={`nums font-semibold ${z.sub} ${bench ? "" : "text-ink"}`}>{COPY.end.split(sp)}</span>}
             {sub && <span className={`line-clamp-1 ${z.sub} text-ink-2`}>{sub}</span>}
           </span>
         </>
@@ -268,7 +268,7 @@ function RaceRowMiddle({ r, s, subClass }: { r: RankRow; s: GameSummary; subClas
         {COPY.end.callsRight(t.right, t.calls)}
         {a.n > 0 && <span className="font-medium"> · {COPY.end.audiblesLine(a.n, a.points)}</span>}
       </span>
-      <span className={`tnum font-medium ${subClass}`}>{COPY.end.sums(sums.call, sums.reasoning, sums.total)}</span>
+      <span className={`nums font-medium opacity-85 ${subClass}`}>{COPY.end.sums(sums.call, sums.reasoning, sums.total)}</span>
     </span>
   );
 }
@@ -276,11 +276,11 @@ function RaceRowMiddle({ r, s, subClass }: { r: RankRow; s: GameSummary; subClas
 function HostMoment({ m, s, carCode }: { m: SummaryMoment; s: GameSummary; carCode: string | null }) {
   const line = momentLine(s, m, carCode);
   return (
-    <div className="flex flex-col gap-1 border-b border-line pb-2.5">
+    <div className="flex flex-col gap-1 border-b border-line pb-3">
       <span className="flex items-baseline gap-3">
-        <b className="font-mono text-lg font-bold">L{m.lap}</b>
-        <span className="truncate font-mono text-sm font-bold uppercase text-ink-2">{m.triggers.map(triggerText).join(" · ")}</span>
-        {line.stakes != null && <b className="nums ml-auto shrink-0 font-mono text-lg font-bold">{COPY.end.stakesTag(line.stakes)}</b>}
+        <b className="nums text-xl font-extrabold tracking-[-0.02em]">L{m.lap}</b>
+        <span className="meta truncate text-ink-2">{m.triggers.map(triggerText).join(" · ")}</span>
+        {line.stakes != null && <span className="nums ml-auto shrink-0 text-base font-semibold text-ink-2">{COPY.end.stakesTag(line.stakes)}</span>}
       </span>
       <span className="text-lg font-black leading-tight">{line.head}</span>
       {line.luck && <span className="line-clamp-1 text-sm">{line.luck}</span>}
@@ -343,14 +343,14 @@ function MyMomentRow({ m, e }: { m: SummaryMoment; e: MomentEntry }) {
     <details className="group border-b border-soft-2">
       <summary className="flex min-h-12 cursor-pointer list-none items-center gap-3 py-2">
         <span className="flex w-12 shrink-0 flex-col">
-          <b className="nums font-mono text-sm font-bold">L{m.lap}</b>
-          <span className="truncate text-[11px] font-bold uppercase text-ink-2">{shortTrigger(m.triggers[0] ?? "")}</span>
+          <b className="nums text-base font-extrabold tracking-[-0.01em]">L{m.lap}</b>
+          <span className="truncate text-[11px] font-bold uppercase tracking-[0.04em] text-ink-2">{shortTrigger(m.triggers[0] ?? "")}</span>
         </span>
         <span className="flex min-w-0 flex-col">
           <span className="text-base font-black">
             <CallWord call={e.call} /> <RightMark right={right} />
           </span>
-          <span className="tnum text-xs font-bold leading-tight text-ink-2">{sp ? COPY.end.split(sp) : COPY.end.noCallRow}</span>
+          <span className="nums text-xs font-semibold leading-tight text-ink-2">{sp ? COPY.end.split(sp) : COPY.end.noCallRow}</span>
         </span>
         <span className="nums ml-auto shrink-0 text-lg font-black">{COPY.end.points(e.points)}</span>
         {chevron}
@@ -370,14 +370,14 @@ function MyAudibleRow({ a }: { a: SummaryAudible }) {
   return (
     <div className="flex min-h-12 items-center gap-3 border-b border-soft-2 py-1.5 text-ink-2">
       <span className="flex w-12 shrink-0 flex-col">
-        <b className="nums font-mono text-sm font-bold">L{a.lap}</b>
-        <span className="text-[11px] font-bold uppercase">{COPY.race.audible.title}</span>
+        <b className="nums text-base font-extrabold tracking-[-0.01em]">L{a.lap}</b>
+        <span className="text-[11px] font-bold uppercase tracking-[0.04em]">{COPY.race.audible.title}</span>
       </span>
       <span className="flex min-w-0 flex-col">
         <span className="text-sm font-bold">
           {COPY.end.boxNow} {audibleMark(a)}
         </span>
-        <span className="tnum text-xs font-bold leading-tight">{sp ? COPY.end.split(sp, false) : (COPY.race.audibleStatus[a.status] ?? COPY.end.unscored)}</span>
+        <span className="nums text-xs font-semibold leading-tight">{sp ? COPY.end.split(sp, false) : (COPY.race.audibleStatus[a.status] ?? COPY.end.unscored)}</span>
       </span>
       <span className="nums ml-auto text-base font-bold text-ink">{COPY.end.points(a.points)}</span>
       <span aria-hidden className="ml-1 inline-block w-2" />
@@ -417,7 +417,7 @@ function Everyone({ s, myCar }: { s: GameSummary; myCar: string | null }) {
                           <CallWord call={e.call} /> <RightMark right={rightOf(m, e)} />
                         </span>
                       </span>
-                      {sp && <span className="tnum text-xs leading-tight">{COPY.end.split(sp, false)}</span>}
+                      {sp && <span className="nums text-xs font-medium leading-tight">{COPY.end.split(sp, false)}</span>}
                     </span>
                     <span className="nums ml-auto shrink-0 text-base font-black">{COPY.end.points(e.points)}</span>
                     {chevron}
@@ -457,19 +457,19 @@ export function PhoneSummary({ summary: s, me }: { summary: GameSummary; me: str
     <>
       <div className="bg-field text-on-field">
         <div className="flex h-[52px] items-center justify-between gap-3 px-5">
-          <span className="meta flex min-w-0 items-center gap-2.5 text-[13px]">
+          <span className="nums flex min-w-0 items-center gap-2.5 text-sm font-bold tracking-[-0.01em]">
             <Brand kind="mark" height={13} />
             <span className="truncate">{COPY.end.status(s.race)}</span>
           </span>
-          <span className="max-w-[40%] truncate text-[13px] font-bold">{me}</span>
+          <span className="max-w-[40%] truncate text-sm font-semibold opacity-85">{me}</span>
         </div>
         <div className="rise px-5 pb-5 pt-1">
-          <div className="meta mb-1.5">{COPY.end.yourResult}</div>
+          <div className="meta mb-2 opacity-80">{COPY.end.yourResult}</div>
           <p className="display nums whitespace-nowrap text-[3.25rem] leading-[0.9] tracking-[-0.04em]">
             {meRow && myRank ? COPY.end.placeTotal(`${myRank.tied ? "=" : ""}${ordinal(myRank.rank)}`, meRow.points) : COPY.end.noCall}
           </p>
           {myRank && (
-            <p className="nums mt-2.5 text-base font-bold">
+            <p className="nums mt-3 text-base font-semibold">
               {COPY.end.rankLine(rankText(myRank), myRank.of)}
               {race && tally ? ` · ${COPY.end.callsRight(tally.right, tally.calls)}` : ""}
               {myAudibles.n > 0 ? ` · ${COPY.end.audiblesLine(myAudibles.n, myAudibles.points)}` : ""}
@@ -490,14 +490,14 @@ export function PhoneSummary({ summary: s, me }: { summary: GameSummary; me: str
             return (
               <div
                 key={`${r.kind}:${r.name}:${r.driver_code}`}
-                className={`grid min-h-11 grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-x-3 border-b py-1 ${mine ? "-mx-1 border-ink bg-ink px-1 text-white" : bench ? "border-soft-2 text-ink-2" : "border-soft-2"}`}
+                className={`grid min-h-12 grid-cols-[32px_minmax(0,1fr)_auto] items-center gap-x-3 border-b py-1.5 ${mine ? "-mx-2 border-ink bg-ink px-2 text-white" : bench ? "border-line text-ink-2" : "border-line"}`}
               >
-                <span className="nums text-sm font-bold">{!bench && rk ? rankText(rk) : ""}</span>
+                <span className="nums text-base font-extrabold">{!bench && rk ? rankText(rk) : ""}</span>
                 <span className="flex min-w-0 flex-col">
                   <span className={`truncate ${bench ? "text-sm font-bold" : "text-base font-black"}`}>{label(r, s)}</span>
-                  <span className="tnum truncate text-xs">{COPY.end.sums(sums.call, sums.reasoning, sums.total)}</span>
+                  <span className="nums truncate text-xs font-medium opacity-85">{COPY.end.sums(sums.call, sums.reasoning, sums.total)}</span>
                 </span>
-                <span className="nums text-base font-black">{COPY.end.points(r.points)}</span>
+                <span className="nums text-lg font-black tracking-[-0.02em]">{COPY.end.points(r.points)}</span>
               </div>
             );
           })}
