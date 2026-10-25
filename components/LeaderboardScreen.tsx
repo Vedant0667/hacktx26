@@ -79,7 +79,7 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
   return (
     <main className="min-h-dvh bg-ink text-white">
       <div className="on-dark mx-auto flex w-full max-w-[1440px] flex-col gap-6 px-5 pb-12 pt-0 md:px-14">
-        <div className="meta flex h-13 items-center justify-between gap-4 md:h-24 md:text-lg">
+        <div className="nums flex h-13 items-center justify-between gap-4 text-sm font-bold tracking-[-0.01em] md:h-24 md:text-lg">
           <span className="truncate">
             {COPY.homeUi.leaderboardTitle} · {COPY.homeUi.allRooms}
           </span>
@@ -88,14 +88,14 @@ export function LeaderboardScreen({ index }: { index: DecisionIndexEntry[] }) {
 
         <header className="flex flex-col gap-4 border-b-2 border-white pb-5 md:flex-row md:items-end md:justify-between">
           <h1 className="display text-3xl md:text-[5rem] md:leading-[0.95]">{COPY.homeUi.leaderboardHeadline}</h1>
-          <div className="flex flex-col gap-1 text-sm text-[#bdbdbd] md:items-end md:text-right md:font-mono md:text-base">
+          <div className="flex flex-col gap-1 text-sm font-medium text-[#bdbdbd] md:items-end md:text-right md:text-base">
             {youLobby && (
               <span className="inline-flex items-center gap-2">
                 <span aria-hidden className="inline-block size-3" style={{ backgroundColor: field }} />
                 {COPY.homeUi.yourMark}
               </span>
             )}
-            <Link href="/" className="font-sans font-bold text-white underline decoration-2 underline-offset-4 hover:decoration-[#8c8c8c]">
+            <Link href="/" className="font-bold text-white underline decoration-2 underline-offset-4 hover:decoration-[#8c8c8c]">
               {COPY.leaderboard.back}
             </Link>
           </div>
@@ -250,7 +250,7 @@ function Board({
         <span role="cell" className="hidden truncate text-lg font-bold md:block">
           {revealed && <CallWord call={r.call} />}
         </span>
-        <span role="cell" className="nums text-right text-xl font-bold md:text-[1.875rem]">
+        <span role="cell" className="tnum text-right text-xl font-extrabold tracking-[-0.02em] md:text-[1.875rem]">
           {r.total}
         </span>
       </div>
