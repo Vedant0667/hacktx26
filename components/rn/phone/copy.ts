@@ -13,6 +13,9 @@ export const RN_PHONE_COPY = {
   thinking: "Thinking",
   watching: "Watching",
   resumesIn: "Replay resumes in",
+  // Calls-locked beat (Locked.tsx)
+  freezeOver: "Freeze over",
+  raceGoesOn: "The race goes on.",
   dataOnPhone: "Data on your phone",
   carLabel: (n: number, team: string | null | undefined) => (team ? `Car ${n} · ${team}` : `Car ${n}`),
 } as const;

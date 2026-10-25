@@ -28,6 +28,8 @@ import { HostQr } from "./HostQr";
 import { HostReveal } from "./HostReveal";
 import { carOf, carsInPlay, driverBy, lobbyCarCode } from "./cars";
 import { RaceHost } from "../race/RaceHost";
+import { RNMuteButton } from "../rn/host/controls";
+import { ModeTabs } from "../rn/kit";
 
 const MAX_PLAYERS = 12;
 
@@ -114,11 +116,14 @@ export function HostScreen({ code }: { code: string }) {
   const car = asDriver(decision, driverBy(drivers, carCode));
   const team = teamColourOf(frames, car.player_role.number);
   const colourOf = (code: string | null) => driverBy(drivers, code)?.team_colour ?? null;
-  const muteBtn = (variant: "secondary" | "inverse") => (
-    <Button variant={variant} size="sm" aria-pressed={muted} onClick={() => setMuted((m) => !m)}>
-      {muted ? COPY.cue.unmute : COPY.cue.mute}
-    </Button>
-  );
+  const muteBtn = (variant: "secondary" | "inverse") =>
+    rn ? (
+      <RNMuteButton muted={muted} onToggle={() => setMuted((m) => !m)} tone="dark" />
+    ) : (
+      <Button variant={variant} size="sm" aria-pressed={muted} onClick={() => setMuted((m) => !m)}>
+        {muted ? COPY.cue.unmute : COPY.cue.mute}
+      </Button>
+    );
 
   return (
     <div style={fieldStyle(team)}>
@@ -162,7 +167,7 @@ export function HostScreen({ code }: { code: string }) {
           mode={mode}
           controls={
             <>
-              <ModeToggle mode={mode} onChange={setMode} size="sm" />
+              {rn ? <ModeTabs mode={mode} onChange={setMode} variant="split" className="rnhc-tabs" /> : <ModeToggle mode={mode} onChange={setMode} size="sm" />}
               {muteBtn("secondary")}
             </>
           }

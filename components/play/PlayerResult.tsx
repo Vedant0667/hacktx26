@@ -6,10 +6,11 @@ import { useSummary } from "@/lib/client/results";
 import { useRaceNight } from "@/lib/client/uiFlag";
 import { PhoneSummary, Scoring } from "../EndScreen";
 import { RNPhoneSummary } from "../rn/phone-end/PhoneEnd";
+import { RNPhoneScoring } from "../rn/phone-end/Scoring";
 
 export function PlayerResult({ code, me, lobby, elapsed }: { code: string; me: string; lobby: LobbyStateResponse; elapsed: number }) {
   const { summary, failed } = useSummary(code, lobby.phase === "reveal" || lobby.phase === "done");
   const rn = useRaceNight();
-  if (!summary) return <Scoring elapsedMs={elapsed} failed={failed} />;
+  if (!summary) return rn ? <RNPhoneScoring elapsedMs={elapsed} failed={failed} /> : <Scoring elapsedMs={elapsed} failed={failed} />;
   return rn ? <RNPhoneSummary summary={summary} me={me} /> : <PhoneSummary summary={summary} me={me} />;
 }

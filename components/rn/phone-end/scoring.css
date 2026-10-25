@@ -1,0 +1,99 @@
+/* Race Night phone scoring wait. Scoped under .rn.rnps. */
+.rn.rnps {
+  min-height: 100dvh;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.rnps .rnps-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  padding: 0 24px;
+  flex-shrink: 0;
+}
+.rnps .rnps-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 24px max(48px, env(safe-area-inset-bottom));
+}
+.rnps .rnps-title {
+  margin: 0;
+  font-weight: 900;
+  text-transform: uppercase;
+  line-height: 0.86;
+}
+.rnps .rnps-top,
+.rnps .rnps-big {
+  display: block;
+}
+.rnps .rnps-top {
+  font-size: 40px;
+  color: var(--rn-muted);
+  letter-spacing: 0.01em;
+}
+.rnps .rnps-big {
+  font-size: 84px;
+  letter-spacing: -0.01em;
+}
+.rnps .rnps-sub {
+  margin: 18px 0 0;
+  max-width: 30ch;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--rn-soft);
+}
+.rnps .rnps-sub[data-failed] {
+  color: var(--rn-yellow);
+}
+.rnps .rnps-bar {
+  position: relative;
+  display: block;
+  height: 6px;
+  margin-top: 32px;
+  background: #262a31;
+  overflow: hidden;
+}
+.rnps .rnps-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  background: #fff;
+  animation: rnps-sweep 1.8s ease-in-out infinite;
+}
+.rnps .rnps-bar[data-failed] i {
+  background: var(--rn-yellow);
+}
+@keyframes rnps-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(270%);
+  }
+}
+.rnps .rnps-foot {
+  margin: 16px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--rn-muted);
+}
+@media (prefers-reduced-motion: reduce) {
+  .rnps .rnps-bar i {
+    animation: none;
+    width: 50%;
+    opacity: 0.7;
+  }
+}
+@media (max-height: 760px) {
+  .rnps .rnps-big {
+    font-size: 72px;
+  }
+}

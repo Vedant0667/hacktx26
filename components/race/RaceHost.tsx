@@ -44,6 +44,8 @@ import { RNRaceLobby } from "../rn/host/lobby/RNLobby";
 import { RNRaceReplay } from "../rn/host/replay/RNReplay";
 import { RNHostSummary, RNScoring } from "../rn/end/RNHostEnd";
 import { RNFreeze, RNLocked } from "../rn/host/freeze/RNFreeze";
+import { RNControlButton, RNMuteButton } from "../rn/host/controls";
+import { ModeTabs } from "../rn/kit";
 
 const MAX_PLAYERS = 12;
 
@@ -119,11 +121,14 @@ export function RaceHost({
     }
   }, [phase, race, r, t, elapsed, allIn, setPhase]);
 
-  const muteBtn = (variant: "secondary" | "inverse") => (
-    <Button variant={variant} size="sm" aria-pressed={muted} onClick={() => setMuted((m) => !m)}>
-      {muted ? COPY.cue.unmute : COPY.cue.mute}
-    </Button>
-  );
+  const muteBtn = (variant: "secondary" | "inverse") =>
+    rn ? (
+      <RNMuteButton muted={muted} onToggle={() => setMuted((m) => !m)} tone="dark" />
+    ) : (
+      <Button variant={variant} size="sm" aria-pressed={muted} onClick={() => setMuted((m) => !m)}>
+        {muted ? COPY.cue.unmute : COPY.cue.mute}
+      </Button>
+    );
 
   let body: React.ReactNode;
   if (phase === "waiting") {
@@ -160,13 +165,16 @@ export function RaceHost({
         mode={mode}
         controls={
           <>
-            <ModeToggle mode={mode} onChange={setMode} size="sm" />
+            {rn ? <ModeTabs mode={mode} onChange={setMode} variant="split" className="rnhc-tabs" /> : <ModeToggle mode={mode} onChange={setMode} size="sm" />}
             {muteBtn("secondary")}
-            {segmentDone(race, t) && (
-              <Button variant="secondary" size="sm" onClick={() => void setPhase(nextAfterReplay(r), r.freeze_index)}>
-                {COPY.race.continue}
-              </Button>
-            )}
+            {segmentDone(race, t) &&
+              (rn ? (
+                <RNControlButton onClick={() => void setPhase(nextAfterReplay(r), r.freeze_index)}>{COPY.race.continue}</RNControlButton>
+              ) : (
+                <Button variant="secondary" size="sm" onClick={() => void setPhase(nextAfterReplay(r), r.freeze_index)}>
+                  {COPY.race.continue}
+                </Button>
+              ))}
           </>
         }
       />

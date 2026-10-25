@@ -8,6 +8,9 @@
   --u: calc(100vh / 720);
   display: grid;
   grid-template-columns: calc(216 * var(--u)) 1fr 24vw;
+  /* Standard host gutter on the left (Advanced sets its own padding below). The centre column still ends at 76vw. */
+  padding-left: 4.4vw;
+  column-gap: calc(28 * var(--u));
 }
 .rn.rnr[data-mode="advanced"] {
   grid-template-columns: calc(270 * var(--u)) 1fr 24vw;
@@ -29,6 +32,11 @@
 }
 .rnr[data-status="SC"],
 .rnr[data-status="VSC"] {
+  padding-top: calc(72 * var(--u));
+}
+/* The Advanced padding rule is more specific; keep the header below the SC/VSC banner there too. */
+.rn.rnr[data-mode="advanced"][data-status="SC"],
+.rn.rnr[data-mode="advanced"][data-status="VSC"] {
   padding-top: calc(72 * var(--u));
 }
 .rnr-slab {
@@ -107,6 +115,17 @@
   gap: 0;
   font-size: calc(16 * var(--u));
   color: var(--rn-muted);
+}
+/* Keep the race-control line and the progress bar clear of the team slab: the slab starts at 80.3vw at the top and leans left by
+   tan(14deg) x its height, so near the bottom it reaches 80.3vw - 24.93vh. The centre column ends at 76vw
+   (Simple) or 71.6vw - 40u (Advanced, padded). */
+.rnr .rnr-rc,
+.rnr .rnr-prog {
+  margin-right: max(0px, calc(24.93vh - 4.3vw + 24px));
+}
+.rnr[data-mode="advanced"] .rnr-rc,
+.rnr[data-mode="advanced"] .rnr-prog {
+  margin-right: max(0px, calc(24.93vh - 8.7vw - 40 * var(--u) + 24px));
 }
 .rnr-rc b {
   color: var(--rn-ink);
@@ -216,14 +235,21 @@
 .rnr-near {
   margin-top: calc(18 * var(--u));
 }
+/* The title may take two lines and the controls may wrap, so a long moment title stays readable at 1440 and 1366. */
 .rnr .rnr-title {
-  min-width: 0;
+  flex: 1 1 auto;
+  min-width: 16ch;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 .rnr-controls {
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  row-gap: 8px;
 }
 .rn.rnr-loading {
   height: 100dvh;
@@ -259,7 +285,11 @@
   font-size: calc(30 * var(--u));
   margin-top: 4px;
 }
+/* The rate sits on its own line under the gap, so "+0.20 s/lap opening" never wraps mid-phrase at 1440. */
 .rnr-watch p span {
-  font-size: 0.5em;
+  display: block;
+  margin-top: 6px;
+  font-size: calc(16 * var(--u));
   font-weight: 700;
+  white-space: nowrap;
 }
