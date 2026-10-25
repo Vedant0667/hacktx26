@@ -1,6 +1,7 @@
 import { connection, type NextRequest } from "next/server";
 import { getDecisionTotals, getLobbyDriverCodes, getLobbyState, getRaceCalls, raceGlobalTotals, topSubmissions, type LobbyMeta } from "@/lib/db";
 import { getRaceEntry, getRaceFreezes, type RaceEntry } from "@/lib/data";
+import { shapeMomentDetail } from "@/lib/names";
 import { percentile, rankLabel, sharedRanks } from "@/lib/scoring";
 import type { Call } from "@/lib/types";
 import { requireLobbyMember } from "../_lib/access";
@@ -150,15 +151,17 @@ export const GET = handle(async (req: NextRequest) => {
   ]);
   const revealedCode = lobby?.code ?? null;
   const revealed = revealedCode !== null;
-  const players = top.map((s) => ({
+  const players = top.map((s) => {
     // Other lobbies' codes are never sent (a code plus a late join opens that lobby's reveal); only rows from
-    // the viewer's own revealed lobby carry its code, so the UI can mark them.
-    kind: "player" as const, name: s.player_name, driver_code: s.driver_code, lobby_code: revealedCode !== null && s.lobby_code === revealedCode ? s.lobby_code : null, seconds_to_call: null,
-    total: s.total, percentile: percentile(s.total, totals),
-    ...(revealed
-      ? { call: s.call, reasons: s.reasons, factors_named: s.factors_named, verdict: s.verdict ?? null, score_call: s.score_call, score_reasoning: s.score_reasoning }
-      : { call: null, reasons: [], factors_named: [], verdict: null, score_call: null, score_reasoning: null }),
-  }));
+    // the viewer's own revealed lobby carry its code, so the UI can mark them. Only those rows carry the
+    // call, reasons and scores: every other lobby's row is name, car and total (this board is public).
+    const own = revealedCode !== null && s.lobby_code === revealedCode;
+    return {
+      kind: "player" as const, name: s.player_name, driver_code: s.driver_code, lobby_code: revealedCode !== null && s.lobby_code === revealedCode ? s.lobby_code : null, seconds_to_call: null,
+      total: s.total, percentile: percentile(s.total, totals),
+      ...shapeMomentDetail(own, revealed, s),
+    };
+  });
   // A team row and an engine row for each car played in the viewer's revealed lobby, graded like players.
   const benchmarks = lobby
     ? (await momentBenchmarks(lobby.code, lobby.meta)).map((b) => ({

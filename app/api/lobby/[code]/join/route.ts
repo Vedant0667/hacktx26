@@ -1,14 +1,17 @@
 import type { NextRequest } from "next/server";
 import { z } from "zod";
-import { addPlayer, getLobbyMeta, getLobbyState, MAX_PLAYERS, type LobbyStateResponse } from "@/lib/db";
-import { getRaceEntry } from "@/lib/data";
-import { driverFor, handle, hashToken, HttpError, newToken, normalizeCode, readBody, requireDriver, tokenMatches } from "../../../_lib/http";
+import { addPlayer, getLobbyMeta, hitRateLimit, getLobbyState, MAX_PLAYERS, type LobbyStateResponse } from "@/lib/db";
+import { getRaceEntry, getRaceList } from "@/lib/data";
+import { COPY } from "@/lib/copy";
+import { checkName } from "@/lib/names";
+import { clientIp, driverFor, handle, hashToken, HttpError, newToken, normalizeCode, readBody, requireDriver, tokenMatches } from "../../../_lib/http";
 import { guardLobbyRead } from "../../../_lib/limits";
 import { redactForPhase } from "../../../_lib/redact";
 
 // consent: the player ticked "show my nickname and spoken reasons"; stored as players.consent_at.
 const Body = z.object({
-  name: z.string().trim().min(1).max(24),
+  // Trimmed, normalised and length-checked (24 characters) by checkName in the handler.
+  name: z.string().min(1).max(100),
   consent: z.literal(true, { error: "consent must be true" }),
   // Round 4: required in a "choose" lobby (a scorable car of its decision); ignored in a "same" lobby.
   driver_code: z.string().trim().min(1).max(8).optional(),
@@ -37,9 +40,15 @@ async function raceDriver(code: string, name: string, lobby: LobbyStateResponse,
 
 export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobby/[code]/join">) => {
   const code = normalizeCode((await ctx.params).code);
-  const { name, driver_code } = await readBody(req, Body);
+  const body = await readBody(req, Body);
+  const { driver_code } = body;
   const { state: lobby } = await guardLobbyRead(req, code, true);
   if (!lobby) throw new HttpError(404, "Lobby not found");
+  // The stored name is the normalised one. Team names are the bare names of the benchmark rows.
+  const teams = (await getRaceList()).flatMap((r) => r.drivers.map((d) => d.team));
+  const checked = checkName(body.name, teams);
+  if (!checked.ok) throw new HttpError(400, COPY.error.nameRejected);
+  const name = checked.name;
 
   const token = newToken();
   const presented = req.headers.get("x-player-token");
@@ -63,6 +72,13 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
   } else {
     driver = (await driverFor(lobby.decision_id, lobby.driver_code)).code;
   }
+  // Join flooding: a troll rejoins under new names without a token. Count only joins that are not a rejoin by
+  // this name's own token; latecomers still join mid-race, up to 30 new names per IP per lobby per 10 minutes.
+  const own = presented ? await getLobbyMeta(code, name) : null;
+  if (!(own?.is_player && tokenMatches(presented, own.player_token_hash))) {
+    const hit = await hitRateLimit("join_new", `${clientIp(req)}:${code}`, 600);
+    if (hit.count > 30) throw new HttpError(429, "Too many requests. Wait a moment and try again.", hit.retry_after_s);
+  }
   const added = await addPlayer(code, name, hashToken(token), presented ? hashToken(presented) : null, driver || null);
   if (added.result === "no_lobby") throw new HttpError(404, "Lobby not found");
   if (added.result === "kicked") throw new HttpError(403, "Removed from this lobby by the host");
@@ -70,7 +86,8 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
   let player_token: string | null = token;
   let rejoined = false;
   if (added.result === "taken") {
-    if (!tokenMatches(req.headers.get("x-player-token"), added.token_hash)) {
+    // A rejoin must match the stored spelling too: "alice" cannot take over "Alice" with Alice's token.
+    if (added.name !== name || !tokenMatches(req.headers.get("x-player-token"), added.token_hash)) {
       throw new HttpError(409, `Name "${name}" is taken in this lobby`);
     }
     player_token = null; // the device already holds it
