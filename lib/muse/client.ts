@@ -1,9 +1,9 @@
 // Server-only Muse Spark client with a hard spend cap. Each call first reserves its worst-case cost in
 // muse_calls (atomic, see reserveMuseCall), then the row is updated with the real usage;
-// callers get null (and use the local fallback) when the key is missing, the budget or lobby cap is hit,
-// or the call fails, times out, is truncated, or returns JSON that does not validate.
+// callers get null (and use the local fallback) when the key is missing, a spend cap is hit (lifetime, hourly,
+// per creator or per lobby), or the call fails, times out, is truncated, or returns JSON that does not validate.
 import type { z } from "zod";
-import { finishMuseCall, reserveMuseCall } from "../db";
+import { finishMuseCall, reserveMuseCall, type MuseSkipReason } from "../db";
 
 export const MUSE_MODEL = "muse-spark-1.3";
 // Used only when Meta answers 404 model_not_found for MUSE_MODEL (it did for stretches on 2026-10-24/25).
@@ -17,15 +17,77 @@ const PRICE_INPUT = 1.25 / 1e6;
 const PRICE_CACHED = 0.15 / 1e6;
 const PRICE_OUTPUT = 4.25 / 1e6;
 
-export function museBudgetUsd(): number {
-  const v = Number(process.env.MUSE_BUDGET_USD);
-  return Number.isFinite(v) && v >= 0 && process.env.MUSE_BUDGET_USD ? v : 5;
+// Every spend cap reads its env the same way: unset, empty, non-numeric or negative means the default.
+export function envNumber(raw: string | undefined, fallback: number): number {
+  if (raw == null || raw.trim() === "") return fallback;
+  const v = Number(raw);
+  return Number.isFinite(v) && v >= 0 ? v : fallback;
 }
 
-function lobbyMaxCalls(): number {
-  const v = Number(process.env.MUSE_LOBBY_MAX_CALLS);
-  // 12 players x 6 freezes x up to 2 asks = 144 grading calls in a full race lobby (about $0.65 at worst).
-  return Number.isFinite(v) && v >= 0 && process.env.MUSE_LOBBY_MAX_CALLS ? v : 160;
+// Lifetime cap: all spend ever. Also the operator's DB kill switch (a muse_calls row with cost_usd 1000).
+export function museBudgetUsd(): number {
+  return envNumber(process.env.MUSE_BUDGET_USD, 5);
+}
+
+// Rolling cap over the last 60 minutes of muse_calls, every purpose (docs/audits/public-launch.md P1a).
+export function museHourlyUsd(): number {
+  return envNumber(process.env.MUSE_HOURLY_USD, 4);
+}
+
+// Rolling 60-minute cap over every lobby with the same creator key (the creating IP), P1b.
+export function museCreatorHourlyUsd(): number {
+  return envNumber(process.env.MUSE_CREATOR_HOURLY_USD, 2);
+}
+
+export type MuseCapGroup = "grading" | "transcribe";
+
+// Voice clips and grading calls count against separate per-lobby caps, so retries of one never starve the other.
+export function capGroupOf(purpose: string): MuseCapGroup {
+  return purpose === "transcribe" ? "transcribe" : "grading";
+}
+
+type Env = Record<string, string | undefined>;
+
+// Per-lobby call caps for a purpose's group, by lobby mode. Grading: 80 for a race lobby (12 players x 6 freezes
+// with one ask each; audibles are graded after the freezes, so they meet the cap first), 30 for a moment lobby.
+// Voice: 150 clips per lobby either way.
+export function lobbyCallCaps(purpose: string, env: Env = process.env): { group: MuseCapGroup; race: number; moment: number } {
+  if (capGroupOf(purpose) === "transcribe") {
+    const n = Math.floor(envNumber(env.MUSE_LOBBY_MAX_CLIPS, 150));
+    return { group: "transcribe", race: n, moment: n };
+  }
+  return {
+    group: "grading",
+    race: Math.floor(envNumber(env.MUSE_LOBBY_MAX_CALLS_RACE, 80)),
+    moment: Math.floor(envNumber(env.MUSE_LOBBY_MAX_CALLS_MOMENT, 30)),
+  };
+}
+
+export function lobbyCallCap(purpose: string, mode: "race" | "moment", env: Env = process.env): number {
+  const caps = lobbyCallCaps(purpose, env);
+  return mode === "race" ? caps.race : caps.moment;
+}
+
+// One warning per lobby per reason (a capped race lobby would otherwise log every refused call).
+const skipsLogged = new Set<string>();
+export function logBudgetSkip(lobbyCode: string | null, purpose: string, reason: MuseSkipReason): boolean {
+  const key = `${lobbyCode ?? "-"}:${reason}`;
+  if (skipsLogged.has(key)) return false;
+  if (skipsLogged.size >= 5000) skipsLogged.clear(); // a long-lived instance must not grow without bound
+  skipsLogged.add(key);
+  console.warn(`muse: budget skip (${reason}) lobby=${lobbyCode ?? "-"} purpose=${purpose}`);
+  return true;
+}
+
+// Reserves a call's worst-case cost under every cap (see reserveMuseCall). null: make no call.
+export async function reserveSpend(r: { purpose: string; lobbyCode: string | null; decisionId: string | null; model: string; worstCostUsd: number }): Promise<number | null> {
+  const caps = lobbyCallCaps(r.purpose);
+  return reserveMuseCall({
+    purpose: r.purpose, lobby_code: r.lobbyCode, decision_id: r.decisionId, model: r.model, worst_cost_usd: r.worstCostUsd,
+    budget_usd: museBudgetUsd(), hourly_usd: museHourlyUsd(), creator_hourly_usd: museCreatorHourlyUsd(),
+    lobby_cap_group: caps.group, lobby_max_race: caps.race, lobby_max_moment: caps.moment,
+    onRefused: (reason) => logBudgetSkip(r.lobbyCode, r.purpose, reason),
+  });
 }
 
 export function museEnabled(): boolean {
@@ -53,7 +115,7 @@ export interface MuseRequest<T> {
   jsonSchema: Record<string, unknown>;
   validator: z.ZodType<T>;
   maxOutputTokens: number;
-  onSkip?: () => void; // called when no call is made (no key, over budget, lobby cap), as opposed to a failed call
+  onSkip?: () => void; // called when no call is made (no key, over a spend cap), as opposed to a failed call
   timeoutMs?: number; // default TIMEOUT_MS; the spend cap does not depend on it (the reservation is the worst case)
 }
 
@@ -72,9 +134,8 @@ export async function museJson<T>(req: MuseRequest<T>): Promise<T | null> {
   const worstCost = Math.ceil(costOf(worstInput, 0, req.maxOutputTokens) * 1e6) / 1e6;
   let reservation: number | null;
   try {
-    reservation = await reserveMuseCall({
-      purpose: req.purpose, lobby_code: req.lobbyCode, decision_id: req.decisionId, model: MUSE_MODEL,
-      worst_cost_usd: worstCost, budget_usd: museBudgetUsd(), lobby_max_calls: lobbyMaxCalls(),
+    reservation = await reserveSpend({
+      purpose: req.purpose, lobbyCode: req.lobbyCode, decisionId: req.decisionId, model: MUSE_MODEL, worstCostUsd: worstCost,
     });
   } catch (err) {
     console.error("muse: budget reservation failed, using local fallback", err);
@@ -83,7 +144,7 @@ export async function museJson<T>(req: MuseRequest<T>): Promise<T | null> {
   }
   if (reservation === null) {
     req.onSkip?.();
-    return null; // over budget or over the lobby cap
+    return null; // over a spend cap (logged once per lobby and reason)
   }
 
   const started = Date.now();

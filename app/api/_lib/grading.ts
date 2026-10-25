@@ -375,6 +375,12 @@ function raceJobs(raceKey: string, totalLaps: number, plan: { lap: number; drive
   return out;
 }
 
+// Splits race calls into freeze calls and audibles, each in its original order. The grader runs the freezes
+// first so the per-lobby Muse cap, if met, falls on audibles.
+export function freezesFirst<T extends { kind: "freeze" | "audible" }>(calls: T[]): [T[], T[]] {
+  return [calls.filter((c) => c.kind === "freeze"), calls.filter((c) => c.kind !== "freeze")];
+}
+
 // Round 7: nobody learns who was right until the flag, so race calls are graded once, at done: every freeze
 // call and every scored audible, plus the engine and team reasons per car and freeze ('race' scope).
 export async function ensureRaceGraded(code: string, meta: LobbyMeta, race: RaceEntry): Promise<{ grading: boolean }> {
@@ -395,26 +401,28 @@ export async function ensureRaceGraded(code: string, meta: LobbyMeta, race: Race
     const fresh = await getRaceCalls(code);
     const graded = new Set(fresh.filter((c) => c.graded).map((c) => `${c.player_name}:${c.kind}:${c.lap}`));
     todo.splice(0, todo.length, ...todo.filter((c) => !graded.has(`${c.player_name}:${c.kind}:${c.lap}`)));
-    await Promise.all([
-      ...todo.map(async (c) => {
-        let rubric: Rubric | null = null;
-        let situation = "";
-        if (c.kind === "freeze") {
-          const f = freezes.find((x) => x.lap === c.lap && x.driver_code === c.driver_code);
-          if (f) [rubric, situation] = [freezeRubric(race.race_key, atFlag(f), race.total_laps), raceSituation(f)];
-        } else {
-          const truth = await getAudibleTruth(race.race_key, c.driver_code, c.lap);
-          if (truth?.scorable && truth.correct) [rubric, situation] = [audibleRubric(c.driver_code, c.lap, truth), `Lap ${c.lap}. Green flag. Box now call.`];
-        }
-        if (!rubric) return;
-        const g = await gradeReason(rubric, c.call, c.transcript, { purpose: "grade_call", lobbyCode: code, situation });
-        const r = c.call ? g.reasoning_score : 0;
-        await saveRaceCallGrade(code, c.player_name, c.kind, c.lap, {
-          score_reasoning: r, total: pointsFor(c.call, rubric.correct, stakesFor(rubric.swing_s), r), verdict: g.verdict, credited: g.credited,
-        });
-      }),
-      ...missing.map(gradeBench),
-    ]);
+    const gradeCall = async (c: (typeof todo)[number]) => {
+      let rubric: Rubric | null = null;
+      let situation = "";
+      if (c.kind === "freeze") {
+        const f = freezes.find((x) => x.lap === c.lap && x.driver_code === c.driver_code);
+        if (f) [rubric, situation] = [freezeRubric(race.race_key, atFlag(f), race.total_laps), raceSituation(f)];
+      } else {
+        const truth = await getAudibleTruth(race.race_key, c.driver_code, c.lap);
+        if (truth?.scorable && truth.correct) [rubric, situation] = [audibleRubric(c.driver_code, c.lap, truth), `Lap ${c.lap}. Green flag. Box now call.`];
+      }
+      if (!rubric) return;
+      const g = await gradeReason(rubric, c.call, c.transcript, { purpose: "grade_call", lobbyCode: code, situation });
+      const r = c.call ? g.reasoning_score : 0;
+      await saveRaceCallGrade(code, c.player_name, c.kind, c.lap, {
+        score_reasoning: r, total: pointsFor(c.call, rubric.correct, stakesFor(rubric.swing_s), r), verdict: g.verdict, credited: g.credited,
+      });
+    };
+    // Freeze calls first, audibles after, so a lobby that meets its Muse call cap falls back to the rubric on
+    // audibles rather than on freezes.
+    const [freezeCalls, audibles] = freezesFirst(todo);
+    await Promise.all([...freezeCalls.map(gradeCall), ...missing.map(gradeBench)]);
+    await Promise.all(audibles.map(gradeCall));
   } finally {
     await releaseGrading(code, "race");
   }

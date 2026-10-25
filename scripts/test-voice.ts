@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { callTarget, checkDeclaredLength, readPcm, requireOctetStream, ASR_PER_CALL } from "../app/api/lobby/[code]/transcribe/gate";
+import { callTarget, checkDeclaredLength, readPcm, requireOctetStream, ASR_PER_CALL, ASR_PER_IP, ASR_PER_IP_ALL } from "../app/api/lobby/[code]/transcribe/gate";
 import { hashToken, HttpError, newToken } from "../app/api/_lib/http";
 import { ASR_MAX_BYTES, ASR_MIN_BYTES, asrCostUsd, museTranscribe, pcmToWav } from "../lib/muse/asr";
 import { Downsampler, meterLevel, toPcm16 } from "../lib/client/recorder";
@@ -115,7 +115,14 @@ async function main() {
   assert.ok(at("lobbyMetaGuarded(") < at("callTarget(meta, token"));
   assert.ok(at("callTarget(meta, token") < at('hitRateLimit("asr_player"'));
   assert.ok(at('hitRateLimit("asr_player"') < at("readPcm(req)"));
+  // Voice per IP: 300/h per lobby (several rooms behind one venue IP each get their own), 2,000/h per IP overall.
+  assert.equal(ASR_PER_IP, 300);
+  assert.equal(ASR_PER_IP_ALL, 2000);
+  assert.ok(route.includes('hitRateLimit("asr_ip", `${ipKey}:${code}`'), "asr_ip must be keyed by IP and lobby");
+  assert.ok(route.includes('hitRateLimit("asr_ip_all", ipKey'), "per-IP voice backstop missing");
+  assert.ok(at('hitRateLimit("asr_ip_all"') < at("readPcm(req)"));
   assert.ok(at("readPcm(req)") < at("museTranscribe("));
+  assert.ok(route.includes("museTranscribe(pcm, { lobbyCode: code"), "voice clips must carry the lobby code for the clip cap");
   assert.ok(!/readBody\(/.test(route), "this route takes raw PCM, not JSON");
   assert.ok(/fallback: true/.test(route) && /status: 503/.test(route));
   assert.ok(/"Cache-Control": "no-store"/.test(route));
@@ -126,7 +133,7 @@ async function main() {
   const asrSrc = src("lib/muse/asr.ts");
   const logBlock = asrSrc.slice(asrSrc.indexOf("const log = {"), asrSrc.indexOf("};", asrSrc.indexOf("const log = {")));
   assert.ok(logBlock.length > 0 && !/transcript|audio|pcm/i.test(logBlock), "muse_calls log must not hold the transcript or audio");
-  assert.ok(/lobby_code: null/.test(asrSrc), "voice rows stay out of the per-lobby Muse Spark cap");
+  assert.ok(/purpose: "transcribe", lobbyCode: ctx\.lobbyCode/.test(asrSrc), "voice reserves under purpose 'transcribe' with the lobby code");
 
   // WAV wrapper and pricing ($0.18 per hour, whole seconds).
   const pcm = toPcm16(new Float32Array([0, 1, -1, 0.5]));
@@ -150,7 +157,7 @@ async function main() {
   // No key: the service reports "disabled" before any DB or network call (the route answers 503 fallback).
   const saved = process.env.MODEL_API_KEY;
   delete process.env.MODEL_API_KEY;
-  assert.deepEqual(await museTranscribe(new Uint8Array(32_000), { decisionId: null }), { ok: false, reason: "disabled" });
+  assert.deepEqual(await museTranscribe(new Uint8Array(32_000), { lobbyCode: null, decisionId: null }), { ok: false, reason: "disabled" });
   if (saved !== undefined) process.env.MODEL_API_KEY = saved;
 
   // Client downsampler: 48 kHz and 44.1 kHz to 16 kHz, length and DC level kept.

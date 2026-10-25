@@ -332,3 +332,10 @@ create table if not exists ai_verdicts (
   created_at timestamptz not null default now(),
   primary key (kind, scope, driver_code, lap)
 );
+
+-- Public launch (docs/audits/public-launch.md P1): spend caps per hour and per lobby creator in reserveMuseCall.
+-- creator_key is the creator's rate-limit key (IP). Lobbies and their keys are purged after 24 hours.
+alter table lobbies add column if not exists creator_key text;
+create index if not exists muse_calls_created_at on muse_calls (created_at);
+create index if not exists lobbies_creator_key on lobbies (creator_key);
+create index if not exists muse_calls_lobby_created on muse_calls (lobby_code, created_at);

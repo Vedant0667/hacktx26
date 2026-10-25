@@ -7,8 +7,11 @@ import { HttpError, tokenMatches } from "../../../_lib/http";
 
 export const ASR_PER_CALL = 4; // clips per player per call window (one decision, or one race freeze)
 export const ASR_PER_CALL_WINDOW_S = 3600;
-export const ASR_PER_IP = 300; // backstop per IP per hour: a 13-phone room on one NAT over a 6-freeze race
+export const ASR_PER_IP = 300; // per IP and lobby per hour: a 13-phone room on one NAT over a 6-freeze race
 export const ASR_PER_IP_WINDOW_S = 3600;
+// Backstop per IP across every lobby per hour: a venue on one public IP running several rooms at once.
+export const ASR_PER_IP_ALL = 2000;
+export const ASR_PER_IP_ALL_WINDOW_S = 3600;
 
 // This route is the one POST that takes a non-JSON body: raw PCM16 LE mono at 16 kHz.
 export function requireOctetStream(req: Request): void {

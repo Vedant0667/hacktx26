@@ -4,8 +4,8 @@
 // Docs: https://dev.meta.ai/docs/speech-to-text and https://dev.meta.ai/docs/api-reference/voice/transcribe
 // Billing: $0.18 per hour of audio processed ($3 per 1,000 min), metered in whole seconds, rounded down.
 // Spend goes through the same muse_calls budget cap as Muse Spark: reserve the worst case, then log the real cost.
-import { finishMuseCall, reserveMuseCall } from "../db";
-import { museBudgetUsd } from "./client";
+import { finishMuseCall } from "../db";
+import { reserveSpend } from "./client";
 
 export const ASR_MODEL = "muse-voice-transcribe-1.0";
 const ENDPOINT = "https://api.meta.ai/v1/asr/transcribe";
@@ -51,19 +51,18 @@ export type AsrResult =
   | { ok: false; reason: "disabled" | "budget" | "failed" };
 
 // Transcribes one clip of 16 kHz PCM16 LE mono. Never throws. The transcript is returned to the caller only;
-// muse_calls stores usage and cost, never the words. lobby_code is left null so voice clips do not count
-// against the per-lobby Muse Spark call cap (grading must not be starved by retries); the route rate-limits
-// clips per player instead. decision_id ties the row to the moment.
-export async function museTranscribe(pcm: Uint8Array, ctx: { decisionId: string | null; timeoutMs?: number }): Promise<AsrResult> {
+// muse_calls stores usage and cost, never the words. Rows carry the lobby code, so voice counts toward the hourly
+// and per-creator caps, but purpose 'transcribe' has its own per-lobby clip cap (150) and never uses up the
+// grading cap. decision_id ties the row to the moment.
+export async function museTranscribe(pcm: Uint8Array, ctx: { lobbyCode: string | null; decisionId: string | null; timeoutMs?: number }): Promise<AsrResult> {
   const key = process.env.MODEL_API_KEY;
   if (!key) return { ok: false, reason: "disabled" };
   const seconds = pcm.byteLength / ASR_BYTES_PER_S;
   const worstCost = asrCostUsd(Math.ceil(seconds));
   let reservation: number | null;
   try {
-    reservation = await reserveMuseCall({
-      purpose: "transcribe", lobby_code: null, decision_id: ctx.decisionId, model: ASR_MODEL,
-      worst_cost_usd: worstCost, budget_usd: museBudgetUsd(), lobby_max_calls: 0,
+    reservation = await reserveSpend({
+      purpose: "transcribe", lobbyCode: ctx.lobbyCode, decisionId: ctx.decisionId, model: ASR_MODEL, worstCostUsd: worstCost,
     });
   } catch (err) {
     console.error("asr: budget reservation failed", err);
@@ -73,7 +72,7 @@ export async function museTranscribe(pcm: Uint8Array, ctx: { decisionId: string 
 
   const started = Date.now();
   const log = {
-    purpose: "transcribe", lobby_code: null, decision_id: ctx.decisionId, model: ASR_MODEL,
+    purpose: "transcribe", lobby_code: ctx.lobbyCode, decision_id: ctx.decisionId, model: ASR_MODEL,
     ok: false, status: null as string | null, error: null as string | null,
     input_tokens: 0, cached_tokens: 0, output_tokens: 0, reasoning_tokens: 0, cost_usd: worstCost, latency_ms: 0,
   };
