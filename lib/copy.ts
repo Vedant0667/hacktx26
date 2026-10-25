@@ -180,7 +180,7 @@ export const COPY = {
     joining: "Joining lobby",
     // added: consent checkbox (docs/05 logistics; audit M6). The server rejects a join without it.
     consent:
-      "Show my nickname and reasons to the room and on the public leaderboard. Reasons go to Meta's Muse AI for grading, and voice notes to Meta's speech service to turn them into text (if it's down, your browser's recognizer is used, which in Chrome means Google). Lobbies, names, calls and IP addresses are deleted within a day.",
+      "Show my nickname and reasons to the room and on the public leaderboard. Reasons go to Meta's Muse AI for grading, and voice notes to Meta's speech service to turn them into text (if it's down, your browser's recognizer is used, which in Chrome means Google). Lobbies, names, calls and IP addresses are deleted within two days.",
     consentMissing: "Tick the box to join.", // added
     // added: the Join bar names what is still missing, in form order
     need: { name: "Add your nickname", consent: "Tick consent", driver: "Pick a driver" },

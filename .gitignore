@@ -49,3 +49,5 @@ tasks/todo.md
 docs/
 PRODUCT.md
 tasks/
+# agent worktrees
+.claude/worktrees/

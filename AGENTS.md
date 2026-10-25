@@ -9,7 +9,8 @@ HackTX 2026 hackathon project. Planning docs (`docs/`, `PRODUCT.md`, `tasks/`, `
 - `node --env-file=.env.local scripts/migrate.mjs`: apply db/schema.sql to Neon.
 - `node --env-file=.env.local scripts/seed-db.mjs`: race data ingest. Runs `python3 engine/build.py` (data/ = cached Jolpica + OpenF1 + hand-entered facts -> build/race-data/, gitignored), then upserts races, race_laps, decision_points and decision_drivers and prints row counts. Idempotent; `--skip-build` reuses the last build. Run after migrate and after any change to data/ or engine/.
 - `npx tsx scripts/test-data.ts`: hermetic data checks (race_laps rebuild the frames, the TypeScript call-moment port matches build.py, blind columns hold no answer, per-driver answers).
-- Muse spend: GET /api/muse/usage; cap via MUSE_BUDGET_USD (default 5).
+- Muse spend: GET /api/muse/usage with `Authorization: Bearer $CRON_SECRET`. Caps (env, defaults): MUSE_BUDGET_USD lifetime (5), MUSE_HOURLY_USD site-wide (4), MUSE_CREATOR_HOURLY_USD per lobby creator IP (2), MUSE_LOBBY_MAX_CALLS_RACE (80), MUSE_LOBBY_MAX_CALLS_MOMENT (30), MUSE_LOBBY_MAX_CLIPS voice (150). A muse_calls row with cost_usd 1000 stops all spend; delete it to resume.
+- Password gate: SITE_PASSWORD turns it on; SITE_GATE=off opens the site on purpose (any other value keeps the gate). On Vercel, neither set means every request gets 503.
 - Databases: `.env.local` points at the dev database `outpace_dev` (same Neon server); production (Vercel) uses `neondb`. `PROD_DATABASE_URL` in `.env.local` is only for checking live lobbies (e.g. `scripts/e2e` runs against the live site). Run migrate/seed against each when the schema or race data changes; ai_verdicts and benchmark_grades can be copied from prod instead of regenerated.
 
 ## Conventions
