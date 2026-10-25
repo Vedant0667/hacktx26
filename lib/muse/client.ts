@@ -50,12 +50,16 @@ export interface MuseRequest<T> {
   jsonSchema: Record<string, unknown>;
   validator: z.ZodType<T>;
   maxOutputTokens: number;
+  onSkip?: () => void; // called when no call is made (no key, over budget, lobby cap), as opposed to a failed call
   timeoutMs?: number; // default TIMEOUT_MS; the spend cap does not depend on it (the reservation is the worst case)
 }
 
 export async function museJson<T>(req: MuseRequest<T>): Promise<T | null> {
   const key = process.env.MODEL_API_KEY;
-  if (!key) return null;
+  if (!key) {
+    req.onSkip?.();
+    return null;
+  }
 
   // Upper bound for this call. A BPE token is never shorter than one UTF-8 byte, so the byte length of
   // everything billed as input (instructions, input and the JSON schema) bounds the input tokens; add a
@@ -71,9 +75,13 @@ export async function museJson<T>(req: MuseRequest<T>): Promise<T | null> {
     });
   } catch (err) {
     console.error("muse: budget reservation failed, using local fallback", err);
+    req.onSkip?.();
     return null; // fail closed: no spend we cannot account for
   }
-  if (reservation === null) return null; // over budget or over the lobby cap
+  if (reservation === null) {
+    req.onSkip?.();
+    return null; // over budget or over the lobby cap
+  }
 
   const started = Date.now();
   const log = {

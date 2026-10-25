@@ -140,7 +140,7 @@ export function isEmptyReason(transcript: string): boolean {
 }
 
 // Text aimed at the grader rather than at the race. It scores 0 and never gets the floor.
-const INJECTION = /\b(ignore (all |any )?(the )?(previous|prior|above|earlier) (instructions|rules)|system\s*:|you are (now )?|output (all|every)|credit (every|all)|give (me )?(50|full|max)|full (marks|points))\b/i;
+const INJECTION = /\b(ignore (all |any )?(the )?(previous|prior|above|earlier) (instructions|rules)|you are (now )?|output (all|every)|credit (every|all)|give (me )?(50|full|max)|full (marks|points))\b|\bsystem\s*:/i;
 export function isInjection(transcript: string): boolean {
   return INJECTION.test(transcript);
 }
@@ -192,12 +192,12 @@ export const IDEAS: Record<FactorId, RegExp[]> = {
 const CHEAP_GROUND = new RegExp(`${CHEAP.source}|\\b(pit|stop|box)\\w* under (the )?(vsc|sc|safety car|virtual safety car)\\b|\\b(free|cheap) (pit|stop)\\b`, "i");
 export const GROUND_TERMS: Record<FactorId, RegExp> = {
   tyre_age:
-    /\b(tyres?|tires?|rubber|softs?|mediums?|hards?|compound|deg\w*|wear\w*|worn|grip|stint|old tyres?|fresh tyres?|once more|pit again|stop again|another stop|one more stop|stops? (owed|left|to go)|two[- ]stop|(been )?out (for|there for) \d+|\d+ laps? (old|in|on|out)|laps? on (them|these|the tyres?)|(box|pit|stop)\w* again|last (the )?(rest|distance|race|stint|to the end)|make it to the end|last (until|till|to) the (end|finish|flag))\b/i,
+    /\b(tyres?|tires?|rubber|softs?|mediums?|hards?|compound|deg\w*|wear\w*|worn|grip|stint|old tyres?|fresh tyres?|once more|pit again|stop again|another stop|one more stop|stops? (owed|left|to go)|two[- ]stop|out (for|there for) \d+ laps?|\d+ laps? (old|on|out)|laps? on (them|these|the tyres?)|(box|pit|stop)\w* again|last (the )?(rest|distance|race|stint|to the end)|make it to the end|last (until|till|to) the (end|finish|flag))\b/i,
   cheap_stop_under_sc: CHEAP_GROUND,
   cheap_stop_under_vsc: CHEAP_GROUND,
   similar_cars_pitted:
     /\b(every(one|body)|the field|rivals?|pitted|pitting|boxed|boxing|competitors?|the pack|they('re| are) (pitting|boxing|stopping|coming in)|they all|cover\w*|undercut|verstappen|max|norris|lando|leclerc|russell|hamilton|antonelli|piastri|oscar|sainz|alonso)\b/i,
-  track_position: /\b(track position|lose (the )?(lead|positions?|places?)|keep (the )?(lead|positions?|places?)|traffic|dirty air|clean air|overtak\w*|pass\w*|rejoin|p ?\d{1,2}|(place|position) (\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty)|(come|comes|coming|get|be) (back |out )?(in|at) (p|place|position))\b/i,
+  track_position: /\b(track position|lose (the )?(lead|positions?|places?)|keep (the )?(lead|positions?|places?)|traffic|dirty air|clean air|overtak\w*|pass\w*|rejoin|p ?\d{1,2}|(place|position) (\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty))\b/i,
 };
 
 export function groundedIn(id: string, transcript: string): boolean {

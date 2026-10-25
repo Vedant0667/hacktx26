@@ -647,7 +647,7 @@ export async function claimGrading(code: string, scope: string): Promise<boolean
   const rows = await query(
     `insert into grading_claims as g (lobby_code, scope) values ($1, $2)
      on conflict (lobby_code, scope) do update set status = 'pending', updated_at = now()
-       where g.status <> 'pending' or g.updated_at < now() - interval '30 seconds'
+       where g.status <> 'pending' or g.updated_at < now() - interval '45 seconds'
      returning lobby_code`,
     [code, scope],
   );

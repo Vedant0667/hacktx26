@@ -7,7 +7,7 @@ import { z } from "zod";
 import type { Call, ParsedCall } from "../types";
 import { museJson } from "./client";
 import { COPY_RULES_PROMPT, GRADE_TASK } from "./prompt";
-import { capFor, gradeProblems, isUngradeable, rubricScore, type Grade, type Rubric } from "./rubric";
+import { capFor, gradeProblems, isUngradeable, reasonWords, rubricScore, type Grade, type Rubric } from "./rubric";
 
 export * from "./rubric";
 
@@ -39,7 +39,8 @@ export interface GradeContext {
 
 async function askMuse(rubric: Rubric, call: Call | null, said: string, ctx: GradeContext, note: string | null) {
   const ids = rubric.points.map((p) => p.id);
-  return museJson({
+  let skipped = false;
+  const out = await museJson({
     purpose: ctx.purpose,
     lobbyCode: ctx.lobbyCode,
     decisionId: rubric.decision_id,
@@ -64,17 +65,24 @@ async function askMuse(rubric: Rubric, call: Call | null, said: string, ctx: Gra
     },
     validator: z.object({ reasoning_score: z.number(), verdict: z.string(), credited_points: z.array(z.string()) }),
     maxOutputTokens: GRADE_TOKENS,
+    onSkip: () => {
+      skipped = true;
+    },
   });
+  return skipped ? ("skipped" as const) : out;
 }
 
 // One reason, graded. Empty reasons score 0 without a call; at most two Muse calls (one re-ask on a grounding
 // problem), then the deterministic rubric score.
 // `ask` is replaceable for hermetic tests (scripts/test-scoring.ts).
-export type AskMuse = (rubric: Rubric, call: Call | null, said: string, ctx: GradeContext, note: string | null) => Promise<{ reasoning_score: number; verdict: string; credited_points: string[] } | null>;
+export type AskMuse = (rubric: Rubric, call: Call | null, said: string, ctx: GradeContext, note: string | null) => Promise<{ reasoning_score: number; verdict: string; credited_points: string[] } | null | "skipped">;
 
 // A failed call (Meta answered 404 "model not found" for a few seconds on 2026-10-24) is retried with a backoff
-// before falling back to the rubric; each retry is its own budget reservation, so over budget stays over budget.
-export const GRADE_RETRY_MS = [1500, 4000];
+// before falling back to the rubric. A skipped call (no key, over budget, lobby cap) goes straight to the rubric.
+export const GRADE_RETRY_MS = [1000, 2500];
+// A reason this long (content words) counts as a real attempt for ATTEMPT_CAP; shorter ones are capped by
+// their credited ideas alone, so a one-line instruction to the grader gains nothing from the attempt allowance.
+export const ATTEMPT_MIN_WORDS = 8;
 
 export async function gradeReason(rubric: Rubric, call: Call | null, transcript: string, ctx: GradeContext, ask: AskMuse = askMuse, retryMs: number[] = GRADE_RETRY_MS): Promise<Grade> {
   const said = transcript.trim();
@@ -83,8 +91,9 @@ export async function gradeReason(rubric: Rubric, call: Call | null, transcript:
   let retries = 0;
   for (let attempt = 0; attempt < 2; attempt++) {
     const out = await ask(rubric, call, said, ctx, note);
+    if (out === "skipped") break;
     if (!out) {
-      if (retries >= retryMs.length) break; // off, over budget or still failing: rubric
+      if (retries >= retryMs.length) break; // still failing: rubric
       await new Promise((r) => setTimeout(r, retryMs[retries++]));
       attempt--;
       continue;
@@ -98,7 +107,7 @@ export async function gradeReason(rubric: Rubric, call: Call | null, transcript:
       continue;
     }
     // A real attempt can reach ATTEMPT_CAP; each credited (grounded) idea adds its maximum on top.
-    const cap = ATTEMPT_CAP + capFor(rubric, credited);
+    const cap = (reasonWords(said).length >= ATTEMPT_MIN_WORDS ? ATTEMPT_CAP : 0) + capFor(rubric, credited);
     const score = Math.max(REASONING_FLOOR, Math.min(Math.round(out.reasoning_score), cap, REASONING_CAP));
     return { reasoning_score: score, verdict, credited, source: "muse" };
   }
