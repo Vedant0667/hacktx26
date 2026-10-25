@@ -183,7 +183,8 @@ function FreezeMap({ brief, decision, meCode, size, width }: { brief: Brief; dec
   const near = [n?.ahead?.code, n?.behind?.code].filter((x): x is string => !!x);
   const rj = brief.rejoin;
   const ghost = rj ? { fraction: placeCars([{ code: "_", gap_to_leader_s: rj.gapToLeader }], { lapTimeS: lap, leaderFraction })[0]?.fraction ?? 0, label: C.ghost(rj.pos) } : null;
-  const labelled = rj?.ahead?.code && !near.includes(rj.ahead.code) ? [rj.ahead.code] : [];
+  // The car you would rejoin behind is named in the Box line; labelling it too crowds the rejoin label.
+  const labelled: string[] = [];
   return (
     <TrackMap
       track={outline}
