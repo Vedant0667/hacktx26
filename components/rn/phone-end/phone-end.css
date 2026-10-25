@@ -1,0 +1,374 @@
+/* Race Night phone end (P10End, P10EndMid, P11Calls). Scoped under .rn .rnpe. */
+.rn.rnpe {
+  min-height: 100dvh;
+  overflow-x: hidden;
+}
+.rnpe .rnpe-page {
+  max-width: 480px;
+  margin: 0 auto;
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 24px;
+}
+.rnpe .rnpe-checker {
+  height: 14px;
+  background: repeating-conic-gradient(#fff 0 25%, #07080a 0 50%) 0 0 / 14px 14px;
+}
+
+/* Hero */
+.rnpe .rnpe-hero {
+  position: relative;
+  color: var(--on-team);
+  padding: 24px 24px 24px 80px;
+  isolation: isolate;
+}
+.rnpe .rnpe-hero-slab {
+  position: absolute;
+  inset: 0 -40px 0 0;
+  background: var(--team);
+  transform: skewX(-14deg);
+  transform-origin: bottom left;
+  z-index: -1;
+}
+.rnpe .rnpe-hero-in {
+  display: flex;
+  flex-direction: column;
+}
+.rnpe .rnpe-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.rnpe .rnpe-hero-top .rn-lbl {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rnpe .rnpe-place {
+  font-size: clamp(88px, 34vw, 140px);
+  letter-spacing: -0.02em;
+  line-height: 0.85;
+  white-space: nowrap;
+}
+.rnpe .rnpe-points {
+  margin: 22px 0 0;
+  font-size: 46px;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.01em;
+}
+.rnpe .rnpe-unit {
+  font-size: 0.42em;
+  font-weight: 800;
+  margin-left: 0.18em;
+  letter-spacing: 0.02em;
+}
+.rnpe .rnpe-tally {
+  margin: 10px 0 0;
+  font-size: 17px;
+  font-weight: 800;
+}
+
+/* Standings */
+.rnpe .rnpe-standings {
+  padding: 40px 24px 0;
+}
+.rnpe .rnpe-h {
+  display: block;
+  margin: 0 0 6px;
+}
+.rnpe .rnpe-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.rnpe .rnpe-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0 12px;
+  min-height: 56px;
+  isolation: isolate;
+}
+.rnpe .rnpe-rank {
+  font-size: 26px;
+  font-weight: 900;
+  color: var(--rn-muted);
+}
+.rnpe .rnpe-name {
+  font-size: 19px;
+  font-weight: 700;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rnpe .rnpe-pts {
+  font-size: 26px;
+  font-weight: 900;
+}
+.rnpe .rnpe-row[data-mine] {
+  color: var(--on-team);
+}
+.rnpe .rnpe-row[data-mine] .rnpe-rank {
+  color: var(--on-team);
+}
+.rnpe .rnpe-row[data-mine]::before {
+  content: "";
+  position: absolute;
+  inset: 0 -4px 0 -12px;
+  background: var(--team);
+  transform: skewX(-8deg);
+  z-index: -1;
+}
+.rnpe .rnpe-gap {
+  display: flex;
+  gap: 6px;
+  padding: 4px 0 8px 4px;
+}
+.rnpe .rnpe-gap > span {
+  width: 6px;
+  height: 4px;
+  background: var(--rn-muted);
+  opacity: 0.4;
+}
+
+.rnpe .rnpe-actions {
+  margin-top: auto;
+  padding: 40px 24px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Your calls */
+.rnpe .rnpe-head {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 72px;
+  padding: 0 0 0 16px;
+}
+.rnpe .rnpe-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border: 0;
+  background: none;
+  color: var(--rn-ink);
+  cursor: pointer;
+}
+.rnpe .rnpe-title {
+  font-size: 28px;
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.rnpe .rnpe-total {
+  position: relative;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+  padding: 0 24px 0 32px;
+  color: var(--on-team);
+  isolation: isolate;
+}
+.rnpe .rnpe-total-slab {
+  position: absolute;
+  inset: 0 -20px 0 0;
+  background: var(--team);
+  transform: skewX(-14deg);
+  transform-origin: bottom left;
+  z-index: -1;
+}
+.rnpe .rnpe-total-n {
+  font-size: 28px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.rnpe .rnpe-meta {
+  display: block;
+  padding: 18px 24px 14px;
+}
+.rnpe .rnpe-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rnpe .rnpe-card {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 0 16px;
+  padding: 16px;
+  background: var(--rn-panel);
+}
+.rnpe .rnpe-empty {
+  display: block;
+  font-weight: 700;
+}
+.rnpe .rnpe-lap {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--rn-muted);
+  padding-top: 6px;
+}
+.rnpe .rnpe-card-main {
+  min-width: 0;
+}
+.rnpe .rnpe-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 36px;
+}
+.rnpe .rnpe-call {
+  font-size: 26px;
+  white-space: nowrap;
+}
+.rnpe .rnpe-card-pts {
+  margin-left: auto;
+  font-size: 30px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+.rnpe .rnpe-chip {
+  display: inline-flex;
+  align-items: center;
+  height: 26px;
+  padding: 0 12px;
+  transform: skewX(-14deg);
+  font-family: var(--font-rn-cond), var(--font-rn), sans-serif;
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  background: var(--rn-green);
+  color: #07080a;
+}
+.rnpe .rnpe-chip > span {
+  display: inline-block;
+  transform: skewX(14deg);
+}
+.rnpe .rnpe-chip[data-right="false"] {
+  background: #e10600;
+  color: #fff;
+}
+.rnpe .rnpe-why {
+  margin: 8px 0 0;
+  font-size: 15px;
+  line-height: 1.35;
+  color: var(--rn-muted);
+}
+.rnpe .rnpe-why b {
+  color: var(--rn-ink);
+  font-weight: 800;
+}
+.rnpe .rnpe-split {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--rn-muted);
+  opacity: 0.8;
+}
+.rnpe .rnpe-foot {
+  margin-top: auto;
+  padding: 32px 24px 0;
+}
+.rnpe .rnpe-bench {
+  margin: 0;
+  font-size: 15px;
+  color: var(--rn-muted);
+}
+.rnpe .rnpe-bench b {
+  color: var(--rn-soft);
+}
+.rnpe .rnpe-credit {
+  margin: 6px 0 18px;
+  font-size: 13px;
+  color: var(--rn-muted);
+}
+
+/* Everyone's calls */
+.rnpe .rnpe-moment {
+  padding: 0 24px 12px;
+}
+.rnpe .rnpe-moment .rnpe-meta {
+  padding: 18px 0 4px;
+}
+.rnpe .rnpe-moment-head {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 800;
+}
+.rnpe .rnpe-ev {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.rnpe .rnpe-ev-row {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--rn-line);
+}
+.rnpe .rnpe-ev-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.rnpe .rnpe-ev-name {
+  font-size: 16px;
+  font-weight: 800;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rnpe .rnpe-ev-call {
+  font-family: var(--font-rn-cond), var(--font-rn), sans-serif;
+  font-weight: 800;
+  font-size: 15px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--rn-soft);
+}
+.rnpe .rnpe-ev-pts {
+  margin-left: auto;
+  font-size: 20px;
+  font-weight: 900;
+}
+.rnpe .rnpe-ev-row[data-bench] {
+  color: var(--rn-muted);
+}
+.rnpe .rnpe-ev-row[data-bench] .rnpe-ev-name {
+  font-weight: 600;
+  font-size: 14px;
+}
+.rnpe .rnpe-ev-row .rnpe-why {
+  margin-top: 4px;
+  font-size: 14px;
+}
+.rnpe .rnpe-verdict {
+  opacity: 0.85;
+}
+@media (max-width: 370px) {
+  .rnpe .rnpe-hero {
+    padding-left: 64px;
+  }
+  .rnpe .rnpe-call {
+    font-size: 22px;
+  }
+  .rnpe .rnpe-card-pts {
+    font-size: 26px;
+  }
+}
