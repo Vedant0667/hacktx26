@@ -12,6 +12,14 @@ export function findLayoutIssues(minOverlap) {
   };
   const at = (it) => `${Math.round(it.l)},${Math.round(it.t)}-${Math.round(it.r)},${Math.round(it.b)}`;
   const inPortal = (el) => !!el.closest("nextjs-portal, [data-nextjs-dialog-overlay], [data-nextjs-toast]");
+  // Sticky or fixed bars that paint a background (a dock over a scrolling page).
+  const pinnedBars = [...document.querySelectorAll("body *")]
+    .filter((e) => {
+      const cs = getComputedStyle(e);
+      if (cs.position !== "sticky" && cs.position !== "fixed") return false;
+      return (cs.backgroundColor && cs.backgroundColor !== "transparent" && !/rgba\([^)]*,\s*0\)$/.test(cs.backgroundColor)) || cs.backgroundImage !== "none";
+    })
+    .map((e) => ({ el: e, rect: e.getBoundingClientRect() }));
   const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     if (!n.nodeValue || !n.nodeValue.trim()) continue;
@@ -56,6 +64,14 @@ export function findLayoutIssues(minOverlap) {
         box.t = Math.max(box.t, ar.top);
         box.b = Math.min(box.b, ar.bottom);
       }
+    }
+    // Text partly scrolled under a pinned opaque bar (a sticky dock): only the part above or below the bar is on screen.
+    for (const bar of pinnedBars) {
+      if (bar.el.contains(el)) continue;
+      const r = bar.rect;
+      if (r.right <= box.l || r.left >= box.r) continue;
+      if (r.top > box.t && r.top < box.b) box.b = r.top;
+      else if (r.bottom > box.t && r.bottom < box.b && r.top <= box.t) box.t = r.bottom;
     }
     if (box.r - box.l < 2 || box.b - box.t < 2) continue;
     if (box.b < 0 || box.t > vh) continue;

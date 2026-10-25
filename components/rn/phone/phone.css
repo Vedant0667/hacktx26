@@ -25,7 +25,7 @@
 .rn .rnp-drv .rnp-check { border-color: currentColor; margin-top: 0; }
 .rn .rnp-drv[data-on="true"] .rnp-check { background: #07080A; color: #fff; border-color: #07080A; }
 .rn .rnp-err { color: #FF6B6B; font-weight: 700; font-size: 15px; }
-.rn .rnp-dock { position: sticky; bottom: 0; padding: 12px 24px calc(16px + env(safe-area-inset-bottom)); background: linear-gradient(to top, #07080A 70%, transparent); z-index: 5; }
+.rn .rnp-dock { position: sticky; bottom: 0; padding: 28px 24px calc(16px + env(safe-area-inset-bottom)); background: linear-gradient(to top, #07080A calc(100% - 24px), transparent); z-index: 5; }
 .rn .rnp-row { display: flex; align-items: center; justify-content: space-between; min-height: 44px; border-bottom: 1px solid #1F232A; font-weight: 700; font-size: 17px; gap: 12px; }
 .rn .rnp-dots { display: inline-flex; gap: 6px; flex-shrink: 0; }
 .rn .rnp-dots i { width: 14px; height: 14px; border-radius: 50%; background: #1F232A; animation: rnp-dot 1.6s infinite; }
