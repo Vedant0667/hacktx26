@@ -125,3 +125,24 @@
 .rn .rnf-l-cap .rn-d { font-size: 24px; font-weight: 900; text-transform: uppercase; }
 .rn .rnf-l-cap .rnf-muted { font-size: 15px; }
 @media (prefers-reduced-motion: reduce) { .rn .rnf-l-prog > span { transition: none; } }
+
+/* ---------- Quick moment (H10) ---------- */
+.rn .rnf-quick { position: absolute; inset: 0; }
+.rn .rnf-slab-q { position: absolute; left: 860px; top: -400px; width: 1400px; height: 2400px; }
+.rn .rnf-q-clock { position: absolute; left: 56px; top: 100px; display: flex; flex-direction: column; gap: 10px; }
+.rn .rnf-q-q { position: absolute; left: 56px; top: 232px; width: 480px; }
+.rn .rnf-h-q2 { font-size: 52px; font-weight: 900; line-height: 0.96; text-transform: uppercase; margin: 10px 0 0; }
+.rn .rnf-h-q2 .rnf-h-q { display: block; }
+.rn .rnf-q-sent { margin: 14px 0 0; font-size: 16px; line-height: 1.4; font-weight: 500; }
+.rn .rnf-q-map { left: 552px; top: 70px; width: 334px; height: 396px; display: flex; align-items: center; justify-content: center; }
+.rn .rnf-q-around { left: 910px; top: 70px; width: 314px; padding: 16px 14px; }
+.rn .rnf-q-around .rnf-trend { width: 64px; }
+.rn .rnf-q-rc { left: 910px; top: 330px; width: 314px; padding: 16px 14px; }
+.rn .rnf-q-rc p { margin: 8px 0 0; font-size: 16px; }
+.rn .rnf-q-opts { position: absolute; left: 70px; top: 494px; }
+.rn .rnf-q-opts .rnf-opt { height: 100px; }
+.rn .rnf-q-foot { position: absolute; left: 56px; right: 56px; top: 622px; display: flex; align-items: center; gap: 14px; }
+.rn .rnf-q-chips { display: flex; flex-wrap: wrap; gap: 8px; list-style: none; margin: 0; padding: 0; min-width: 0; flex: 1; max-height: 84px; overflow: hidden; }
+.rn .rnf-chip-n { font-weight: 800; max-width: 12ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rn .rnf-chip-s { font-size: 12px; font-weight: 600; margin-left: 6px; opacity: 0.8; }
+.rn .rnf-q-ctl { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }

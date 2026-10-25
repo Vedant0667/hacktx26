@@ -13,7 +13,7 @@ import type { LapFrame } from "@/lib/types";
 import { getBrief, type Brief } from "@/components/DecisionBrief";
 import { leaderFractionFor, placeCars, trackFor } from "@/lib/tracks";
 import { TrackMap } from "@/components/rn/TrackMap";
-import { Banner, Countdown, GapValue, Label, Logo, ModeTabs, Num, OutlineNumber, RNRoot, RN_KIT_COPY, SkewButton, StartLights, TowerRow, TyreBadge } from "@/components/rn/kit";
+import { Banner, Countdown, GapValue, Label, Logo, ModeTabs, Num, OutlineNumber, RNRoot, RN_KIT_COPY, SkewButton, SkewChip, StartLights, TowerRow, TyreBadge } from "@/components/rn/kit";
 import { FREEZE_COPY as C } from "./copy";
 
 // ------------------------------------------------------------------------------------------------
@@ -139,7 +139,7 @@ export function RNFreeze(props: RNFreezeProps) {
   };
   return (
     <Stage team={team} label={COPY.freeze.question} status={status}>
-      {mode === "advanced" ? <Advanced {...v} /> : <Simple {...v} />}
+      {mode === "advanced" ? <Advanced {...v} /> : why ? <Simple {...v} /> : <Quick {...v} />}
     </Stage>
   );
 }
@@ -345,6 +345,77 @@ function Simple(v: View) {
         <Options brief={v.brief} layout="row" />
       </div>
       <div className="rnf-s-ctl">{v.controls}</div>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------------------------------------
+// Quick moment Simple (H10): one-off moment freezes (no race triggers), with the player chips row.
+
+function Quick(v: View) {
+  const t = v.brief.tele;
+  const f = v.brief.frame;
+  const { rejoin, loss } = v.brief;
+  const owing = v.players.filter((p) => !v.submitted.has(p.name)).length;
+  return (
+    <div className="rnf-quick">
+      <div className="rn-slab rnf-slab-q" aria-hidden />
+      <Logo className="rnf-logo" />
+      <div className="rnf-q-clock">
+        <StartLights left={v.left} size="host-md" />
+        <Countdown left={v.left} size="host-md" />
+      </div>
+      <div className="rnf-q-q">
+        <Label>{v.label}</Label>
+        <Headline v={v} cls="rnf-h-q2" />
+        {rejoin && (
+          <p className="rnf-q-sent">
+            <b>{COPY.host.boxNowSentence(rejoin.pos, rejoin.ahead)}</b> {loss && COPY.host.stopCost(v.decision.trigger, loss.under, loss.normal)}
+          </p>
+        )}
+      </div>
+      <section className="rnf-panel rnf-q-map">
+        <FreezeMap brief={v.brief} decision={v.decision} meCode={v.meCode} size="host" width={330} />
+      </section>
+      <section className="rnf-panel rnf-q-around">
+        {t && (
+          <>
+            <Label>{C.gapTo(v.meCode)}</Label>
+            <NeighbourRows t={t} />
+            {f?.track_status !== "GREEN" && <p className="rnf-small">{COPY.rejoin.caveat(f?.track_status === "SC" ? "SC" : "VSC", Math.max(1, v.decision.lap - 1))}</p>}
+          </>
+        )}
+      </section>
+      <section className="rnf-panel rnf-q-rc">
+        <Label tone="yellow">{C.raceControl}</Label>
+        <p>
+          <b>{C.rcLine[v.status]}</b> <span className="rnf-muted">· {C.rcLap(f?.lap ?? v.decision.lap)}</span>
+        </p>
+      </section>
+      <div className="rnf-q-opts">
+        <Options brief={v.brief} layout="row" />
+      </div>
+      <div className="rnf-q-foot">
+        <Label>{v.left === 0 ? COPY.freeze.timeUp : C.calledOf(v.players.length - owing, v.players.length)}</Label>
+        <ol className="rnf-q-chips">
+          {v.players.map((p) => {
+            const inn = v.submitted.has(p.name);
+            return (
+              <li key={p.name} aria-label={COPY.host.playerState(p.name, inn)}>
+                <SkewChip tone={inn ? "solid" : "dashed"}>
+                  <b className="rnf-chip-n">{p.name}</b>
+                  {v.carFor && <span className="rnf-chip-s">{v.carFor(p.name)}</span>}
+                  {v.players.length <= 4 && <span className="rnf-chip-s">{inn ? COPY.host.called : COPY.host.thinking}</span>}
+                </SkewChip>
+              </li>
+            );
+          })}
+        </ol>
+        <div className="rnf-q-ctl">
+          <ModeTabs mode={v.mode} onChange={v.setMode} variant="split-slab" />
+          {v.controls}
+        </div>
+      </div>
     </div>
   );
 }

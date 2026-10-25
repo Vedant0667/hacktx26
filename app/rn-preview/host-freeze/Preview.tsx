@@ -69,6 +69,8 @@ function Inner({ fixtures }: { fixtures: Fx[] }) {
         mode={mode}
         setMode={setMode}
         mute={null}
+        why={sp.get("q") === "1" ? undefined : <span className="rn-lbl">Why now: VSC · Rival</span>}
+        label={sp.get("q") === "1" ? undefined : `Call 4 of 4 · Lap ${decision.lap}/${decision.total_laps}`}
       />
       <span hidden data-ids={ids.join(",")} />
     </>
