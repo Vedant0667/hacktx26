@@ -36,7 +36,8 @@ export function findLayoutIssues(minOverlap) {
       const cs = getComputedStyle(a);
       if (cs.display === "none" || cs.visibility === "hidden" || parseFloat(cs.opacity) === 0 || cs.contentVisibility === "hidden") visible = false;
       // Content of a closed <details> (everything but its <summary>) is not on screen.
-      if (a.tagName === "DETAILS" && !a.open && !el.closest("summary")) visible = false;
+      // Test against this <details>'s own summary: a nested <details> summary inside a closed parent is still hidden.
+      if (a.tagName === "DETAILS" && !a.open && !a.querySelector(":scope > summary")?.contains(el)) visible = false;
     }
     if (!visible) continue;
     // Clip by overflow ancestors: truncated or scrolled-away text is not on screen.
