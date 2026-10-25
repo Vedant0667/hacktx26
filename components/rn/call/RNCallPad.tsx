@@ -153,10 +153,11 @@ export function RNCallPadView({ props, s }: { props: CallPadProps; s: RNCallPadV
           {brief && !brief.tele && <RejoinSentence brief={brief} withCost={adv} withLaps={adv} className="rnc-rejoin" caveatClass="rnc-caveat" />}
           {adv && brief?.tele && (
             <div className="rnc-adv">
-              <section>
-                <Label as="h2">{COPY.tele.undercut}</Label>
-                <UndercutClock t={brief.tele} mode={mode} />
-              </section>
+              {brief.tele.undercut.length > 0 && (
+                <section>
+                  <UndercutClock t={brief.tele} mode={mode} />
+                </section>
+              )}
               <section>
                 <Label as="h2">{COPY.tele.intervals}</Label>
                 <IntervalTable t={brief.tele} />
