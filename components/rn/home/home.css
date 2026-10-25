@@ -47,6 +47,7 @@
 }
 .rn .rnh-opt {
   all: unset;
+  font-family: var(--font-rn-cond), var(--font-rn), sans-serif;
   cursor: pointer;
   font-weight: 800;
   font-size: 20px;
@@ -179,13 +180,14 @@
 .rn .rnh-picker {
   position: absolute;
   left: 0;
+  left: -200px;
   bottom: calc(100% + 8px);
   z-index: 5;
-  width: 520px;
+  width: 600px;
   max-height: 420px;
   overflow-y: auto;
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   gap: 2px;
   padding: 2px;
   background: var(--rn-panel-2);
@@ -196,8 +198,8 @@
   cursor: pointer;
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
+  gap: 8px;
+  padding: 8px 10px;
   background: var(--rn-panel);
   min-width: 0;
 }
@@ -209,8 +211,8 @@
 }
 .rn .rnh-pcode {
   font-weight: 900;
-  font-size: 20px;
-  width: 44px;
+  font-size: 19px;
+  width: 40px;
   flex-shrink: 0;
 }
 .rn .rnh-pname {
@@ -248,6 +250,7 @@
 }
 .rn .rnh-code {
   all: unset;
+  font-family: var(--font-rn-cond), var(--font-rn), sans-serif;
   box-sizing: border-box;
   width: 104px;
   height: 44px;
@@ -444,7 +447,7 @@
   bottom: 16px;
   width: auto;
   max-height: 60dvh;
-  grid-template-columns: 1fr;
+  grid-template-columns: 1fr 1fr;
 }
 .rnh-phone .rnh-pslab {
   position: relative;
@@ -468,4 +471,44 @@
   margin: 0;
   font-size: 12px;
   color: var(--rn-muted);
+}
+
+.rn .rnh-joinbtn {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 16px;
+  font-family: var(--font-rn-cond), var(--font-rn), sans-serif;
+  font-weight: 900;
+  font-size: 20px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #ffffff;
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.5);
+  transform: skewX(-12deg);
+}
+.rn .rnh-joinbtn > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transform: skewX(12deg);
+}
+.rn .rnh-joinbtn:hover {
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+.rn .rnh-joinbtn:focus-visible {
+  outline: 3px solid var(--rn-yellow);
+  outline-offset: 3px;
+}
+.rn .rnh-joinbtn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.rnh-phone .rnh-joinbtn {
+  height: 56px;
+  padding: 0 22px;
+  font-size: 26px;
 }

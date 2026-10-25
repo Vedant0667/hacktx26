@@ -21,7 +21,7 @@ export function cardTitle(name: string): string {
 
 export function useHomeBuilder(index: DecisionIndexEntry[]): RNHomeViewProps {
   const router = useRouter();
-  const [mode, setMode] = useState<HomeMode>("race");
+  const [mode, setMode] = useState<HomeMode>("moment");
   const [decision, setDecision] = useState(index[0]?.id ?? "");
   const [raceKey, setRaceKey] = useState<string | null>(null);
   const [code, setCode] = useState("");

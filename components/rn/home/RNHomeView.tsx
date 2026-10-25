@@ -165,7 +165,7 @@ function DriverChip({ drivers, code, onPick }: { drivers: HomeDriver[]; code: st
                 setOpen(false);
               }}
             >
-              <span className="rnh-tick" style={{ background: d.team_colour ?? "#A9AEB8" }} />
+              <span className="rnh-tick" style={{ background: d.code === code ? (d.team_colour ?? "#A9AEB8") : "rgba(255,255,255,0.22)" }} />
               <span className="rn-d rnh-pcode">{d.code}</span>
               <span className="rnh-pname">{d.name}</span>
               {d.meta && <span className="rnh-pmeta rn-num">{d.meta}</span>}
@@ -197,9 +197,12 @@ function JoinForm({ p, phone }: { p: RNHomeViewProps; phone?: boolean }) {
           aria-invalid={!!p.joinErr || undefined}
           aria-describedby="rnh-join-err"
         />
-        <SkewButton type="submit" variant="secondary" size={phone ? "phone" : "host-sm"} disabled={p.busy === "join"} aria-busy={p.busy === "join" || undefined} shadow="none">
-          {C.join}
-        </SkewButton>
+        <button type="submit" className="rnh-joinbtn" disabled={p.busy === "join"} aria-busy={p.busy === "join" || undefined}>
+          <span>
+            {C.join}
+            <Arrow size={phone ? 22 : 18} />
+          </span>
+        </button>
       </div>
       <p id="rnh-join-err" role="alert" className="rnh-err">
         {p.joinErr}
