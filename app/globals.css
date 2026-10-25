@@ -27,8 +27,8 @@
   --color-on-field: var(--on-field, #0e0e0e);
 
   --font-*: initial;
+  /* One family. Numbers use its tabular figures (nums); there is no monospace in the UI. */
   --font-sans: var(--font-schibsted), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-azeret), ui-monospace, monospace;
 
   /* Fixed rem scale. Phone: xs..3xl. Host adds 4xl/5xl for the 2 m read. */
   --text-*: initial;
@@ -68,10 +68,19 @@
   color-scheme: light;
 }
 
+/* Numbers in text: lining figures. Schibsted's tabular set also widens . , and :, so tabular digits are applied
+   per digit run where columns or clocks must not jitter (TabNum in components/ui.tsx). */
 @utility nums {
-  font-family: var(--font-mono);
-  font-variant-numeric: tabular-nums slashed-zero;
+  font-variant-numeric: lining-nums;
   letter-spacing: -0.01em;
+}
+/* A unit after a value ("1.5 s", "23 laps"): smaller and lighter than the number it qualifies. */
+@utility unit {
+  font-size: 0.56em;
+  font-weight: 600;
+  letter-spacing: 0;
+  margin-left: 0.14em;
+  opacity: 0.72;
 }
 @utility tnum {
   font-variant-numeric: tabular-nums;
@@ -81,14 +90,13 @@
   letter-spacing: var(--tracking-display);
   text-wrap: balance;
 }
-/* Short mono label: status lines, column heads. Never a sentence. */
+/* Small label: column heads, chart titles, toggles. At most four words, never a sentence. */
 @utility meta {
-  font-family: var(--font-mono);
   font-weight: 700;
-  font-size: 0.6875rem;
-  line-height: 1.3;
+  font-size: 0.75rem;
+  line-height: 1.2;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.07em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -104,6 +112,8 @@ body {
   font-weight: 500;
   line-height: 1.45;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
   -webkit-tap-highlight-color: transparent;
 }
 

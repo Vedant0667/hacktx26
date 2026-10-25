@@ -8,20 +8,21 @@ import { compoundLetter, isTight } from "@/lib/client/race";
 import type { CarTrend, Telemetry } from "@/lib/client/telemetry";
 import type { DataMode } from "@/lib/client/mode";
 import type { Call, TrackStatus } from "@/lib/types";
-import { TyreChip } from "./ui";
+import { Num, TyreChip } from "./ui";
+import { useBoxWidth } from "./useBoxWidth";
 
 const W = 350;
 // Keep at most about eight lap labels on an axis.
 const labelStep = (n: number) => Math.max(1, Math.ceil(n / 8));
-const svgText = { fontFamily: "var(--font-mono)" } as const;
+const svgText = { fontFamily: "var(--font-sans)" } as const;
 
-// A titled block: 2px rule, mono label left, quieter meta right.
+// A titled block: 2px rule, small label left, quieter meta right (in its own case: units stay lower case).
 export function Sec({ label, meta, children, className = "" }: { label: ReactNode; meta?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className={`border-t-2 border-current pb-3 pt-2.5 ${className}`}>
-      <div className="meta mb-2.5 flex justify-between gap-3">
-        <span>{label}</span>
-        {meta && <span className="font-medium opacity-80">{meta}</span>}
+    <section className={`border-t-2 border-current pb-2.5 pt-2.5 ${className}`}>
+      <div className="mb-2.5 flex items-baseline justify-between gap-3">
+        <span className="meta">{label}</span>
+        {meta && <span className="nums text-xs font-medium opacity-75">{meta}</span>}
       </div>
       {children}
     </section>
@@ -29,7 +30,7 @@ export function Sec({ label, meta, children, className = "" }: { label: ReactNod
 }
 
 export function Note({ children }: { children: ReactNode }) {
-  return <p className="mt-2 text-sm font-medium leading-snug [&_b]:font-black">{children}</p>;
+  return <p className="mt-1.5 text-sm font-medium leading-snug [&_b]:font-black">{children}</p>;
 }
 
 // Lap-time chart. First car is the player (heavy line, square at the last lap); others dashed and light.
@@ -40,15 +41,26 @@ export function LapChart({
   axis = false,
   values = true,
   status,
+  width = W,
+  fit = false,
+  text = 1,
 }: {
   laps: number[];
   cars: (CarTrend | null)[];
   height?: number;
   axis?: boolean;
   values?: boolean;
+  // viewBox width when not fitted.
+  width?: number;
+  // fit: a 1:1 viewBox measured from the box (host), so labels keep their size; text scales every label.
+  fit?: boolean;
+  text?: number;
   // SC/VSC laps get a shaded band and a flag-yellow tick on the x-axis.
   status?: Record<number, TrackStatus>;
 }) {
+  const [box, measured] = useBoxWidth<HTMLDivElement>(width);
+  const vw = fit ? measured : width;
+  const fs = (n: number) => n * text;
   const list = cars.filter((c): c is CarTrend => !!c && c.times.some((t) => t != null));
   const vals = list.flatMap((c) => c.times).filter((t): t is number => t != null);
   if (laps.length < 2 || vals.length < 2) return <p className="text-sm font-medium">{COPY.tele.noTimes}</p>;
@@ -65,9 +77,9 @@ export function LapChart({
     lo = mid - 0.3;
     hi = mid + 0.3;
   }
-  const left = axis ? 40 : 14;
-  const right = W - (values ? 92 : 44);
-  const bottom = height - 18;
+  const left = axis ? fs(40) : 14;
+  const right = vw - (values ? fs(100) : fs(44));
+  const bottom = height - fs(18);
   const top = capped ? hi + (hi - lo) * 0.3 : hi;
   const x = (i: number) => left + (laps.length === 1 ? 0 : (i / (laps.length - 1)) * (right - left));
   const y = (t: number) => bottom - 8 - ((Math.min(t, top) - lo) / (top - lo)) * (bottom - 16);
@@ -86,9 +98,10 @@ export function LapChart({
     .filter((e): e is NonNullable<typeof e> => !!e)
     .sort((a, b) => a.y - b.y);
   // Keep end labels at least 12 px apart.
-  for (let j = 1; j < ends.length; j++) if (ends[j].y - ends[j - 1].y < 12) ends[j].y = ends[j - 1].y + 12;
+  for (let j = 1; j < ends.length; j++) if (ends[j].y - ends[j - 1].y < fs(13)) ends[j].y = ends[j - 1].y + fs(13);
   return (
-    <svg viewBox={`0 0 ${W} ${height}`} width="100%" className="block overflow-visible" role="img" aria-label={COPY.tele.title}>
+    <div ref={box}>
+    <svg viewBox={`0 0 ${vw} ${height}`} width="100%" className="block overflow-visible" role="img" aria-label={COPY.tele.title}>
       {status &&
         laps.map((l, i) => {
           const st = status[l];
@@ -98,7 +111,7 @@ export function LapChart({
             <g key={`sc-${l}`}>
               <rect x={x(i) - half} y={4} width={half * 2} height={bottom - 4} fill="currentColor" fillOpacity=".1" />
               <rect x={x(i) - half} y={bottom + 1} width={half * 2} height={5} fill="#FBD530" stroke="#0E0E0E" strokeWidth="1" />
-              <text x={x(i)} y={12} fontSize="9" fontWeight="700" textAnchor="middle" fill="currentColor" style={svgText}>
+              <text x={x(i)} y={fs(13)} fontSize={fs(9.5)} fontWeight="800" letterSpacing=".04em" textAnchor="middle" fill="currentColor" style={svgText}>
                 {st}
               </text>
             </g>
@@ -106,15 +119,16 @@ export function LapChart({
         })}
       {ticks.map((v) => (
         <g key={v}>
-          <line x1={left} x2={right} y1={y(v)} y2={y(v)} stroke="currentColor" strokeOpacity=".18" />
-          <text x={left - 6} y={y(v) + 3.5} fontSize="10" textAnchor="end" fill="currentColor" fillOpacity=".75" style={svgText}>
+          <line x1={left} x2={right} y1={y(v)} y2={y(v)} stroke="currentColor" strokeOpacity=".16" />
+          <text x={left - 7} y={y(v) + fs(3.5)} fontSize={fs(10)} fontWeight="500" textAnchor="end" fill="currentColor" fillOpacity=".7" style={svgText}>
             {v.toFixed(1)}
           </text>
         </g>
       ))}
+      <line x1={left} x2={right} y1={bottom} y2={bottom} stroke="currentColor" strokeOpacity=".3" />
       {laps.map((l, i) =>
         i % labelStep(laps.length) === 0 || (i === laps.length - 1 && i % labelStep(laps.length) > labelStep(laps.length) / 2) ? (
-          <text key={l} x={x(i)} y={height - 3} fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity=".75" style={svgText}>
+          <text key={l} x={x(i)} y={height - 3} fontSize={fs(10)} fontWeight="500" textAnchor="middle" fill="currentColor" fillOpacity=".7" style={svgText}>
             {COPY.tele.lap(l)}
           </text>
         ) : null,
@@ -159,12 +173,17 @@ export function LapChart({
           <rect key="me" x={x(e.i) - 3.5} y={y(e.t) - 3.5} width="7" height="7" fill="currentColor" />
         ))}
       {ends.map((e) => (
-        <text key={e.code} x={x(e.i) + 10} y={e.y + 3.5} fontSize="11" fontWeight={e.k === 0 ? 700 : 500} fill="currentColor" fillOpacity={e.k === 0 ? 1 : 0.75} style={svgText}>
-          {e.code}
-          {values ? ` ${e.t.toFixed(2)}` : ""}
+        <text key={e.code} x={x(e.i) + fs(10)} y={e.y + fs(4)} fontSize={fs(11.5)} fill="currentColor" fillOpacity={e.k === 0 ? 1 : 0.72} style={svgText}>
+          <tspan fontWeight={e.k === 0 ? 800 : 600}>{e.code}</tspan>
+          {values && (
+            <tspan dx="5" fontWeight={500}>
+              {e.t.toFixed(2)}
+            </tspan>
+          )}
         </text>
       ))}
     </svg>
+    </div>
   );
 }
 
@@ -186,50 +205,53 @@ function LineKey({ k }: { k: 0 | 1 | 2 }) {
 // behind always shows "Not yet". After the reveal, pass both actual calls.
 export function NeighbourList({ t, revealed, big = false }: { t: Telemetry; revealed?: { ahead: Call | null; behind: Call | null }; big?: boolean }) {
   const n = t.neighbours;
-  const v = big ? "text-2xl" : "text-[1.0625rem]";
-  const cols = big ? "grid-cols-[minmax(0,1fr)_150px]" : "grid-cols-[minmax(0,1fr)_104px]";
+  const v = big ? "text-[2rem]" : "text-[1.375rem]";
+  const cols = big ? "grid-cols-[minmax(0,1fr)_170px]" : "grid-cols-[minmax(0,1fr)_112px]";
   const rateTxt = (r: number | null) => (r == null || Math.abs(r) < 0.05 ? "" : COPY.tele.rateShort(r));
+  // Status tag: a quiet tint of the ink for "No stop" / "Not yet", solid ink for a stop.
   const tag = (text: string, strong = false) => (
-    <span className={`meta px-1 leading-[1.5] ${strong ? "bg-ink text-white" : "border border-current"}`}>{text}</span>
+    <span className={`inline-flex items-center whitespace-nowrap px-1.5 font-bold leading-none ${big ? "h-6 text-sm" : "h-5 text-xs"} ${strong ? "bg-ink text-white" : "bg-current/12"}`}>
+      <span className={strong ? "" : "opacity-90"}>{text}</span>
+    </span>
   );
   const name = (k: 0 | 1 | 2, label: string, code: string, compound: string | null, age: number | null, extra: ReactNode) => (
-    <div className="flex min-w-0 flex-col gap-1">
-      <span className="meta flex items-center gap-1.5">
+    <div className={`flex min-w-0 flex-col ${big ? "gap-1.5" : "gap-1"}`}>
+      <span className="meta flex items-center gap-1.5 opacity-80">
         <LineKey k={k} />
         {label}
       </span>
-      <span className="flex min-w-0 flex-wrap items-center gap-1.5">
-        <b className={`${big ? "text-2xl" : "text-lg"} font-black leading-none tracking-tight`}>{code}</b>
+      <span className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-1">
+        <b className={`${big ? "text-[1.75rem]" : "text-xl"} font-black leading-none tracking-[-0.02em]`}>{code}</b>
         <TyreChip compound={compound} age={age} size={big ? "md" : "sm"} />
         {extra}
       </span>
     </div>
   );
   const val = (main: string, sub: ReactNode) => (
-    <div className="flex flex-col items-end text-right">
-      <span className={`nums font-bold leading-tight tracking-[-0.02em] ${v}`}>{main}</span>
-      <span className="nums text-[11px] leading-tight opacity-85">{sub}</span>
+    <div className="flex flex-col items-end gap-1 text-right">
+      <Num value={main} className={`font-extrabold leading-none tracking-[-0.03em] ${v}`} />
+      <span className={`nums font-medium leading-tight opacity-75 ${big ? "text-sm" : "text-xs"}`}>{sub}</span>
     </div>
   );
   const aheadCall = revealed ? revealed.ahead : n.ahead?.boxed ? "BOX" : null;
   return (
     <div className="flex flex-col">
-      <div className={`grid ${cols} gap-x-2 border-b-2 border-current pb-1`}>
+      <div className={`grid ${cols} gap-x-3 border-b border-current/35 pb-1.5`}>
         <span />
-        <span className="meta text-right">{COPY.tele.now}</span>
+        <span className="meta text-right opacity-80">{COPY.tele.now}</span>
       </div>
       {n.ahead && (
-        <div className={`grid ${cols} items-center gap-x-2 border-b border-current/30 py-2`}>
+        <div className={`grid ${cols} items-center gap-x-3 border-b border-current/20 ${big ? "py-3" : "py-2"}`}>
           {name(1, COPY.tele.ahead, n.ahead.code, n.ahead.compound, n.ahead.age, aheadCall ? tag(COPY.tele.callOf(aheadCall), true) : revealed ? null : tag(COPY.tele.noStop))}
           {t.gapAhead?.now != null ? val(COPY.tele.gapAhead(t.gapAhead.now), `${COPY.tele.sideAhead} ${rateTxt(t.gapAhead.rate)}`) : <span />}
         </div>
       )}
-      <div className={`grid ${cols} items-center gap-x-2 border-b border-current/30 py-2`}>
-        {name(0, COPY.tele.you, n.me.code, n.me.compound, n.me.age, <span className="nums text-[11px] opacity-85">{COPY.tele.offBest(t.deg.delta)}</span>)}
+      <div className={`grid ${cols} items-center gap-x-3 border-b border-current/20 ${big ? "py-3" : "py-2"}`}>
+        {name(0, COPY.tele.you, n.me.code, n.me.compound, n.me.age, <span className={`nums font-medium opacity-75 ${big ? "text-sm" : "text-xs"}`}>{COPY.tele.offBest(t.deg.delta)}</span>)}
         {val(COPY.tele.youNow(n.me.pos), " ")}
       </div>
       {n.behind && (
-        <div className={`grid ${cols} items-center gap-x-2 border-b border-current/30 py-2`}>
+        <div className={`grid ${cols} items-center gap-x-3 border-b border-current/20 ${big ? "py-3" : "py-2"}`}>
           {name(2, COPY.tele.behind, n.behind.code, n.behind.compound, n.behind.age, revealed ? (revealed.behind ? tag(COPY.tele.callOf(revealed.behind), revealed.behind === "BOX") : null) : tag(COPY.tele.notYet))}
           {t.gapBehind?.now != null ? val(COPY.tele.gapBehind(t.gapBehind.now), `${COPY.tele.sideBehind} ${rateTxt(t.gapBehind.rate)}`) : <span />}
         </div>
@@ -247,7 +269,7 @@ export function UndercutClock({ t, mode, big = false }: { t: Telemetry; mode: Da
     <Sec label={COPY.tele.undercut} meta={COPY.tele.undercutMeta(u0.loss, t.status[t.callLap] ?? "GREEN")}>
       <ul className="flex flex-col">
         {t.undercut.map((u) => (
-          <li key={u.number} className={`flex gap-2.5 border-b border-current/30 py-2 last:border-0 ${big ? "text-lg" : "text-[0.9375rem]"} font-medium leading-snug`}>
+          <li key={u.number} className={`flex gap-3 border-b border-current/20 py-2.5 last:border-0 ${big ? "text-lg" : "text-[0.9375rem]"} font-medium leading-snug`}>
             <span className="mt-0.5">
               <TyreChip compound={u.compound} age={u.age} size={big ? "md" : "sm"} />
             </span>
@@ -268,7 +290,7 @@ export function UndercutClock({ t, mode, big = false }: { t: Telemetry; mode: Da
                 </>
               )}
               {adv && (
-                <span className="nums mt-1 block text-[11px] leading-snug opacity-90">
+                <span className="nums mt-1 block text-xs leading-snug opacity-75">
                   {u.paceDelta != null && u.paceLaps.length > 0 && <>{COPY.tele.ucPaceAdv(u.paceDelta, u.paceLaps[0], u.paceLaps[u.paceLaps.length - 1])} </>}
                   {u.pitted && u.tooEarly && <>{isTight(u.boxNow) ? COPY.tele.ucEstimateTight(u.code) : COPY.tele.ucEstimate(u.code, u.boxNow)} </>}
                   {u.pitted && !u.tooEarly && <>{COPY.tele.ucUntil(u.lapsUntilUndercut)} </>}
@@ -289,9 +311,9 @@ export function Readouts({ t, big = false }: { t: Telemetry; big?: boolean }) {
   const arrow = (r: number | null) => (r == null || Math.abs(r) < 0.05 ? "" : r > 0 ? "▲ " : "▼ ");
   const cell = (label: string, value: string, sub: string) => (
     <div className="min-w-0">
-      <div className="meta">{label}</div>
-      <div className={`nums mt-1 truncate font-bold tracking-[-0.02em] ${v}`}>{value}</div>
-      <div className="nums mt-0.5 text-[11px] leading-tight opacity-85">{sub}</div>
+      <div className="meta opacity-80">{label}</div>
+      <Num value={value} className={`mt-1 block truncate font-extrabold tracking-[-0.02em] ${v}`} />
+      <div className="nums mt-0.5 text-xs font-medium leading-tight opacity-75">{sub}</div>
     </div>
   );
   const a = t.gapAhead;
@@ -315,7 +337,7 @@ export function IntervalTable({ t }: { t: Telemetry }) {
   const cols = `62px repeat(${t.laps.length}, minmax(0,1fr)) 52px`;
   return (
     <div role="table" className="nums">
-      <div role="row" className="grid h-6 items-center text-right text-[10px] opacity-75" style={{ gridTemplateColumns: cols }}>
+      <div role="row" className="grid h-7 items-center border-b border-current/30 text-right text-[10px] font-bold tracking-[0.04em] opacity-75" style={{ gridTemplateColumns: cols }}>
         <b role="columnheader" className="text-left">{COPY.tele.gapHead.toUpperCase()}</b>
         {t.laps.map((l) => (
           <span role="columnheader" key={l}>{COPY.tele.lap(l)}</span>
@@ -323,7 +345,7 @@ export function IntervalTable({ t }: { t: Telemetry }) {
         <b role="columnheader">{COPY.tele.trendHead.toUpperCase()}</b>
       </div>
       {t.pairs.map((p) => (
-        <div role="row" key={`${p.a}-${p.b}`} className="grid h-6 items-center text-right text-xs" style={{ gridTemplateColumns: cols }}>
+        <div role="row" key={`${p.a}-${p.b}`} className="grid h-7 items-center border-b border-current/12 text-right text-[12.5px] font-medium" style={{ gridTemplateColumns: cols }}>
           <b role="cell" className="text-left">
             {p.a}-{p.b}
           </b>
@@ -338,15 +360,18 @@ export function IntervalTable({ t }: { t: Telemetry }) {
 }
 
 // The same intervals as lines (host layout).
-export function IntervalChart({ t, height = 200 }: { t: Telemetry; height?: number }) {
+export function IntervalChart({ t, height = 200, fit = false, text = 1 }: { t: Telemetry; height?: number; fit?: boolean; text?: number }) {
+  const [box, measured] = useBoxWidth<HTMLDivElement>(W);
+  const vw = fit ? measured : W;
+  const fs = (n: number) => n * text;
   const rows = t.pairs.filter((p) => p.series.some((v) => v != null));
   if (!rows.length || t.laps.length < 2) return null;
   const vals = rows.flatMap((p) => p.series).filter((v): v is number => v != null);
   const lo = Math.min(0, Math.floor(Math.min(...vals)));
   const hi = Math.max(1, Math.ceil(Math.max(...vals)));
-  const left = 40;
-  const right = W - 70;
-  const bottom = height - 18;
+  const left = fs(40);
+  const right = vw - fs(72);
+  const bottom = height - fs(18);
   const x = (i: number) => left + (i / (t.laps.length - 1)) * (right - left);
   const y = (v: number) => bottom - ((v - lo) / (hi - lo)) * (bottom - 10);
   const styles = [
@@ -361,22 +386,23 @@ export function IntervalChart({ t, height = 200 }: { t: Telemetry; height?: numb
     return { k, i, label: `${p.a}-${p.b}`, y: y(p.series[i] as number) };
   });
   ends.sort((a, b) => a.y - b.y);
-  for (let j = 1; j < ends.length; j++) if (ends[j].y - ends[j - 1].y < 12) ends[j].y = ends[j - 1].y + 12;
+  for (let j = 1; j < ends.length; j++) if (ends[j].y - ends[j - 1].y < fs(13)) ends[j].y = ends[j - 1].y + fs(13);
   // About four gridlines whatever the range.
   const raw = (hi - lo) / 4;
   const step = [0.5, 1, 2, 5, 10, 20].find((v) => v >= raw) ?? 20;
   return (
-    <svg viewBox={`0 0 ${W} ${height}`} width="100%" className="block overflow-visible" role="img" aria-label={COPY.tele.intervals}>
+    <div ref={box}>
+    <svg viewBox={`0 0 ${vw} ${height}`} width="100%" className="block overflow-visible" role="img" aria-label={COPY.tele.intervals}>
       {Array.from({ length: Math.floor((hi - Math.ceil(lo / step) * step) / step) + 1 }, (_, k) => Math.ceil(lo / step) * step + k * step).map((v) => (
         <g key={v}>
-          <line x1={left} x2={right} y1={y(v)} y2={y(v)} stroke="currentColor" strokeOpacity=".18" />
-          <text x={left - 6} y={y(v) + 3.5} fontSize="10" textAnchor="end" fill="currentColor" fillOpacity=".75" style={svgText}>
+          <line x1={left} x2={right} y1={y(v)} y2={y(v)} stroke="currentColor" strokeOpacity={v === 0 ? 0.4 : 0.16} />
+          <text x={left - 7} y={y(v) + fs(3.5)} fontSize={fs(10)} fontWeight="500" textAnchor="end" fill="currentColor" fillOpacity=".7" style={svgText}>
             {v.toFixed(1)}
           </text>
         </g>
       ))}
       {t.laps.map((l, i) => (
-        <text key={l} x={x(i)} y={height - 3} fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity=".75" style={svgText}>
+        <text key={l} x={x(i)} y={height - 3} fontSize={fs(10)} fontWeight="500" textAnchor="middle" fill="currentColor" fillOpacity=".7" style={svgText}>
           {COPY.tele.lap(l)}
         </text>
       ))}
@@ -386,11 +412,12 @@ export function IntervalChart({ t, height = 200 }: { t: Telemetry; height?: numb
         return <polyline key={`${p.a}-${p.b}`} points={pts} fill="none" stroke="currentColor" strokeWidth={st.w} strokeOpacity={st.o} strokeDasharray={st.dash} strokeLinejoin="round" />;
       })}
       {ends.map((e) => (
-        <text key={e.label} x={x(e.i) + 10} y={e.y + 3.5} fontSize="11" fontWeight={e.k === 0 ? 700 : 500} fill="currentColor" fillOpacity={e.k === 0 ? 1 : 0.75} style={svgText}>
+        <text key={e.label} x={x(e.i) + fs(10)} y={e.y + fs(4)} fontSize={fs(11.5)} fontWeight={e.k === 0 ? 800 : 600} fill="currentColor" fillOpacity={e.k === 0 ? 1 : 0.72} style={svgText}>
           {e.label}
         </text>
       ))}
     </svg>
+    </div>
   );
 }
 
@@ -404,28 +431,25 @@ export function intervalNote(t: Telemetry): ReactNode {
   return parts;
 }
 
-// Every car's compound as a square: soft inverted, hard dashed, the player's square heavier.
-export function FieldTyres({ t, me, onField = true }: { t: Telemetry; me: number; onField?: boolean }) {
-  const softInk = onField ? "text-field" : "text-bg";
+// Every car's compound as a broadcast badge with its code under it; the player's car sits on a tint.
+// onField is kept for older call sites (the badge reads on white and on the field alike).
+export function FieldTyres({ t, me }: { t: Telemetry; me: number; onField?: boolean }) {
   const counts = new Map<string, number>();
   for (const c of t.compounds) if (c.compound) counts.set(c.compound, (counts.get(c.compound) ?? 0) + 1);
   const parts = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([c, n]) => COPY.tele.mixPart(n, COPY.compounds[c] ?? c));
   return (
     <>
-      <div className="grid grid-cols-10 gap-[3px]">
+      <div className="grid grid-cols-10 gap-x-1 gap-y-1">
         {t.compounds.map((c) => {
-          const l = compoundLetter(c.compound) ?? "?";
-          const soft = l === "S";
+          const mine = c.number === me;
           return (
             <div
               key={c.number}
               title={`${c.code} ${c.compound ?? ""} ${c.age ?? ""}`}
-              className={`flex h-[34px] flex-col items-center justify-center font-mono leading-none ${soft ? "bg-current" : ""} ${
-                c.number === me ? "border-[3px]" : "border-[1.5px]"
-              } ${l === "H" ? "border-dashed" : "border-solid"} border-current`}
+              className={`flex h-[38px] flex-col items-center justify-center gap-[3px] leading-none ${mine ? "bg-current/15 shadow-[inset_0_0_0_2px_currentColor]" : ""}`}
             >
-              <b className={`text-[13px] ${soft ? softInk : ""}`}>{l}</b>
-              <span className={`mt-px text-[8px] ${soft ? softInk : ""}`}>{c.code}</span>
+              <TyreChip compound={c.compound} size="sm" />
+              <span className={`text-[9.5px] tracking-[0.02em] ${mine ? "font-black" : "font-semibold opacity-75"}`}>{c.code}</span>
             </div>
           );
         })}
@@ -442,19 +466,25 @@ export function PitLoss({ under, normal, trigger }: { under: number; normal: num
   return (
     <>
       <svg viewBox={`0 0 ${W} 50`} width="100%" className="block" role="img" aria-label={`${COPY.tele.pitNow(trigger)} ${under} s, ${COPY.tele.pitGreen} ${normal} s`}>
-        <text x="0" y="11" fontSize="11" fontWeight="700" fill="currentColor" style={svgText}>
+        <text x="0" y="12" fontSize="11.5" fontWeight="800" fill="currentColor" style={svgText}>
           {COPY.tele.pitNow(trigger)}
         </text>
-        <rect className="grow-x" x="58" y="0" width={(under / normal) * max} height="16" fill="currentColor" />
-        <text x={58 + (under / normal) * max + 8} y="11" fontSize="11" fontWeight="700" fill="currentColor" style={svgText}>
-          {under.toFixed(1)} s
+        <rect className="grow-x" x="62" y="1" width={(under / normal) * max} height="14" fill="currentColor" />
+        <text x={62 + (under / normal) * max + 8} y="13" fontSize="13" fontWeight="800" fill="currentColor" style={svgText}>
+          {under.toFixed(1)}
+          <tspan dx="2" fontSize="9.5" fontWeight="600" fillOpacity=".72">
+            s
+          </tspan>
         </text>
-        <text x="0" y="44" fontSize="11" fill="currentColor" fillOpacity=".8" style={svgText}>
+        <text x="0" y="43" fontSize="11.5" fontWeight="600" fill="currentColor" fillOpacity=".75" style={svgText}>
           {COPY.tele.pitGreen}
         </text>
-        <rect x="58.75" y="28.75" width={max} height="14.5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-        <text x={58 + max + 9} y="44" fontSize="11" fill="currentColor" fillOpacity=".8" style={svgText}>
-          {normal.toFixed(1)} s
+        <rect x="62" y="32" width={max} height="14" fill="currentColor" fillOpacity=".16" />
+        <text x={62 + max + 8} y="44" fontSize="13" fontWeight="700" fill="currentColor" fillOpacity=".75" style={svgText}>
+          {normal.toFixed(1)}
+          <tspan dx="2" fontSize="9.5" fontWeight="600">
+            s
+          </tspan>
         </text>
       </svg>
       <Note>{COPY.tele.pitNote(trigger, normal - under)}</Note>
@@ -472,11 +502,11 @@ export function StintTable({ t, normal }: { t: Telemetry; normal: number | null 
   ];
   const c = COPY.tele.stintCols;
   return (
-    <table className="nums w-full border-collapse text-[11.5px]">
+    <table className="nums w-full border-collapse text-[13px]">
       <thead>
         <tr>
           {[c.stint, c.tyre, c.laps, c.best, c.trend].map((h, i) => (
-            <th key={h} className={`border-b border-current py-1.5 text-[10px] font-bold uppercase opacity-75 ${i === 4 ? "text-right" : "text-left"}`}>
+            <th key={h} className={`border-b border-current/40 pb-1.5 text-[10.5px] font-bold uppercase tracking-[0.06em] opacity-75 ${i === 4 ? "text-right" : "text-left"}`}>
               {h}
             </th>
           ))}
@@ -486,7 +516,7 @@ export function StintTable({ t, normal }: { t: Telemetry; normal: number | null 
         {rows.map((r) => (
           <tr key={r[0]}>
             {r.map((v, i) => (
-              <td key={i} className={`border-b border-current/60 py-1.5 ${i === 4 ? "text-right" : "text-left"}`}>
+              <td key={i} className={`border-b border-current/15 py-2 ${i === 0 ? "font-bold" : "font-medium"} ${i === 4 ? "text-right" : "text-left"}`}>
                 {v}
               </td>
             ))}
@@ -499,6 +529,8 @@ export function StintTable({ t, normal }: { t: Telemetry; normal: number | null 
 
 // Where a stop rejoins: nearby cars as ticks on a gap-to-leader axis, the projected spot as a square.
 export function RejoinStrip({ t, frameCars }: { t: Telemetry; frameCars: { code: string; gap: number | null; number: number }[] }) {
+  // 1:1 viewBox from the box width, so the strip keeps its 60 px height and label size at any width.
+  const [box, vw] = useBoxWidth<HTMLDivElement>(W);
   const rj = t.rejoin;
   if (!rj) return null;
   const out = rj.gapToLeader;
@@ -510,18 +542,18 @@ export function RejoinStrip({ t, frameCars }: { t: Telemetry; frameCars: { code:
   const gs = near.map((c) => c.gap as number).concat(out);
   const lo = Math.min(...gs) - 0.6;
   const hi = Math.max(...gs) + 0.6;
-  const x = (g: number) => 14 + ((g - lo) / (hi - lo)) * (W - 28);
+  const x = (g: number) => 14 + ((g - lo) / (hi - lo)) * (vw - 28);
   return (
-    <>
-      <svg viewBox={`0 0 ${W} 60`} width="100%" className="block" role="img" aria-label={COPY.tele.rejoinNote(rj.pos, rj.ahead, rj.behind)}>
-        <line x1="14" x2={W - 14} y1="30" y2="30" stroke="currentColor" strokeOpacity=".35" />
+    <div ref={box}>
+      <svg viewBox={`0 0 ${vw} 60`} width="100%" className="block" role="img" aria-label={COPY.tele.rejoinNote(rj.pos, rj.ahead, rj.behind)}>
+        <line x1="14" x2={vw - 14} y1="30" y2="30" stroke="currentColor" strokeOpacity=".35" />
         {near.map((c) => (
           <g key={c.number}>
             <line x1={x(c.gap as number)} x2={x(c.gap as number)} y1="22" y2="38" stroke="currentColor" strokeWidth="1.5" strokeOpacity=".85" />
-            <text x={x(c.gap as number)} y="14" fontSize="11" textAnchor="middle" fill="currentColor" fillOpacity=".85" style={svgText}>
+            <text x={x(c.gap as number)} y="14" fontSize="11.5" fontWeight="700" textAnchor="middle" fill="currentColor" fillOpacity=".85" style={svgText}>
               {c.code}
             </text>
-            <text x={x(c.gap as number)} y="54" fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity=".7" style={svgText}>
+            <text x={x(c.gap as number)} y="54" fontSize="10" fontWeight="500" textAnchor="middle" fill="currentColor" fillOpacity=".7" style={svgText}>
               {(c.gap as number).toFixed(1)}
             </text>
           </g>
@@ -529,6 +561,6 @@ export function RejoinStrip({ t, frameCars }: { t: Telemetry; frameCars: { code:
         <rect className="ghost" x={x(out) - 6} y="24" width="12" height="12" fill="currentColor" />
       </svg>
       <Note>{COPY.tele.rejoinNote(rj.pos, rj.ahead, rj.behind)}</Note>
-    </>
+    </div>
   );
 }

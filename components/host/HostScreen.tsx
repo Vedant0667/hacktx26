@@ -18,7 +18,7 @@ import type { LapFrame } from "@/lib/types";
 import { RejoinCaveat, getBrief, type Brief } from "../DecisionBrief";
 import { FieldTyres, IntervalChart, LapChart, NeighbourList, Note, PitLoss, RejoinStrip, Sec, StintTable, UndercutClock, intervalNote, simpleChartLabel } from "../Telemetry";
 import { Tower } from "../Tower";
-import { Brand, Button, ConnNotice, ModeToggle, ScChip, TrackStrip, TyreChip, clockText } from "../ui";
+import { Brand, Button, ConnNotice, ModeToggle, Num, ScChip, TabNum, TrackStrip, TyreChip, clockText } from "../ui";
 import { LineChart } from "./HostCharts";
 import { HostQr } from "./HostQr";
 import { HostReveal } from "./HostReveal";
@@ -198,7 +198,7 @@ export function Centered({ text }: { text: string }) {
 
 export function Top({ left, right, className = "" }: { left: React.ReactNode; right: React.ReactNode; className?: string }) {
   return (
-    <header className={`flex items-center justify-between gap-6 font-mono text-lg font-bold uppercase ${className}`}>
+    <header className={`nums flex items-center justify-between gap-6 text-lg font-bold tracking-[-0.01em] ${className}`}>
       <span className="flex items-center gap-3">{left}</span>
       <span className="flex items-center gap-3">{right}</span>
     </header>
@@ -252,7 +252,7 @@ function Lobby({
       <div className="grid min-h-0 grid-cols-12 items-center gap-x-6">
         <section className="col-span-6 flex flex-col">
           <span className="meta">{COPY.host.roomCode}</span>
-          <h1 className="nums mt-3 text-[9.375rem] font-bold leading-none tracking-[-0.03em]" aria-label={COPY.room.heading(code)}>
+          <h1 className="mt-4 text-[9.375rem] font-black leading-[0.86] tracking-[-0.04em]" aria-label={COPY.room.heading(code)}>
             {code}
           </h1>
           <p className="mt-4 max-w-[30ch] text-[1.625rem] font-medium leading-snug text-[#cfcfcf]">
@@ -262,7 +262,7 @@ function Lobby({
             {joinHref ? <HostQr value={joinHref} size={200} label={COPY.room.scanAlt(joinUrl)} /> : <div className="size-[200px] bg-[#222]" />}
             <div className="flex flex-col items-start gap-4">
               <Brand kind="mark" height={120} label={false} />
-              <p className="font-mono text-[15px] leading-relaxed text-[#bdbdbd]">{joinUrl}</p>
+              <p className="nums text-[15px] font-medium leading-relaxed text-[#bdbdbd]">{joinUrl}</p>
             </div>
           </div>
         </section>
@@ -275,13 +275,13 @@ function Lobby({
             <span className="meta text-[15px]">{COPY.host.yourCar}</span>
           </div>
           <p className="mt-4 text-xl font-bold">{decision.blind_title}</p>
-          {lobby.driver_mode === "choose" && carsInPlay(lobby).length > 0 && <p className="mt-2 font-mono text-sm text-[#bdbdbd]">{carLine(lobby)}</p>}
+          {lobby.driver_mode === "choose" && carsInPlay(lobby).length > 0 && <p className="mt-2 text-sm font-medium text-[#bdbdbd]">{carLine(lobby)}</p>}
         </section>
       </div>
 
       <footer className="flex items-center justify-between gap-6 border-t-2 border-white pt-[18px]">
         <span className="flex items-center gap-6">
-          <span className="font-mono text-[15px] text-[#bdbdbd]">{COPY.host.replayNote(decision.replay_from_lap, decision.lap)}</span>
+          <span className="nums text-[15px] font-medium text-[#bdbdbd]">{COPY.host.replayNote(decision.replay_from_lap, decision.lap)}</span>
           <DarkModeToggle mode={mode} onChange={setMode} />
         </span>
         <Button
@@ -326,8 +326,8 @@ export function PlayerSlots({
             {Array.from({ length: MAX_PLAYERS }, (_, i) => {
               const p = players[i];
               return (
-                <li key={p?.name ?? `open-${i}`} className={`flex h-[78px] items-center gap-3 border-b border-[#444] px-3 ${i % 3 !== 2 ? "border-r" : ""} ${p ? "rise" : ""}`}>
-                  <span className="nums text-[15px] text-[#8c8c8c]">{String(i + 1).padStart(2, "0")}</span>
+                <li key={p?.name ?? `open-${i}`} className={`flex h-[78px] items-center gap-3.5 border-b border-white/15 px-3.5 ${i % 3 !== 2 ? "border-r" : ""} ${p ? "rise" : ""}`}>
+                  <span className={`nums w-5 shrink-0 text-sm font-semibold ${p ? "text-[#9a9a9a]" : "text-[#5c5c5c]"}`}>{String(i + 1).padStart(2, "0")}</span>
                   {p ? (
                     <span className="flex min-w-0 flex-1 flex-col items-start">
                       <span className="flex w-full min-w-0 items-center gap-2.5">
@@ -342,13 +342,13 @@ export function PlayerSlots({
                           await onKick(p.name);
                         }}
                         aria-label={confirm === p.name ? COPY.host.confirmRemove : COPY.host.remove(p.name)}
-                        className={`mt-1.5 font-mono text-sm font-bold uppercase leading-none ${confirm === p.name ? "bg-white px-1 py-0.5 text-ink" : "text-[#9a9a9a] underline underline-offset-2 hover:text-white"}`}
+                        className={`mt-2 text-sm font-semibold leading-none transition-colors duration-150 ${confirm === p.name ? "bg-white px-1.5 py-1 text-ink" : "text-[#9a9a9a] underline decoration-white/30 underline-offset-[3px] hover:text-white hover:decoration-white"}`}
                       >
                         {confirm === p.name ? COPY.host.confirmShort : COPY.host.removeShort}
                       </button>
                     </span>
                   ) : (
-                    <span className="text-[2rem] font-bold leading-none tracking-[-0.02em] text-[#8c8c8c]">{COPY.play.open.toLowerCase()}</span>
+                    <span className="text-[1.5rem] font-semibold leading-none tracking-[-0.02em] text-[#5c5c5c]">{COPY.play.open.toLowerCase()}</span>
                   )}
                 </li>
               );
@@ -361,8 +361,8 @@ export function PlayerSlots({
 export function CarTag({ code, colour }: { code: string | null; colour: string | null }) {
   if (!code) return null;
   return (
-    <span className="inline-flex shrink-0 items-center gap-1 font-mono text-base font-bold leading-none">
-      <span aria-hidden className="h-4 w-1" style={{ backgroundColor: colour ?? "currentColor" }} />
+    <span className="inline-flex shrink-0 items-center gap-1.5 text-base font-bold leading-none tracking-[0.01em] opacity-90">
+      <span aria-hidden className="h-3.5 w-[3px]" style={{ backgroundColor: colour ?? "currentColor" }} />
       {code}
     </span>
   );
@@ -478,6 +478,8 @@ function Replay({
               <div className="mt-2">
                 <LineChart
                   invert
+                  fit
+                  text={1.3}
                   width={600}
                   height={300}
                   xLabels={xLabels}
@@ -494,20 +496,20 @@ function Replay({
             {watch && (
               <div className="border-t-2 border-ink pt-2">
                 <span className="meta">{COPY.host.gapTitle(watch.code, watchSide)}</span>
-                <p className="nums mt-1 text-[1.875rem] font-bold leading-none">{watch.now != null ? COPY.tele.gapS(watch.now) : "–"}</p>
-                <p className="nums mt-1 text-sm">{COPY.host.rate(watch.rate)}</p>
+                <p className="mt-2 text-[2.25rem] font-extrabold leading-none tracking-[-0.03em]">{watch.now != null ? <Num value={COPY.tele.gapS(watch.now)} /> : "–"}</p>
+                <p className="nums mt-1.5 text-sm font-medium opacity-75">{COPY.host.rate(watch.rate)}</p>
                 <div className="mt-2">
-                  <LineChart width={314} height={150} labelRight={48} xLabels={xLabels} decimals={1} lines={[{ label: watch.code, values: watch.series, tier: 0 }]} />
+                  <LineChart fit text={1.15} width={314} height={150} labelRight={48} xLabels={xLabels} decimals={1} lines={[{ label: watch.code, values: watch.series, tier: 0 }]} />
                 </div>
               </div>
             )}
             {tele && (
               <div className="border-t-2 border-ink pt-2">
                 <span className="meta">{COPY.host.tyreTitle}</span>
-                <p className="nums mt-1 text-[1.875rem] font-bold leading-none">
+                <p className="nums mt-2 text-[1.875rem] font-extrabold leading-none tracking-[-0.02em]">
                   {COPY.host.tyreNow(tele.deg.compound ? (COPY.compounds[tele.deg.compound] ?? tele.deg.compound) : "–", tele.deg.age)}
                 </p>
-                <p className="nums mt-1 text-sm">{tele.deg.best != null ? COPY.host.bestSoFar(lapTimeText(tele.deg.best)) : COPY.host.noTimes}</p>
+                <p className="nums mt-1.5 text-sm font-medium opacity-75">{tele.deg.best != null ? COPY.host.bestSoFar(lapTimeText(tele.deg.best)) : COPY.host.noTimes}</p>
               </div>
             )}
           </div>
@@ -609,26 +611,27 @@ function RoomStrip({
   compact: boolean;
   children: React.ReactNode;
 }) {
-  // With a full room only the codes show: filled means called, dashed underline means still thinking.
-  const words = !compact && players.length <= 5;
+  // With a full room only the codes show: filled means called, an underlined tint means still thinking.
+  // compact: the same row at a smaller size (Advanced, where the data panel needs the height).
+  const words = players.length <= 5;
   return (
-    <footer className={`flex border-t-2 border-on-field pt-3 ${compact ? "flex-col items-start gap-3" : "items-center justify-between gap-6"}`}>
-      <ol className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-2">
+    <footer className={`flex items-center justify-between gap-6 border-t-2 border-on-field ${compact ? "pt-3" : "pt-4"}`}>
+      <ol className="flex min-w-0 flex-wrap items-center gap-x-2.5 gap-y-2">
         {players.map((p) => {
           const inn = submitted.has(p.name);
           return (
             <li
               key={p.name}
               aria-label={COPY.host.playerState(p.name, inn)}
-              className={`flex min-w-0 items-baseline gap-2 px-2 py-0.5 transition-colors duration-200 ${inn ? (dark ? "bg-white text-ink" : "on-dark bg-ink text-white") : "border-b-2 border-dashed border-on-field"}`}
+              className={`flex min-w-0 items-center gap-2.5 px-3 transition-colors duration-200 ${compact ? "h-9" : "h-11"} ${inn ? (dark ? "bg-white text-ink" : "on-dark bg-ink text-white") : "bg-current/10 shadow-[inset_0_-2px_0_currentColor]"}`}
             >
-              <span className="max-w-[14ch] truncate text-2xl font-black tracking-tight">{p.name}</span>
-              {carFor && <span className="font-mono text-base font-bold">{carFor(p.name)}</span>}
-              {words && <span className="font-mono text-lg font-medium">{inn ? COPY.host.called : COPY.host.thinking}</span>}
+              <span className={`max-w-[14ch] truncate font-black leading-none tracking-[-0.02em] ${compact ? "text-xl" : "text-2xl"}`}>{p.name}</span>
+              {carFor && <span className="text-base font-bold leading-none opacity-80">{carFor(p.name)}</span>}
+              {words && <span className={`font-medium leading-none opacity-80 ${compact ? "text-base" : "text-lg"}`}>{inn ? COPY.host.called : COPY.host.thinking}</span>}
             </li>
           );
         })}
-        <li className="nums ml-2 text-2xl font-bold">{left === 0 ? COPY.freeze.timeUp : COPY.freeze.waitingOn(waiting)}</li>
+        <li className={`nums ml-3 font-semibold tracking-[-0.01em] opacity-85 ${compact ? "text-xl" : "text-2xl"}`}>{left === 0 ? COPY.freeze.timeUp : COPY.freeze.waitingOn(waiting)}</li>
       </ol>
       <span className="flex shrink-0 items-center gap-3">{children}</span>
     </footer>
@@ -651,8 +654,8 @@ type FreezeProps = {
 
 function Clock({ left, urgent, className }: { left: number; urgent: boolean; className: string }) {
   return (
-    <span key={urgent ? left : "n"} aria-live="polite" className={`nums self-start font-bold leading-none tracking-[-0.04em] ${className} ${urgent ? "tick bg-on-field px-3 text-field" : ""}`}>
-      {clockText(left)}
+    <span key={urgent ? left : "n"} aria-live="polite" className={`nums self-start font-extrabold leading-[0.9] tracking-[-0.035em] ${className} ${urgent ? "tick bg-on-field px-3 text-field" : ""}`}>
+      <TabNum value={clockText(left)} />
     </span>
   );
 }
@@ -674,21 +677,21 @@ function Options({ brief, compact }: { brief: Brief; compact: boolean }) {
   const { ctx, rejoin, story } = brief;
   if (!ctx) return null;
   const behind = ctx.behind !== "–" ? brief.frame?.drivers.find((d) => d.position === ctx.pos + 1) : null;
-  const h = compact ? "h-[104px] px-7" : "h-[124px] px-8";
-  const word = compact ? "text-[2.75rem]" : "text-[3.25rem]";
-  const sub = `mt-2.5 flex items-center gap-2 font-mono ${compact ? "text-sm" : "text-base"}`;
+  const h = compact ? "h-[100px] px-7" : "h-[132px] px-9";
+  const word = compact ? "text-[2.75rem]" : "text-[3.5rem]";
+  const sub = `nums mt-3 flex items-center gap-2.5 font-medium leading-none ${compact ? "text-base" : "text-xl"}`;
   return (
-    <div className="flex flex-col">
+    <div className="flex flex-col shadow-[0_28px_60px_-30px_rgba(0,0,0,0.45)]">
       <div className={`flex flex-col justify-center bg-white text-ink ${h}`}>
         <b className={`${word} font-black leading-none tracking-[-0.03em]`}>{COPY.freeze.options.STAY}</b>
         <span className={sub}>
-          <TyreChip compound={ctx.compound} age={ctx.age} size="sm" />
+          <TyreChip compound={ctx.compound} age={ctx.age} size={compact ? "sm" : "md"} />
           {COPY.host.stayLine(ctx.pos, behind ? { code: behind.code, gap: ctx.behind } : null)}
         </span>
       </div>
       <div className={`on-dark flex flex-col justify-center bg-ink text-white ${h}`}>
         <b className={`${word} font-black leading-none tracking-[-0.03em]`}>{COPY.freeze.options.BOX}</b>
-        <span className={sub}>{rejoin ? COPY.host.boxLine(rejoin.pos, story?.lapsLeft ?? 0) : COPY.story.boxTyres}</span>
+        <span className={`${sub} text-white/85`}>{rejoin ? COPY.host.boxLine(rejoin.pos, story?.lapsLeft ?? 0) : COPY.story.boxTyres}</span>
       </div>
     </div>
   );
@@ -703,24 +706,24 @@ function SimpleFreeze({ brief, decision, left, urgent, meCode, code, room, statu
         <Top left={label ?? COPY.host.statusLong(decision.trigger, decision.lap, decision.total_laps)} right={`${COPY.mode.simple} · ${COPY.host.room(code)}`} />
         <div className="grid min-h-0 grid-cols-12 items-center gap-x-6">
           <section className="col-span-7 flex flex-col">
-            <Clock left={left} urgent={urgent} className="text-[length:min(4.75rem,7dvh)]" />
-            <h1 className={`display mt-3 leading-[0.92] ${why ? "text-[length:min(3.75rem,5.6dvh)]" : "text-[length:min(4.5rem,6.6dvh)]"}`}>
+            <Clock left={left} urgent={urgent} className="text-[length:min(6rem,8.6dvh)]" />
+            <h1 className={`display mt-3 leading-[0.92] ${why ? "text-[length:min(4.25rem,6dvh,3.5vw)]" : "text-[length:min(5.5rem,8dvh,4.4vw)]"}`}>
               {brief.ctx ? COPY.host.lead(meCode, brief.ctx.pos) : ""} {COPY.freeze.question}
             </h1>
-            {why && <div className="mt-4">{why}</div>}
-            <Sentence brief={brief} decision={decision} className="mt-4 max-w-[60ch] text-[1.375rem] font-medium leading-[1.3]" />
-            {brief.rejoin && <RejoinCaveat frame={brief.frame} lap={decision.lap} className="mt-1.5 text-base font-medium" />}
+            {why && <div className="mt-5">{why}</div>}
+            <Sentence brief={brief} decision={decision} className="nums mt-5 max-w-[56ch] text-[1.375rem] font-medium leading-[1.32]" />
+            {brief.rejoin && <RejoinCaveat frame={brief.frame} lap={decision.lap} className="mt-2 text-base font-medium opacity-80" />}
           </section>
           <section className="col-span-5 col-start-8">
             <Options brief={brief} compact={false} />
           </section>
         </div>
         {t && (
-          <section className="grid grid-cols-12 gap-x-6 border-t-2 border-on-field pt-3">
-            <div className="col-span-5">
-              <span className="meta">{simpleChartLabel(t)}</span>
-              <div className="mt-1">
-                <LapChart laps={t.laps} cars={[t.me, t.ahead, t.behind]} height={100} status={t.status} />
+          <section className="grid grid-cols-12 gap-x-6 border-t-2 border-on-field pt-4">
+            <div className="col-span-5 pr-6">
+              <span className="meta opacity-80">{simpleChartLabel(t)}</span>
+              <div className="mt-2">
+                <LapChart laps={t.laps} cars={[t.me, t.ahead, t.behind]} height={168} fit text={1.3} status={t.status} />
               </div>
             </div>
             <div className="col-span-7">
@@ -738,38 +741,38 @@ function AdvancedFreeze({ brief, decision, left, urgent, meCode, code, room, mod
   const t = brief.tele;
   const r = decision.player_role;
   const pos = brief.ctx?.pos;
+  // The room strip runs full width under both columns (as in Simple), so the narrow call column never overflows.
   return (
-    <main className="flex h-dvh flex-col overflow-hidden">
+    <main className="flood flex h-dvh flex-col overflow-hidden bg-field text-on-field">
       <TrackStrip status={status} size="host" />
       <div className="grid min-h-0 flex-1 grid-cols-[520px_1fr]">
-        <section className="flood flex min-h-0 flex-col bg-field pb-8 pl-14 pr-10 pt-6 text-on-field">
+        <section className="flex min-h-0 flex-col pb-6 pl-14 pr-10 pt-6">
           <Top className="text-[15px]" left={label ?? COPY.host.statusLong(decision.trigger, decision.lap, decision.total_laps)} right={code} />
-          <Clock left={left} urgent={urgent} className="mt-5 text-[4.5rem]" />
-          <h1 className="display mt-3 text-[3.125rem] leading-[0.94]">
+          <Clock left={left} urgent={urgent} className="mt-5 text-[length:min(4.5rem,8dvh)]" />
+          <h1 className="display mt-3 text-[length:min(3.125rem,5.4dvh)] leading-[0.94]">
             {brief.ctx ? COPY.host.lead(meCode, brief.ctx.pos) : ""} {COPY.freeze.question}
           </h1>
-          {why && <div className="mt-3">{why}</div>}
+          {why && <div className="mt-4">{why}</div>}
           {brief.rejoin && (
-            <p className="mt-3 text-lg font-medium leading-[1.35]">
+            <p className="nums mt-4 text-lg font-medium leading-[1.35]">
               {COPY.host.boxNowLead} <b className="font-black">{COPY.host.boxNowShort(brief.rejoin.pos, brief.rejoin.ahead, brief.rejoin.behind)}</b>{" "}
               {brief.story && brief.ctx && COPY.host.lapsLeftOn(brief.story.lapsLeft, brief.ctx.age, brief.ctx.compound ? (COPY.compounds[brief.ctx.compound] ?? brief.ctx.compound) : null)}
             </p>
           )}
-          {brief.rejoin && <RejoinCaveat frame={brief.frame} lap={decision.lap} className="mt-1 text-base font-bold" />}
-          <div className="mt-auto pt-4">
+          {brief.rejoin && <RejoinCaveat frame={brief.frame} lap={decision.lap} className="mt-1.5 text-[15px] font-semibold leading-snug opacity-85" />}
+          <div className="mt-auto pt-5">
             <Options brief={brief} compact />
           </div>
-          <div className="mt-4">{room(true)}</div>
         </section>
-        <section className="grid min-h-0 grid-cols-2 grid-rows-[auto_auto_auto_1fr] gap-x-12 overflow-hidden bg-white pb-8 pl-12 pr-14 pt-6 text-ink">
-          <Top className="col-span-2 mb-2 text-[15px]" left={COPY.mode.advanced} right={`${meCode} #${r.number}${pos ? ` · P${pos}` : ""}`} />
+        <section className="grid min-h-0 grid-cols-2 grid-rows-[auto_auto_auto_1fr] gap-x-12 overflow-hidden bg-white pb-4 pl-12 pr-14 pt-5 text-ink">
+          <Top className="col-span-2 mb-1.5 text-[15px]" left={COPY.mode.advanced} right={`${meCode} #${r.number}${pos ? ` · P${pos}` : ""}`} />
           {t ? (
             <>
               <Sec label={COPY.host.stintTimes} meta={t.stintLaps.length ? `L${t.stintLaps[0]}-${t.stintLaps[t.stintLaps.length - 1]} · s` : undefined}>
-                <LapChart laps={t.stintLaps} cars={[t.stint.me, t.stint.ahead, t.stint.behind]} height={130} axis />
+                <LapChart laps={t.stintLaps} cars={[t.stint.me, t.stint.ahead, t.stint.behind]} height={106} axis fit text={1.15} />
               </Sec>
               <Sec label={COPY.host.intervalsTitle} meta="s">
-                <IntervalChart t={t} height={130} />
+                <IntervalChart t={t} height={106} fit text={1.15} />
               </Sec>
               <Sec label={COPY.host.fieldTyres} meta={t.ages.length ? COPY.host.agesRange(Math.min(...t.ages), Math.max(...t.ages)) : undefined}>
                 <FieldTyres t={t} me={r.number} onField={false} />
@@ -794,6 +797,7 @@ function AdvancedFreeze({ brief, decision, left, urgent, meCode, code, room, mod
           ) : null}
         </section>
       </div>
+      <div className="px-14 pb-4">{room(true)}</div>
     </main>
   );
 }

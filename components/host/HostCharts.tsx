@@ -1,6 +1,7 @@
 // Host-screen charts in plain SVG with currentColor: a labelled line chart with gridlines (replay) and the
 // reveal's box-minus-stay bars. Sized for the 2 m read.
 import { COPY } from "@/lib/copy";
+import { useBoxWidth } from "../useBoxWidth";
 import type { LapFrame } from "@/lib/types";
 
 export interface Line {
@@ -9,6 +10,8 @@ export interface Line {
   // 0: the player (heavy), 1: dashed, 2+: light.
   tier: number;
 }
+
+const svgText = { fontFamily: "var(--font-sans)", fontVariantNumeric: "tabular-nums", fontFeatureSettings: '"tnum" 1' } as const;
 
 const niceStep = (span: number) => {
   const raw = span / 3;
@@ -26,6 +29,8 @@ export function LineChart({
   invert = false,
   minSpan = 1,
   decimals = 1,
+  fit = false,
+  text = 1,
 }: {
   lines: Line[];
   xLabels: string[];
@@ -36,7 +41,13 @@ export function LineChart({
   invert?: boolean;
   minSpan?: number;
   decimals?: number;
+  // fit: a 1:1 viewBox measured from the box, so labels keep their size at any screen width; text scales labels.
+  fit?: boolean;
+  text?: number;
 }) {
+  const [box, measured] = useBoxWidth<HTMLDivElement>(width);
+  const vw = fit ? measured : width;
+  const fs = (n: number) => n * text;
   const vals = lines.flatMap((l) => l.values).filter((v): v is number => v != null);
   if (vals.length < 2 || xLabels.length < 2) return <p className="text-base">{COPY.tele.noTimes}</p>;
   let lo = Math.min(...vals);
@@ -49,10 +60,10 @@ export function LineChart({
   const step = niceStep(hi - lo);
   lo = Math.floor(lo / step) * step;
   hi = Math.ceil(hi / step) * step;
-  const L = 44;
-  const R = width - labelRight;
+  const L = fs(44);
+  const R = vw - fs(labelRight);
   const T = 8;
-  const B = height - 24;
+  const B = height - fs(24);
   const n = xLabels.length;
   const x = (i: number) => L + (i / (n - 1)) * (R - L);
   const y = (v: number) => (invert ? T + ((v - lo) / (hi - lo)) * (B - T) : B - ((v - lo) / (hi - lo)) * (B - T));
@@ -74,20 +85,22 @@ export function LineChart({
     })
     .filter((e): e is { l: Line; i: number; y: number } => !!e)
     .sort((a, b) => a.y - b.y);
-  for (let k = 1; k < ends.length; k++) if (ends[k].y - ends[k - 1].y < 13) ends[k].y = ends[k - 1].y + 13;
+  for (let k = 1; k < ends.length; k++) if (ends[k].y - ends[k - 1].y < fs(13)) ends[k].y = ends[k - 1].y + fs(13);
   return (
-    <svg viewBox={`0 0 ${width} ${height}`} className="block h-auto w-full" aria-hidden>
+    <div ref={box}>
+    <svg viewBox={`0 0 ${vw} ${height}`} className="block h-auto w-full" aria-hidden>
       {ticks.map((v) => (
         <g key={v}>
-          <line x1={L} x2={R} y1={y(v)} y2={y(v)} stroke="currentColor" strokeOpacity=".18" />
-          <text x={L - 6} y={y(v) + 3.5} fontSize="10" textAnchor="end" fill="currentColor" fillOpacity=".75" className="font-mono">
+          <line x1={L} x2={R} y1={y(v)} y2={y(v)} stroke="currentColor" strokeOpacity=".14" />
+          <text x={L - 8} y={y(v) + fs(3.5)} fontSize={fs(10)} fontWeight="500" textAnchor="end" fill="currentColor" fillOpacity=".65" style={svgText}>
             {v.toFixed(decimals)}
           </text>
         </g>
       ))}
+      <line x1={L} x2={R} y1={B} y2={B} stroke="currentColor" strokeOpacity=".28" />
       {xLabels.map((t, i) =>
         i % every === 0 || i === n - 1 ? (
-          <text key={i} x={x(i)} y={height - 6} fontSize="10" textAnchor="middle" fill="currentColor" fillOpacity=".75" className="font-mono">
+          <text key={i} x={x(i)} y={height - 6} fontSize={fs(10)} fontWeight="500" textAnchor="middle" fill="currentColor" fillOpacity=".65" style={svgText}>
             {t}
           </text>
         ) : null,
@@ -109,18 +122,19 @@ export function LineChart({
       {ends.map((e) => (
         <text
           key={`t-${e.l.label}`}
-          x={x(e.i) + 9}
-          y={e.y + 4}
-          fontSize="11"
-          fontWeight={e.l.tier === 0 ? 700 : 500}
+          x={x(e.i) + fs(9)}
+          y={e.y + fs(4)}
+          fontSize={fs(11.5)}
+          fontWeight={e.l.tier === 0 ? 800 : 600}
           fill="currentColor"
-          fillOpacity={e.l.tier === 0 ? 1 : 0.75}
-          className="font-mono"
+          fillOpacity={e.l.tier === 0 ? 1 : 0.7}
+          style={svgText}
         >
           {e.l.label}
         </text>
       ))}
     </svg>
+    </div>
   );
 }
 
@@ -143,7 +157,7 @@ export function DiffBars({ laps, values, upto, height = 420 }: { laps: number[];
       {ticks.map((v) => (
         <g key={v}>
           <line x1={L} x2={W} y1={y(v)} y2={y(v)} stroke="currentColor" strokeOpacity={v === 0 ? 0.9 : 0.18} strokeWidth={v === 0 ? 1.5 : 1} />
-          <text x={L - 8} y={y(v) + 4} fontSize="12" textAnchor="end" fill="currentColor" fillOpacity=".8" className="font-mono">
+          <text x={L - 8} y={y(v) + 4} fontSize="12" fontWeight="500" textAnchor="end" fill="currentColor" fillOpacity=".75" style={svgText}>
             {v > 0 ? `+${v}` : v} s
           </text>
         </g>
@@ -167,7 +181,7 @@ export function DiffBars({ laps, values, upto, height = 420 }: { laps: number[];
               />
             )}
             {(i % every === 0 || i === laps.length - 1) && (
-              <text x={x0 + bw / 2} y={height - 6} fontSize="12" textAnchor="middle" fill="currentColor" fillOpacity=".8" className="font-mono">
+              <text x={x0 + bw / 2} y={height - 6} fontSize="12" fontWeight="500" textAnchor="middle" fill="currentColor" fillOpacity=".75" style={svgText}>
                 L{lap}
               </text>
             )}

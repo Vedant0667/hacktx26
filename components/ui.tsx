@@ -1,4 +1,4 @@
-// Shared primitives for the Field system (docs/06-ui-rules.md): square bands, hairlines, mono labels.
+// Shared primitives for the Field system (docs/06-ui-rules.md): square bands, hairlines, small labels.
 // No cards, no radius, no shadows. Black is the primary action; the team colour is the decision field.
 import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode } from "react";
 import { forwardRef } from "react";
@@ -150,36 +150,37 @@ export function Section({
   );
 }
 
-// Standard compound colours, as data only. Hard is white with a dark outline.
-const COMPOUND_DOT: Record<string, { bg: string; fg: string; ring: string }> = {
-  S: { bg: "#DA291C", fg: "#FFFFFF", ring: "#DA291C" },
-  M: { bg: "#FFD12E", fg: "#0E0E0E", ring: "#C9A100" },
-  H: { bg: "#FFFFFF", fg: "#0E0E0E", ring: "#0E0E0E" },
-  I: { bg: "#43B02A", fg: "#FFFFFF", ring: "#43B02A" },
-  W: { bg: "#0067AD", fg: "#FFFFFF", ring: "#0067AD" },
+// Standard compound colours, as data only: the ring and the letter on a near-black disc, like a broadcast
+// compound badge. The disc reads on white, on black and on any team-colour field.
+const COMPOUND_RING: Record<string, string> = {
+  S: "#E1251B",
+  M: "#FFD12E",
+  H: "#F4F4F4",
+  I: "#43B02A",
+  W: "#1F7FD6",
 };
 
-// One tyre chip everywhere: compound letter in a coloured circle plus age in laps, on a small white backing
-// so it reads on white and on any team-colour field without competing with it.
-export function TyreChip({ compound, age, size = "md", bare = false }: { compound: string | null; age?: number | null; size?: "sm" | "md" | "lg"; bare?: boolean }) {
+// One tyre chip everywhere: the compound badge plus the age in laps, in the surrounding ink.
+export function TyreChip({ compound, age, size = "md" }: { compound: string | null; age?: number | null; size?: "sm" | "md" | "lg"; bare?: boolean }) {
   const l = compoundLetter(compound);
-  const dot = l ? COMPOUND_DOT[l] : null;
-  const d = { sm: "size-4 text-[9px]", md: "size-[18px] text-[10px]", lg: "size-6 text-xs" }[size];
+  const ring = l ? COMPOUND_RING[l] : "#8a8a8a";
+  const d = { sm: "size-[18px] text-[9.5px]", md: "size-[22px] text-[11px]", lg: "size-7 text-[13px]" }[size];
+  const w = { sm: 2.25, md: 2.75, lg: 3.25 }[size];
   const label = COPY.tyreLabel(COPY.compounds[compound?.toUpperCase() ?? ""] ?? compound ?? "", age ?? null);
   return (
-    <span
-      className={`inline-flex shrink-0 items-center gap-1 align-middle font-mono font-bold leading-none text-ink ${bare ? "" : "bg-white py-0.5 pl-0.5 pr-1.5 shadow-[inset_0_0_0_1px_rgba(14,14,14,0.18)]"}`}
-      aria-label={label}
-      title={label}
-    >
+    <span className="inline-flex shrink-0 items-center gap-1 align-middle leading-none" aria-label={label} title={label}>
       <span
         aria-hidden
-        className={`inline-grid ${d} place-items-center rounded-full`}
-        style={dot ? { background: dot.bg, color: dot.fg, boxShadow: `inset 0 0 0 1.5px ${dot.ring}` } : { boxShadow: "inset 0 0 0 1.5px #8a8a8a" }}
+        className={`inline-grid ${d} place-items-center rounded-full bg-[#141414] font-black leading-none text-white`}
+        style={{ boxShadow: `inset 0 0 0 ${w}px ${ring}, 0 0 0 1px rgba(255,255,255,0.18)` }}
       >
         {l ?? "?"}
       </span>
-      {age != null && <span aria-hidden className={size === "lg" ? "text-sm" : "text-[11px]"}>{age}</span>}
+      {age != null && (
+        <span aria-hidden className={`nums font-bold ${size === "lg" ? "text-base" : size === "md" ? "text-sm" : "text-xs"}`}>
+          {age}
+        </span>
+      )}
     </span>
   );
 }
@@ -203,12 +204,12 @@ function Hatch({ className }: { className: string }) {
 // never blurs into an orange or yellow team field. Nothing on green.
 export function TrackStrip({ status, size = "phone" }: { status: TrackStatus; size?: "phone" | "host" }) {
   if (status === "GREEN") return null;
-  const h = size === "host" ? "h-12 text-lg" : "h-10 text-sm";
+  const h = size === "host" ? "h-11 text-lg" : "h-10 text-sm";
   const end = size === "host" ? "w-16" : "w-8";
   return (
     <div role="status" className={`relative flex w-full shrink-0 items-stretch border-y-[3px] border-ink bg-[#FBD530] text-ink ${h}`}>
       <Hatch className={`${end} h-full`} />
-      <span className="flex flex-1 items-center justify-center font-mono font-bold uppercase tracking-[0.08em]">{COPY.replay.flags[status]}</span>
+      <span className="flex flex-1 items-center justify-center font-extrabold uppercase tracking-[0.16em]">{COPY.replay.flags[status]}</span>
       <Hatch className={`${end} h-full`} />
     </div>
   );
@@ -217,7 +218,7 @@ export function TrackStrip({ status, size = "phone" }: { status: TrackStatus; si
 // Small SC / VSC chip for the lap counter. Nothing on green.
 export function ScChip({ status, className = "" }: { status: TrackStatus; className?: string }) {
   if (status === "GREEN") return null;
-  return <span className={`inline-flex items-center border-2 border-ink bg-[#FBD530] px-1.5 font-mono text-[0.7em] font-bold leading-[1.3] text-ink ${className}`}>{status}</span>;
+  return <span className={`inline-flex items-center bg-[#FBD530] px-[0.4em] text-[0.7em] font-extrabold leading-[1.45] tracking-[0.04em] text-ink shadow-[inset_0_0_0_1px_rgba(14,14,14,0.35)] ${className}`}>{status}</span>;
 }
 
 export function ConnNotice({ conn, code }: { conn: Conn; code: string }) {
@@ -292,6 +293,41 @@ export function DrainBar({ total, elapsedS, className = "bg-current" }: { total:
     <div className="h-1 w-full overflow-hidden" aria-hidden>
       <div className={`countdown-bar h-full ${className}`} style={{ animationDuration: `${total}s`, animationDelay: `-${elapsedS}s` }} />
     </div>
+  );
+}
+
+// Tabular digits with proportional punctuation: each digit run is tabular, so "97.478" and "0:26" keep a
+// narrow point and colon while columns and clocks stay aligned.
+export function TabNum({ value }: { value: string }) {
+  return (
+    <>
+      {value.split(/(\d+)/).map((part, i) =>
+        /^\d+$/.test(part) ? (
+          <span key={i} className="tnum">
+            {part}
+          </span>
+        ) : (
+          part
+        ),
+      )}
+    </>
+  );
+}
+
+// A value with its unit set smaller and lighter: "+1.5 s", "17.5 s", "23 laps", "0.3/lap". The text is unchanged.
+export function Num({ value, className = "" }: { value: string; className?: string }) {
+  const m = /^(.*\d)\s?(s|s\/lap|\/lap|laps?|%)$/.exec(value);
+  return (
+    <span className={`nums ${className}`}>
+      {m ? (
+        <>
+          {m[1]}
+          <span className="unit">{m[2]}</span>
+        </>
+      ) : (
+        value
+      )}
+    </span>
   );
 }
 

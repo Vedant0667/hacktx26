@@ -5,7 +5,7 @@ import { COPY } from "@/lib/copy";
 import { fmtGap } from "@/lib/client/race";
 import { intervals, type DataMode } from "@/lib/client/mode";
 import type { DriverFrame } from "@/lib/types";
-import { Tyre } from "./ui";
+import { TabNum, Tyre } from "./ui";
 
 export function Tower({
   drivers,
@@ -81,11 +81,11 @@ export function Tower({
               style={{ height: ROW, transform: `translateY(${(slot.get(d.number) ?? 0) * ROW}px)`, gridTemplateColumns: cols.replaceAll("_", " ") }}
               aria-current={mine || undefined}
             >
-              <span className="nums text-right">{d.position}</span>
+              <span className="tnum text-right font-semibold">{d.position}</span>
               <span className="h-4 w-1" style={d.team_colour ? { backgroundColor: d.team_colour } : undefined} aria-hidden />
               <span className="font-black tracking-tight">{d.code}</span>
-              <span className="nums text-right">{gap ?? <span className="meta">{COPY.replay.leader}</span>}</span>
-              {showInt && <span className="nums text-right">{ints?.get(d.number) != null ? `+${ints.get(d.number)!.toFixed(1)}` : ""}</span>}
+              <span className="nums text-right font-medium">{gap ? <TabNum value={gap} /> : <span className="meta opacity-80">{COPY.replay.leader}</span>}</span>
+              {showInt && <span className="nums text-right font-medium opacity-80">{ints?.get(d.number) != null ? <TabNum value={`+${ints.get(d.number)!.toFixed(1)}`} /> : ""}</span>}
               {showTyre && <Tyre compound={d.compound} age={d.tyre_age} />}
               {showPitCol && (
                 <span className="meta">

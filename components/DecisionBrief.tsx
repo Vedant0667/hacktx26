@@ -99,7 +99,7 @@ export function GapLine({ frame, playerNumber, rejoin, size = "host" }: { frame:
       <div className="absolute inset-x-0 h-0.5 bg-current opacity-30" style={{ top: line }} />
       {cars.map((c, i) => (
         <div key={c.number} className="absolute flex -translate-x-1/2 flex-col items-center" style={{ left: x(c.gap_to_leader_s as number), top: (i % rows) * rowH }}>
-          <span className={`font-mono font-bold leading-none ${text}`}>{c.code}</span>
+          <span className={`font-bold leading-none ${text}`}>{c.code}</span>
           <span className="mt-1 w-px bg-current opacity-30" style={{ height: line - (i % rows) * rowH - 12 }} />
           <span className="size-2.5 rounded-full bg-current opacity-60" />
         </div>
@@ -109,13 +109,13 @@ export function GapLine({ frame, playerNumber, rejoin, size = "host" }: { frame:
           <div className="grow-x absolute h-[3px] bg-current" style={{ top: line - 0.5, left: x(myG), width: `calc(${x(outG)} - ${x(myG)})` }} />
           <div className="ghost absolute flex -translate-x-1/2 flex-col items-center gap-1" style={{ left: x(outG), top: line - 8 }}>
             <span className="size-4 rounded-full border-[3px] border-current bg-transparent" />
-            <span className={`whitespace-nowrap font-mono font-bold ${text}`}>{COPY.rejoin.out(rejoin.pos)}</span>
+            <span className={`nums whitespace-nowrap font-bold ${text}`}>{COPY.rejoin.out(rejoin.pos)}</span>
           </div>
         </>
       )}
       <div className="absolute flex -translate-x-1/2 flex-col items-center gap-1" style={{ left: x(myG), top: line - 7 }}>
         <span className="size-3.5 rounded-full bg-current" />
-        <span className={`font-mono font-black ${text}`}>{me.code}</span>
+        <span className={`font-black ${text}`}>{me.code}</span>
       </div>
     </figure>
   );

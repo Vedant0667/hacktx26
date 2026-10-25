@@ -35,7 +35,7 @@ import { Centered, DarkModeToggle, Freeze, PlayerSlots, Top, retryLater } from "
 import { LineChart } from "../host/HostCharts";
 import { HostQr } from "../host/HostQr";
 import { Tower } from "../Tower";
-import { Brand, Button, ConnNotice, ModeToggle, ScChip, TrackStrip } from "../ui";
+import { Brand, Button, ConnNotice, ModeToggle, Num, ScChip, TrackStrip } from "../ui";
 import { RaceProgress, Triggers } from "./parts";
 import { HostSummary, Scoring } from "../EndScreen";
 import { useSummary } from "@/lib/client/results";
@@ -173,14 +173,14 @@ export function RaceHost({
       const others = need.filter((c) => c !== car);
       const idle = raceCars(race).filter((c) => !need.includes(c));
       const why = (
-        <div className="flex flex-col gap-3">
-          <span className="meta">{COPY.race.whyTitle}</span>
+        <div className="flex flex-col gap-2.5">
+          <span className="meta opacity-80">{COPY.race.whyTitle}</span>
           <Triggers freeze={f} />
           {others.map((c) => {
             const o = freeze.drivers[c];
             return o ? <Triggers key={c} freeze={o} showCar compact /> : null;
           })}
-          {idle.length > 0 && <p className="font-mono text-sm font-bold">{COPY.race.noCallHost(idle)}</p>}
+          {idle.length > 0 && <p className="text-sm font-semibold opacity-85">{COPY.race.noCallHost(idle)}</p>}
         </div>
       );
       body = (
@@ -276,7 +276,7 @@ function RaceLobbyView({
       <div className="grid min-h-0 grid-cols-12 items-center gap-x-6">
         <section className="col-span-6 flex flex-col">
           <span className="meta">{COPY.host.roomCode}</span>
-          <h1 className="nums mt-3 text-[9.375rem] font-bold leading-none tracking-[-0.03em]" aria-label={COPY.room.heading(code)}>
+          <h1 className="mt-4 text-[9.375rem] font-black leading-[0.86] tracking-[-0.04em]" aria-label={COPY.room.heading(code)}>
             {code}
           </h1>
           <p className="mt-4 max-w-[30ch] text-[1.625rem] font-medium leading-snug text-[#cfcfcf]">
@@ -286,7 +286,7 @@ function RaceLobbyView({
             {joinHref ? <HostQr value={joinHref} size={200} label={COPY.room.scanAlt(joinUrl)} /> : <div className="size-[200px] bg-[#222]" />}
             <div className="flex flex-col items-start gap-4">
               <Brand kind="mark" height={120} label={false} />
-              <p className="font-mono text-[15px] leading-relaxed text-[#bdbdbd]">{joinUrl}</p>
+              <p className="nums text-[15px] font-medium leading-relaxed text-[#bdbdbd]">{joinUrl}</p>
             </div>
           </div>
         </section>
@@ -301,7 +301,7 @@ function RaceLobbyView({
           </div>
           <p className="mt-4 text-xl font-bold">{COPY.race.raceLine(r.name, r.total_laps)}</p>
           {!same && (
-            <p className="mt-2 font-mono text-sm text-[#bdbdbd]">
+            <p className="mt-2 text-sm font-medium text-[#bdbdbd]">
               {picks.length
                 ? picks.map((c) => COPY.host.drives(c, race.players.filter((p) => carFor(p.name) === c).map((p) => p.name))).join(" · ")
                 : COPY.race.pickWait}
@@ -404,6 +404,8 @@ function ReplayView({
               <div className="mt-2">
                 <LineChart
                   invert
+                  fit
+                  text={1.3}
                   width={600}
                   height={260}
                   xLabels={xLabels}
@@ -420,20 +422,20 @@ function ReplayView({
             {watch && (
               <div className="border-t-2 border-ink pt-2">
                 <span className="meta">{COPY.host.gapTitle(watch.code, watchSide)}</span>
-                <p className="nums mt-1 text-[1.875rem] font-bold leading-none">{watch.now != null ? COPY.tele.gapS(watch.now) : "–"}</p>
-                <p className="nums mt-1 text-sm">{COPY.host.rate(watch.rate)}</p>
+                <p className="mt-2 text-[2.25rem] font-extrabold leading-none tracking-[-0.03em]">{watch.now != null ? <Num value={COPY.tele.gapS(watch.now)} /> : "–"}</p>
+                <p className="nums mt-1.5 text-sm font-medium opacity-75">{COPY.host.rate(watch.rate)}</p>
               </div>
             )}
             {tele && (
               <div className="border-t-2 border-ink pt-2">
                 <span className="meta">{COPY.host.tyreTitle}</span>
-                <p className="nums mt-1 text-[1.875rem] font-bold leading-none">
+                <p className="nums mt-2 text-[1.875rem] font-extrabold leading-none tracking-[-0.02em]">
                   {COPY.host.tyreNow(tele.deg.compound ? (COPY.compounds[tele.deg.compound] ?? tele.deg.compound) : "–", tele.deg.age)}
                 </p>
-                <p className="nums mt-1 text-sm">{tele.deg.best != null ? COPY.host.bestSoFar(lapTimeText(tele.deg.best)) : COPY.host.noTimes}</p>
+                <p className="nums mt-1.5 text-sm font-medium opacity-75">{tele.deg.best != null ? COPY.host.bestSoFar(lapTimeText(tele.deg.best)) : COPY.host.noTimes}</p>
               </div>
             )}
-            <p className="border-t-2 border-ink pt-2 text-xl leading-snug">
+            <p className="border-t-2 border-ink pt-3 text-xl font-medium leading-snug">
               <b className="font-black">{COPY.race.audible.title}.</b> {COPY.race.audible.hint}
             </p>
           </div>
@@ -447,10 +449,10 @@ function ReplayView({
 function Locked({ left, onResume }: { left: number; onResume: () => void }) {
   return (
     <main className="flex h-dvh flex-col justify-center gap-6 px-14">
-      <h1 className="display text-[5rem] leading-none">{COPY.end.lockedTitle}</h1>
-      <p className="text-2xl font-medium">{COPY.end.lockedSub}</p>
-      <div className="flex items-center gap-6">
-        <span className="nums text-xl font-bold">{COPY.end.lockedIn(left)}</span>
+      <h1 className="display text-[5rem] leading-[0.95]">{COPY.end.lockedTitle}</h1>
+      <p className="max-w-[48ch] text-2xl font-medium leading-snug text-ink-2">{COPY.end.lockedSub}</p>
+      <div className="mt-2 flex items-center gap-6 border-t-2 border-ink pt-5">
+        <span className="nums text-xl font-semibold">{COPY.end.lockedIn(left)}</span>
         <Button variant="secondary" size="sm" onClick={onResume}>
           {COPY.race.resumeNow}
         </Button>

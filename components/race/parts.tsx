@@ -53,7 +53,7 @@ export function RaceProgress({
         />
       </div>
       <div
-        className={`relative ${size === "host" ? "h-4 text-xs" : "h-3.5 text-[11px]"} font-mono font-bold`}
+        className={`nums relative ${size === "host" ? "h-4 text-[13px]" : "h-3.5 text-[11px]"} font-semibold`}
       >
         <span className="absolute left-0">L1</span>
         {marks.map((m) => (
@@ -84,7 +84,7 @@ export function Triggers({
   showCar?: boolean;
   compact?: boolean;
 }) {
-  const chip = size === "host" ? "h-9 px-3 text-base" : "h-7 px-2 text-sm";
+  const chip = size === "host" ? "h-9 px-3.5 text-base" : "h-7 px-2.5 text-sm";
   const lines = freeze.triggers.map((t) => ({ type: t.type, text: triggerText(t.type, t.info, freeze.driver_code) })).filter((x) => x.text);
   return (
     <div className="flex flex-col gap-2">
@@ -101,7 +101,7 @@ export function Triggers({
           return (
             <li
               key={t.type}
-              className={`inline-flex items-center font-bold ${chip} ${flag ? "border-2 border-ink bg-[#FBD530] text-ink" : "border-2 border-current"}`}
+              className={`inline-flex items-center font-bold leading-none ${chip} ${flag ? "bg-[#FBD530] text-ink shadow-[inset_0_0_0_1px_rgba(14,14,14,0.35)]" : "bg-current/12"}`}
             >
               {COPY.race.triggers[t.type] ?? t.type}
             </li>
@@ -161,7 +161,7 @@ export function RaceScores({
               <span className="flex min-w-0 items-baseline gap-2">
                 <b className="truncate font-black tracking-tight">{r.name}</b>
                 {carOf?.(r.name) && (
-                  <span className="font-mono text-[11px] font-bold">
+                  <span className="text-[11px] font-bold opacity-80">
                     {carOf(r.name)}
                   </span>
                 )}
