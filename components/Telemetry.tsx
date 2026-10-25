@@ -527,7 +527,8 @@ export function StintTable({ t, normal }: { t: Telemetry; normal: number | null 
   );
 }
 
-// Where a stop rejoins: nearby cars as ticks on a gap-to-leader axis, the projected spot as a square.
+// Where a stop rejoins: nearby cars as ticks on a gap-to-leader axis, the projected spot as a square. Each tick
+// is labelled with its gap to that spot (minus = ahead of where you rejoin, plus = behind).
 export function RejoinStrip({ t, frameCars }: { t: Telemetry; frameCars: { code: string; gap: number | null; number: number }[] }) {
   // 1:1 viewBox from the box width, so the strip keeps its 60 px height and label size at any width.
   const [box, vw] = useBoxWidth<HTMLDivElement>(W);
@@ -554,7 +555,7 @@ export function RejoinStrip({ t, frameCars }: { t: Telemetry; frameCars: { code:
               {c.code}
             </text>
             <text x={x(c.gap as number)} y="54" fontSize="10" fontWeight="500" textAnchor="middle" fill="currentColor" fillOpacity=".7" style={svgText}>
-              {(c.gap as number).toFixed(1)}
+              {COPY.tele.gapToYou((c.gap as number) - out)}
             </text>
           </g>
         ))}

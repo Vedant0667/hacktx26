@@ -366,8 +366,10 @@ export const COPY = {
     rateShort: (r: number) => `${r > 0 ? "▲" : "▼"}${Math.abs(r).toFixed(1)}/lap`,
     sideAhead: "ahead",
     sideBehind: "behind",
-    gapAhead: (s: number) => `+${s.toFixed(1)} s`,
-    gapBehind: (s: number) => `${s.toFixed(1)} s`,
+    // F1 convention: minus for a car ahead of you, plus for a car behind.
+    gapAhead: (s: number) => `−${s.toFixed(1)} s`,
+    gapBehind: (s: number) => `+${s.toFixed(1)} s`,
+    gapToYou: (d: number) => `${d < 0 ? "−" : "+"}${Math.abs(d).toFixed(1)}`,
     youNow: (pos: number) => `P${pos}`,
     undercut: "Undercut clock",
     undercutMeta: (loss: number, t: "SC" | "VSC" | "GREEN") => `pit loss ${loss.toFixed(1)} s${t === "GREEN" ? "" : ` (${t})`}`,
