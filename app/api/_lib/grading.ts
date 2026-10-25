@@ -11,6 +11,7 @@ import {
   getLobbyState,
   getRaceCalls,
   releaseGrading,
+  touchGrading,
   saveBenchmarkGrade,
   saveRaceCallGrade,
   saveSubmissionGrade,
@@ -422,6 +423,7 @@ export async function ensureRaceGraded(code: string, meta: LobbyMeta, race: Race
     // audibles rather than on freezes.
     const [freezeCalls, audibles] = freezesFirst(todo);
     await Promise.all([...freezeCalls.map(gradeCall), ...missing.map(gradeBench)]);
+    await touchGrading(code, "race");
     await Promise.all(audibles.map(gradeCall));
   } finally {
     await releaseGrading(code, "race");

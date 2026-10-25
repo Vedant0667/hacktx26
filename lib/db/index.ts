@@ -128,11 +128,12 @@ export async function createLobby(
 // rate-limit windows (IP addresses) a day. Runs daily from the Vercel Cron (/api/cron/purge) and
 // opportunistically on lobby creation. muse_calls holds no player text and stays for the spend cap.
 export async function purgeExpired(): Promise<{ lobbies: number; rate_limits: number }> {
+  // Counted in the database: returning every deleted row over HTTP would not scale to a flood of limit rows.
   const [lobbies, limits] = (await sql().transaction([
-    sql().query(`delete from lobbies where created_at < now() - interval '24 hours' returning code`),
-    sql().query(`delete from rate_limits where window_start < now() - interval '1 day' returning bucket`),
-  ])) as unknown as [unknown[], unknown[]];
-  return { lobbies: lobbies.length, rate_limits: limits.length };
+    sql().query(`with d as (delete from lobbies where created_at < now() - interval '24 hours' returning 1) select count(*)::int as n from d`),
+    sql().query(`with d as (delete from rate_limits where window_start < now() - interval '1 day' returning 1) select count(*)::int as n from d`),
+  ])) as unknown as [{ n: number }[], { n: number }[]];
+  return { lobbies: lobbies[0].n, rate_limits: limits[0].n };
 }
 
 // ---- Rate limits (table rate_limits: fixed windows, one row per bucket, key and window) ----
@@ -173,12 +174,15 @@ export async function guardedLobbyRead(
   code: string,
   opts: { readWindowS: number; missWindowS: number; withState: boolean },
 ): Promise<LobbyReadGuard> {
+  // The per-lobby row is written only for a code that exists: guessed codes must not add one row each (the
+  // miss limit below counts them per IP instead).
   const first = (await sql().transaction([
     sql().query(
-      `insert into rate_limits (bucket, key, window_start, count) values ('lobby_read', $1, ${WINDOW("$2")}, 1)
+      `insert into rate_limits (bucket, key, window_start, count)
+       select 'lobby_read', $1, ${WINDOW("$2")}, 1 where exists (select 1 from lobbies where code = $3)
        on conflict (bucket, key, window_start) do update set count = rate_limits.count + 1
        returning count, ceil($2::int - mod(extract(epoch from now()), $2::int))::int as retry_after_s`,
-      [`${ip}:${code}`, opts.readWindowS],
+      [`${ip}:${code}`, opts.readWindowS, code],
     ),
     sql().query(
       `insert into rate_limits (bucket, key, window_start, count) values ('lobby_read_all', $1, ${WINDOW("$2")}, 1)
@@ -188,7 +192,7 @@ export async function guardedLobbyRead(
     ),
     sql().query(`select exists(select 1 from lobbies where code = $1) as found`, [code]),
   ])) as unknown as [{ count: number; retry_after_s: number }[], { count: number }[], { found: boolean }[]];
-  const read = first[0][0];
+  const read = first[0][0] ?? { count: 0, retry_after_s: 0 };
   const all = first[1][0];
   const found = first[2][0].found;
   if (found) {
@@ -709,6 +713,11 @@ export async function claimGrading(code: string, scope: string): Promise<boolean
 
 export async function releaseGrading(code: string, scope: string): Promise<void> {
   await query(`update grading_claims set status = 'done', updated_at = now() where lobby_code = $1 and scope = $2`, [code, scope]);
+}
+
+// Keeps a held claim fresh between grading stages, so a slow Muse stage does not let a second grader in.
+export async function touchGrading(code: string, scope: string): Promise<void> {
+  await query(`update grading_claims set updated_at = now() where lobby_code = $1 and scope = $2 and status = 'pending'`, [code, scope]);
 }
 
 // The graded row: reasoning, verdict, credited ideas (also in factors_named), points, and graded_at.

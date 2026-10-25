@@ -18,6 +18,9 @@ const bad = (raw: string, reason?: string) => {
 assert.equal(ok("Zoë"), "Zoë");
 assert.equal(ok("Zoë"), "Zoë"); // NFD composes under NFKC
 assert.equal(ok("José María"), "José María");
+// Real names that contain a listed word pass; the plain word still fails.
+for (const real of ["Dikshit", "Shitij", "Analise", "Cumming", "Cummings"]) assert.equal(ok(real), real, `${real} rejected`);
+assert.equal(checkName("shit").ok, false);
 assert.equal(ok("  Max   Power \t"), "Max Power");
 assert.equal(ok("Ｓａｍ"), "Sam"); // full-width
 assert.equal(ok("山田 太郎"), "山田 太郎");

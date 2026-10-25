@@ -71,7 +71,8 @@ export function lobbyCallCap(purpose: string, mode: "race" | "moment", env: Env 
 // One warning per lobby per reason (a capped race lobby would otherwise log every refused call).
 const skipsLogged = new Set<string>();
 export function logBudgetSkip(lobbyCode: string | null, purpose: string, reason: MuseSkipReason): boolean {
-  const key = `${lobbyCode ?? "-"}:${reason}`;
+  // Calls without a lobby (benchmarks) log once per hour, not once per instance.
+  const key = `${lobbyCode ?? `-${Math.floor(Date.now() / 3_600_000)}`}:${reason}`;
   if (skipsLogged.has(key)) return false;
   if (skipsLogged.size >= 5000) skipsLogged.clear(); // a long-lived instance must not grow without bound
   skipsLogged.add(key);

@@ -26,14 +26,14 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
     throw new HttpError(409, "Your call is already in");
   }
 
-  const tooMany = (s: number) => new HttpError(429, "Too many voice notes for this call. Type it instead.", s);
+  const tooMany = (s: number, bucket: string) => new HttpError(429, "Too many voice notes for this call. Type it instead.", s, bucket);
   const mine = await hitRateLimit("asr_player", `${code}:${player}:${target.key}`, ASR_PER_CALL_WINDOW_S);
-  if (mine.count > ASR_PER_CALL) throw tooMany(mine.retry_after_s);
+  if (mine.count > ASR_PER_CALL) throw tooMany(mine.retry_after_s, "asr_player");
   const ipKey = clientIp(req);
   const ip = await hitRateLimit("asr_ip", `${ipKey}:${code}`, ASR_PER_IP_WINDOW_S);
-  if (ip.count > ASR_PER_IP) throw tooMany(ip.retry_after_s);
+  if (ip.count > ASR_PER_IP) throw tooMany(ip.retry_after_s, "asr_ip");
   const ipAll = await hitRateLimit("asr_ip_all", ipKey, ASR_PER_IP_ALL_WINDOW_S);
-  if (ipAll.count > ASR_PER_IP_ALL) throw tooMany(ipAll.retry_after_s);
+  if (ipAll.count > ASR_PER_IP_ALL) throw tooMany(ipAll.retry_after_s, "asr_ip_all");
 
   const pcm = await readPcm(req);
   const r = await museTranscribe(pcm, { lobbyCode: code, decisionId: target.decisionId });

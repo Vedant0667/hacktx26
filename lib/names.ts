@@ -9,7 +9,14 @@ const MAX_MARKS_IN_A_ROW = 2;
 // Names a player cannot take, after normalisation and ignoring case, spaces and punctuation.
 const RESERVED = ["engine", "host", "admin", "outpace", "muse", "race control"];
 
-const matcher = new RegExpMatcher({ ...englishDataset.build(), ...englishRecommendedTransformers });
+// Real names the dataset would otherwise flag because they contain a listed word. Dick stays blocked.
+const REAL_NAMES = ["dikshit", "shitij", "analise", "cumming", "cummings"];
+const dataset = englishDataset.build();
+const matcher = new RegExpMatcher({
+  ...dataset,
+  whitelistedTerms: [...(dataset.whitelistedTerms ?? []), ...REAL_NAMES],
+  ...englishRecommendedTransformers,
+});
 
 // Letters and digits only, lower case: "Race  Control", "race-control" and "RACECONTROL" all match.
 const fold = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");

@@ -77,7 +77,7 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
   const own = presented ? await getLobbyMeta(code, name) : null;
   if (!(own?.is_player && tokenMatches(presented, own.player_token_hash))) {
     const hit = await hitRateLimit("join_new", `${clientIp(req)}:${code}`, 600);
-    if (hit.count > 30) throw new HttpError(429, "Too many requests. Wait a moment and try again.", hit.retry_after_s);
+    if (hit.count > 30) throw new HttpError(429, "Too many requests. Wait a moment and try again.", hit.retry_after_s, "join_new");
   }
   const added = await addPlayer(code, name, hashToken(token), presented ? hashToken(presented) : null, driver || null);
   if (added.result === "no_lobby") throw new HttpError(404, "Lobby not found");
