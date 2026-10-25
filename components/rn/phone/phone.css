@@ -1,0 +1,39 @@
+/* Race Night phone views (join, pick, waiting, replay, no-call). Scoped under .rn .rnp. */
+.rn .rnp { min-height: 100dvh; width: 100%; max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; color: #fff; background: #07080A; }
+.rn .rnp-head { display: flex; align-items: center; justify-content: space-between; height: 64px; padding: 0 24px; flex-shrink: 0; }
+.rn .rnp-room { font-family: var(--font-rn-cond), sans-serif; font-weight: 800; font-size: 14px; letter-spacing: 0.14em; text-transform: uppercase; color: #A9AEB8; }
+.rn .rnp-cond { font-family: var(--font-rn-cond), var(--font-rn), sans-serif; }
+.rn .rnp-label { font-family: var(--font-rn-cond), sans-serif; font-weight: 800; font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: #A9AEB8; }
+.rn .rnp-hero { position: relative; min-height: 220px; margin-left: 6px; flex-shrink: 0; overflow: hidden; color: var(--on-team); padding: 36px 24px 28px 74px; }
+.rn .rnp-hero::before { content: ""; position: absolute; inset: 0 -60px 0 30px; background: var(--team); transform: skewX(-14deg); transform-origin: bottom left; }
+.rn .rnp-hero > * { position: relative; }
+.rn .rnp-hero .rnp-label { color: inherit; }
+.rn .rnp-body { flex: 1; display: flex; flex-direction: column; padding: 0 24px 24px; }
+.rn .rnp-input { width: 100%; height: 52px; background: #12151A; border: 0; border-bottom: 3px solid #fff; color: #fff; padding: 0 16px; font: 700 20px var(--font-rn), sans-serif; outline: none; }
+.rn .rnp-input::placeholder { color: #A9AEB8; font-weight: 500; font-size: 17px; }
+.rn .rnp-input:focus-visible { border-bottom-color: #FFD43B; }
+.rn .rnp-check { width: 28px; height: 24px; flex-shrink: 0; display: inline-grid; place-items: center; transform: skewX(-12deg); border: 2px solid #E9EBEE; color: #07080A; margin-top: 2px; }
+.rn .rnp-check > * { transform: skewX(12deg); }
+.rn input:checked + .rnp-check { background: #E9EBEE; }
+.rn input:focus-visible + .rnp-check { outline: 3px solid #FFD43B; outline-offset: 2px; }
+.rn .rnp-drv { position: relative; display: grid; grid-template-columns: 28px 34px 52px minmax(0, 1fr) auto; align-items: center; column-gap: 10px; min-height: 60px; padding: 6px 22px; cursor: pointer; color: #fff; }
+.rn .rnp-drv::before { content: ""; position: absolute; inset: 0; background: #12151A; border: 2px solid #3A3F48; transform: skewX(-12deg); z-index: 0; }
+.rn .rnp-drv > *:not(input) { position: relative; z-index: 1; }
+.rn .rnp-drv[data-on="true"] { color: var(--on-team); }
+.rn .rnp-drv[data-on="true"]::before { background: var(--team); border-color: var(--team); }
+.rn .rnp-drv:has(input:focus-visible)::before { outline: 3px solid #FFD43B; outline-offset: 2px; }
+.rn .rnp-drv .rnp-check { border-color: currentColor; margin-top: 0; }
+.rn .rnp-drv[data-on="true"] .rnp-check { background: #07080A; color: #fff; border-color: #07080A; }
+.rn .rnp-err { color: #FF6B6B; font-weight: 700; font-size: 15px; }
+.rn .rnp-dock { position: sticky; bottom: 0; padding: 12px 24px calc(16px + env(safe-area-inset-bottom)); background: linear-gradient(to top, #07080A 70%, transparent); z-index: 5; }
+.rn .rnp-row { display: flex; align-items: center; justify-content: space-between; min-height: 44px; border-bottom: 1px solid #1F232A; font-weight: 700; font-size: 17px; gap: 12px; }
+.rn .rnp-dots { display: inline-flex; gap: 6px; flex-shrink: 0; }
+.rn .rnp-dots i { width: 14px; height: 14px; border-radius: 50%; background: #1F232A; animation: rnp-dot 1.6s infinite; }
+.rn .rnp-dots i:nth-child(2) { animation-delay: .2s }
+.rn .rnp-dots i:nth-child(3) { animation-delay: .4s }
+.rn .rnp-dots i:nth-child(4) { animation-delay: .6s }
+.rn .rnp-dots i:nth-child(5) { animation-delay: .8s }
+@keyframes rnp-dot { 0%, 60%, 100% { background: #1F232A } 30% { background: #FF1E1E } }
+@media (prefers-reduced-motion: reduce) { .rn .rnp-dots i { animation: none; } }
+.rn .rnp-foot { margin-top: auto; border-top: 1px solid #1F232A; padding: 18px 24px calc(18px + env(safe-area-inset-bottom)); display: flex; align-items: center; gap: 14px; }
+.rn .rnp-bar { position: absolute; left: 0; top: 0; height: 4px; background: var(--team); transition: width .7s ease-out; }
