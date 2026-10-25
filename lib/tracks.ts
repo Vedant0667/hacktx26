@@ -298,6 +298,10 @@ export function buildScene(g: TrackGeometry, markers: readonly MapMarker[], opts
     const text = m.label;
     const tw = fs * 0.5 * text.length + fs * 0.08 * text.length; // condensed caps estimate incl. letter-spacing
     const th = fs * 0.72;
+    // Rendered SVG text boxes run larger than this estimate (mixed case, ascent/descent), so keep labels
+    // apart with a padded box when testing against each other.
+    const padX = fs * 0.25 * text.length * 0.5 + u(6);
+    const padY = fs * 0.35 + u(4);
     const gap = u(5) + (big ? (u(18) - r) * 0.35 : 0);
     let best: { pen: number; cx: number; cy: number; box: [number, number, number, number] } | null = null;
     for (let deg = 0; deg < 360; deg += 15) {
@@ -326,8 +330,8 @@ export function buildScene(g: TrackGeometry, markers: readonly MapMarker[], opts
       }
       for (const l of labels) {
         const [lx0, lx1, ly0, ly1] = l.box;
-        const ix = Math.max(0, Math.min(bx1, lx1) - Math.max(bx0, lx0) + u(3));
-        const iy = Math.max(0, Math.min(by1, ly1) - Math.max(by0, ly0) + u(3));
+        const ix = Math.max(0, Math.min(bx1 + padX, lx1) - Math.max(bx0 - padX, lx0) + u(3));
+        const iy = Math.max(0, Math.min(by1 + padY, ly1) - Math.max(by0 - padY, ly0) + u(3));
         if (ix > 0 && iy > 0) pen += u(400) + ix * iy * 8; // labels must never touch each other
       }
       if (bx0 < vx + u(2) || by0 < vy + u(2) || bx1 > vx + vw - u(2) || by1 > vy + vh - u(2)) pen += 1e5;

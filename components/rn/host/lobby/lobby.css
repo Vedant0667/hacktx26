@@ -36,7 +36,7 @@
 .rnl-code {
   font-family: var(--rn-display, inherit);
   font-weight: 900;
-  font-size: calc(170 * var(--u));
+  font-size: calc(150 * var(--u)); /* wide codes (MWMW) must clear the grid column at 1440 */
   line-height: 0.82;
   letter-spacing: 0.01em;
   margin: calc(10 * var(--u)) 0 0;
