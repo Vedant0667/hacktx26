@@ -1,0 +1,471 @@
+/* Race Night host home (H01). Scoped under .rn (RNRoot). Host: a 1280-wide stage at mockup coordinates, scaled. */
+
+.rn.rnh-host {
+  position: relative;
+  width: 100vw;
+  height: 100dvh;
+  overflow: hidden;
+}
+.rn .rnh-stage {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: top left;
+  overflow: hidden;
+}
+.rn .rnh-logo {
+  position: absolute;
+  left: 56px;
+  top: 40px;
+  height: 26px;
+  display: flex;
+}
+.rn .rnh-sn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 132px;
+  flex-shrink: 0;
+  font-weight: 800;
+  font-size: 13px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rn-muted);
+}
+.rn .rnh-sn[data-white] {
+  color: #ffffff;
+}
+.rn .rnh-step {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  min-height: 44px;
+}
+.rn .rnh-opts {
+  display: flex;
+  gap: 24px;
+}
+.rn .rnh-opt {
+  all: unset;
+  cursor: pointer;
+  font-weight: 800;
+  font-size: 20px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 8px 0 6px;
+  border-bottom: 3px solid transparent;
+  color: var(--rn-muted);
+  white-space: nowrap;
+}
+.rn .rnh-opt:hover {
+  color: #d5d8de;
+}
+.rn .rnh-opt[aria-pressed="true"] {
+  color: #ffffff;
+  border-bottom-color: #ffffff;
+}
+.rn .rnh-opt:focus-visible,
+.rn .rnh-card:focus-visible,
+.rn .rnh-chip:focus-visible,
+.rn .rnh-pick:focus-visible {
+  outline: 3px solid var(--rn-yellow);
+  outline-offset: 3px;
+}
+.rn .rnh-hint {
+  font-size: 15px;
+  color: var(--rn-muted);
+}
+.rn .rnh-h {
+  font-weight: 900;
+  font-size: 34px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.rn .rnh-note {
+  font-size: 15px;
+  color: var(--rn-muted);
+  margin: 0;
+}
+.rnh-host .rnh-s1 {
+  position: absolute;
+  left: 56px;
+  top: 100px;
+}
+.rnh-host .rnh-s2 {
+  position: absolute;
+  left: 56px;
+  top: 176px;
+  width: 700px;
+}
+.rnh-host .rnh-s3 {
+  position: absolute;
+  left: 56px;
+  top: 552px;
+}
+.rn .rnh-cards {
+  display: flex;
+  gap: 28px;
+  margin-top: 16px;
+}
+.rn .rnh-card {
+  all: unset;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  width: 300px;
+  height: 284px;
+  box-sizing: border-box;
+  background: var(--rn-panel);
+  position: relative;
+}
+.rn .rnh-card[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  box-shadow: inset 0 0 0 3px #ffffff;
+  pointer-events: none;
+}
+.rn .rnh-card:hover .rnh-thumb {
+  background: #101317;
+}
+.rn .rnh-thumb {
+  height: 184px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0d0f12;
+}
+.rn .rnh-cbody {
+  display: flex;
+  flex-direction: column;
+  padding: 16px 20px;
+}
+.rn .rnh-ctitle {
+  font-weight: 900;
+  font-size: 30px;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.rn .rnh-csub {
+  font-size: 15px;
+  color: var(--rn-muted);
+  margin-top: 6px;
+}
+
+/* Driver chip and picker */
+.rn .rnh-chipwrap {
+  position: relative;
+}
+.rn .rnh-chip {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 44px;
+  padding: 0 4px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.22);
+}
+.rn .rnh-tick {
+  width: 4px;
+  height: 20px;
+  flex-shrink: 0;
+}
+.rn .rnh-chipcode {
+  font-weight: 900;
+  font-size: 20px;
+}
+.rn .rnh-picker {
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 8px);
+  z-index: 5;
+  width: 520px;
+  max-height: 420px;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2px;
+  padding: 2px;
+  background: var(--rn-panel-2);
+  box-shadow: 10px 10px 0 rgba(0, 0, 0, 0.45);
+}
+.rn .rnh-pick {
+  all: unset;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--rn-panel);
+  min-width: 0;
+}
+.rn .rnh-pick:hover {
+  background: #1d2128;
+}
+.rn .rnh-pick[aria-checked="true"] {
+  box-shadow: inset 0 0 0 2px #ffffff;
+}
+.rn .rnh-pcode {
+  font-weight: 900;
+  font-size: 20px;
+  width: 44px;
+  flex-shrink: 0;
+}
+.rn .rnh-pname {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--rn-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rn .rnh-pmeta {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--rn-muted);
+  white-space: nowrap;
+}
+
+/* Join a room */
+.rnh-host .rnh-join {
+  position: absolute;
+  left: 470px;
+  top: 30px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.rn .rnh-join .rnh-sn {
+  width: auto;
+}
+.rn .rnh-joinrow {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.rn .rnh-code {
+  all: unset;
+  box-sizing: border-box;
+  width: 104px;
+  height: 44px;
+  padding: 0 4px;
+  font-weight: 900;
+  font-size: 26px;
+  letter-spacing: 0.18em;
+  color: #ffffff;
+  border-bottom: 2px solid rgba(255, 255, 255, 0.4);
+  text-transform: uppercase;
+}
+.rn .rnh-code::placeholder {
+  color: rgba(255, 255, 255, 0.22);
+}
+.rn .rnh-code:focus-visible {
+  border-bottom-color: var(--rn-yellow);
+}
+.rn .rnh-code[aria-invalid="true"] {
+  border-bottom-color: var(--rn-red);
+}
+.rn .rnh-err {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #ff8a8a;
+}
+.rn .rnh-err:empty {
+  display: none;
+}
+.rnh-host .rnh-join .rnh-err {
+  position: absolute;
+  left: 0;
+  top: 52px;
+  white-space: nowrap;
+}
+.rn .rnh-err-ink {
+  color: #b00000;
+  margin-top: 14px;
+}
+
+/* Footer, lobby panel and Create */
+.rnh-host .rnh-foot {
+  position: absolute;
+  left: 56px;
+  bottom: 48px;
+  margin: 0;
+  font-size: 13px;
+  color: var(--rn-muted);
+}
+.rnh-host .rnh-lobby {
+  position: absolute;
+  left: 968px;
+  top: 104px;
+  width: 256px;
+}
+.rn .rnh-lobby {
+  color: #07080a;
+}
+.rn .rnh-ylbl {
+  font-weight: 800;
+  font-size: 13px;
+  line-height: 16px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.rn .rnh-big {
+  font-weight: 900;
+  font-size: 120px;
+  line-height: 0.85;
+  margin-top: 10px;
+  text-transform: uppercase;
+}
+.rn .rnh-big[data-long] {
+  font-size: 84px;
+}
+.rn .rnh-line {
+  font-weight: 800;
+  font-size: 20px;
+  margin-top: 8px;
+  text-transform: uppercase;
+}
+.rnh-host .rnh-gowrap {
+  position: absolute;
+  left: 825px;
+  width: 388px;
+}
+.rn .rnh-gorow {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  white-space: nowrap;
+}
+.rn .rnh-go .rn-cs,
+.rn .rnh-go .rn-bt {
+  width: 100%;
+}
+.rnh-host .rnh-go {
+  box-shadow: 10px 10px 0 rgba(0, 0, 0, 0.35);
+}
+@media (prefers-reduced-motion: no-preference) {
+  @keyframes rnh-pulse {
+    0%,
+    100% {
+      box-shadow: 10px 10px 0 rgba(0, 0, 0, 0.35);
+    }
+    50% {
+      box-shadow: 14px 14px 0 rgba(0, 0, 0, 0.45);
+    }
+  }
+  .rnh-host .rnh-go:not(:disabled) {
+    animation: rnh-pulse 1.6s ease-in-out infinite;
+  }
+}
+
+/* Phone / narrow: one column, join first */
+.rn.rnh-phone {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding: 0 16px 28px;
+  overflow-x: hidden;
+}
+.rnh-phone .rnh-ptop {
+  height: 56px;
+  display: flex;
+  align-items: center;
+}
+.rnh-phone .rnh-join {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 16px;
+  background: var(--rn-panel);
+}
+.rnh-phone .rnh-joinrow {
+  justify-content: space-between;
+}
+.rnh-phone .rnh-code {
+  flex: 1;
+  min-width: 0;
+  height: 56px;
+  font-size: 34px;
+}
+.rnh-phone .rnh-step {
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+.rnh-phone .rnh-sn {
+  width: 100%;
+}
+.rnh-phone .rnh-opts {
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.rnh-phone .rnh-opt {
+  font-size: 17px;
+}
+.rnh-phone .rnh-h {
+  font-size: 28px;
+}
+.rnh-phone .rnh-cards {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin-top: 12px;
+}
+.rnh-phone .rnh-card {
+  width: auto;
+  height: auto;
+}
+.rnh-phone .rnh-thumb {
+  height: 120px;
+}
+.rnh-phone .rnh-thumb svg {
+  max-width: 90%;
+  max-height: 104px;
+}
+.rnh-phone .rnh-cbody {
+  padding: 12px;
+}
+.rnh-phone .rnh-ctitle {
+  font-size: 22px;
+}
+.rnh-phone .rnh-csub {
+  font-size: 13px;
+}
+.rnh-phone .rnh-picker {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  bottom: 16px;
+  width: auto;
+  max-height: 60dvh;
+  grid-template-columns: 1fr;
+}
+.rnh-phone .rnh-pslab {
+  position: relative;
+  overflow: hidden;
+  background: #e9ebee;
+  padding: 20px 16px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.rnh-phone .rnh-big {
+  font-size: 88px;
+}
+.rnh-phone .rnh-big[data-long] {
+  font-size: 60px;
+}
+.rnh-phone .rnh-line {
+  font-size: 16px;
+}
+.rnh-phone .rnh-foot {
+  margin: 0;
+  font-size: 12px;
+  color: var(--rn-muted);
+}
