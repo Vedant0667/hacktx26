@@ -181,7 +181,7 @@ export function RNDriverPicker({
             const who = (pickers ?? []).filter((p) => p.driver_code === d.code).map((p) => p.name);
             return (
               <label key={d.code} className="rnp-drv" data-on={on} style={on ? teamVars(d.team_colour) : undefined}>
-                <input type="radio" name="driver" value={d.code} checked={on} onChange={() => onPick(d.code)} className="sr-only" />
+                <input type="radio" name="driver" value={d.code} checked={on} onChange={() => onPick(d.code)} className="sr-only" aria-label={`${d.code} ${d.name}`} />
                 <span aria-hidden className="rnp-check">
                   <span>{on && <Check />}</span>
                 </span>
@@ -192,7 +192,8 @@ export function RNDriverPicker({
                   {d.code}
                 </b>
                 <span style={{ minWidth: 0 }}>
-                  <span style={{ display: "block", fontSize: 15, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.name}>{d.team || d.name}</span>
+                  <span style={{ display: "block", fontSize: 15, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} >{d.name}</span>
+                  <span style={{ display: "block", fontSize: 13, fontWeight: 600, opacity: 0.75, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.team}</span>
                   {who.length > 0 && <span style={{ display: "block", fontSize: 13, fontWeight: 700, opacity: 0.75, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{C.pickedBy(who)}</span>}
                 </span>
                 <span style={{ fontSize: 14, fontWeight: 700, opacity: 0.8 }}>

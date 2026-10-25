@@ -4,8 +4,8 @@
 .rn .rnp-room { font-family: var(--font-rn-cond), sans-serif; font-weight: 800; font-size: 14px; letter-spacing: 0.14em; text-transform: uppercase; color: #A9AEB8; }
 .rn .rnp-cond { font-family: var(--font-rn-cond), var(--font-rn), sans-serif; }
 .rn .rnp-label { font-family: var(--font-rn-cond), sans-serif; font-weight: 800; font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: #A9AEB8; }
-.rn .rnp-hero { position: relative; min-height: 220px; margin-left: 6px; flex-shrink: 0; overflow: hidden; color: var(--on-team); padding: 36px 24px 28px 74px; }
-.rn .rnp-hero::before { content: ""; position: absolute; inset: 0 -60px 0 30px; background: var(--team); transform: skewX(-14deg); transform-origin: bottom left; }
+.rn .rnp-hero { position: relative; min-height: 220px; margin-left: 6px; flex-shrink: 0; overflow: hidden; color: var(--on-team); padding: 36px 24px 28px 80px; }
+.rn .rnp-hero::before { content: ""; position: absolute; inset: 0 -60px 0 62px; background: var(--team); transform: skewX(-14deg); transform-origin: top left; }
 .rn .rnp-hero > * { position: relative; }
 .rn .rnp-hero .rnp-label { color: inherit; }
 .rn .rnp-body { flex: 1; display: flex; flex-direction: column; padding: 0 24px 24px; }
