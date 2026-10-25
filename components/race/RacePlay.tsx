@@ -39,6 +39,7 @@ import { RNRaceWaiting } from "../rn/phone/Waiting";
 import { RNRaceReplay } from "../rn/phone/Replay";
 import { RNNoCall } from "../rn/phone/NoCall";
 import { RNPhoneSummary } from "../rn/phone-end/PhoneEnd";
+import { RNCallPad } from "../rn/call/RNCallPad";
 
 export function RacePlay({
   code,
@@ -131,7 +132,8 @@ export function RacePlay({
     return (
       <>
         <ConnNotice conn={conn} code={code} />
-        <CallPad
+        <CallPadView
+          rn={rn}
           code={code}
           me={me}
           decision={freezeDecision(r, myFreeze, myNumber, frames, r.segment_start_lap)}
@@ -471,4 +473,9 @@ function Locked({ left }: { left: number }) {
       <p className="nums text-base font-bold">{COPY.end.lockedIn(left)}</p>
     </div>
   );
+}
+
+// Race Night or classic call pad for the same props (UI flag); both run the same useCallPad logic.
+function CallPadView({ rn, ...p }: { rn: boolean } & React.ComponentProps<typeof CallPad>) {
+  return rn ? <RNCallPad {...p} /> : <CallPad {...p} />;
 }

@@ -16,6 +16,10 @@ import { useDataMode, type DataMode } from "@/lib/client/mode";
 import { fieldStyle, isDarkField, teamColourOf } from "@/lib/client/field";
 import type { LapFrame } from "@/lib/types";
 import { RejoinCaveat, getBrief, type Brief } from "../DecisionBrief";
+import { useRaceNight } from "@/lib/client/uiFlag";
+import { RNHostLobby } from "../rn/host/lobby/RNLobby";
+import { RNHostReplay } from "../rn/host/replay/RNReplay";
+import { RNFreeze } from "../rn/host/freeze/RNFreeze";
 import { FieldTyres, IntervalChart, LapChart, NeighbourList, Note, PitLoss, RejoinStrip, Sec, StintTable, UndercutClock, intervalNote, simpleChartLabel } from "../Telemetry";
 import { Tower } from "../Tower";
 import { Brand, Button, ConnNotice, ModeToggle, Num, ScChip, TabNum, TrackStrip, TyreChip, clockText } from "../ui";
@@ -39,6 +43,7 @@ export function HostScreen({ code }: { code: string }) {
   const isRace = lobby?.mode === "race";
   const hostToken = useSyncExternalStore(noopSubscribe, () => recallHostToken(code), () => null);
   const [mode, setMode] = useDataMode(code, "host");
+  const rn = useRaceNight();
   const t = useTicker(serverNow, 100);
   const origin = useSyncExternalStore(noopSubscribe, () => window.location.origin, () => "");
 
@@ -124,7 +129,8 @@ export function HostScreen({ code }: { code: string }) {
         </p>
       )}
       {phase === "waiting" && (
-        <Lobby
+        <HostLobbyView
+          rn={rn}
           code={code}
           joinUrl={joinUrl}
           joinHref={joinHref}
@@ -146,7 +152,8 @@ export function HostScreen({ code }: { code: string }) {
         />
       )}
       {phase === "replay" && (
-        <Replay
+        <HostReplayView
+          rn={rn}
           code={code}
           decision={car}
           frames={frames}
@@ -162,7 +169,8 @@ export function HostScreen({ code }: { code: string }) {
         />
       )}
       {phase === "decision" && (
-        <Freeze
+        <FreezeView
+          rn={rn}
           code={code}
           decision={car}
           lobby={lobby}
@@ -802,4 +810,15 @@ function AdvancedFreeze({ brief, decision, left, urgent, meCode, code, room, mod
       <div className="px-14 pb-4">{room(true)}</div>
     </main>
   );
+}
+
+// Race Night or classic for the same props (UI flag).
+function HostLobbyView({ rn, ...p }: { rn: boolean } & React.ComponentProps<typeof Lobby>) {
+  return rn ? <RNHostLobby {...p} /> : <Lobby {...p} />;
+}
+function HostReplayView({ rn, ...p }: { rn: boolean } & React.ComponentProps<typeof Replay>) {
+  return rn ? <RNHostReplay {...p} /> : <Replay {...p} />;
+}
+function FreezeView({ rn, ...p }: { rn: boolean } & React.ComponentProps<typeof Freeze>) {
+  return rn ? <RNFreeze {...p} /> : <Freeze {...p} />;
 }

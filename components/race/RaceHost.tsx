@@ -39,6 +39,11 @@ import { Brand, Button, ConnNotice, ModeToggle, Num, ScChip, TrackStrip } from "
 import { RaceProgress, Triggers } from "./parts";
 import { HostSummary, Scoring } from "../EndScreen";
 import { useSummary } from "@/lib/client/results";
+import { useRaceNight } from "@/lib/client/uiFlag";
+import { RNRaceLobby } from "../rn/host/lobby/RNLobby";
+import { RNRaceReplay } from "../rn/host/replay/RNReplay";
+import { RNHostSummary, RNScoring } from "../rn/end/RNHostEnd";
+import { RNFreeze, RNLocked } from "../rn/host/freeze/RNFreeze";
 
 const MAX_PLAYERS = 12;
 
@@ -69,6 +74,7 @@ export function RaceHost({
   const freeze = useRaceFreeze(code, lobby);
   const { summary, failed } = useSummary(code, phase === "done");
   const [mode, setMode] = useDataMode(code, "host");
+  const rn = useRaceNight();
   const t = useTicker(serverNow, 100);
   const origin = useSyncExternalStore(noopSubscribe, () => window.location.origin, () => "");
   const [muted, setMuted] = useState(false);
@@ -121,8 +127,9 @@ export function RaceHost({
 
   let body: React.ReactNode;
   if (phase === "waiting") {
+    const LobbyV = rn ? RNRaceLobby : RaceLobbyView;
     body = (
-      <RaceLobbyView
+      <LobbyV
         code={code}
         origin={origin}
         race={race}
@@ -142,8 +149,9 @@ export function RaceHost({
       />
     );
   } else if (phase === "replay") {
+    const ReplayV = rn ? RNRaceReplay : ReplayView;
     body = (
-      <ReplayView
+      <ReplayV
         code={code}
         race={race}
         frames={frames}
@@ -183,9 +191,10 @@ export function RaceHost({
           {idle.length > 0 && <p className="text-sm font-semibold opacity-85">{COPY.race.noCallHost(idle)}</p>}
         </div>
       );
+      const FreezeV = rn ? RNFreeze : Freeze;
       body = (
-        <div style={fieldStyle(colourOf(car))}>
-          <Freeze
+        <div style={rn ? undefined : fieldStyle(colourOf(car))}>
+          <FreezeV
             code={code}
             decision={freezeDecision(r, f, n, frames, r.segment_start_lap)}
             lobby={race}
@@ -206,12 +215,23 @@ export function RaceHost({
       );
     }
   } else if (phase === "reveal_freeze") {
-    body = <Locked left={Math.max(0, Math.ceil((REVEAL_HOLD_MS - elapsed) / 1000))} onResume={() => setPhase("replay", r.freeze_index)} />;
+    const left = Math.max(0, Math.ceil((REVEAL_HOLD_MS - elapsed) / 1000));
+    body = rn ? (
+      <RNLocked left={left} onResume={() => setPhase("replay", r.freeze_index)} team={colourOf(followed)} players={race.players} called={r.called} holdS={Math.round(REVEAL_HOLD_MS / 1000)} />
+    ) : (
+      <Locked left={left} onResume={() => setPhase("replay", r.freeze_index)} />
+    );
   } else {
     body = summary ? (
-      <div style={fieldStyle(colourOf(followed))}>
-        <HostSummary summary={summary} code={code} carCode={followed} />
-      </div>
+      rn ? (
+        <RNHostSummary summary={summary} code={code} carCode={followed} />
+      ) : (
+        <div style={fieldStyle(colourOf(followed))}>
+          <HostSummary summary={summary} code={code} carCode={followed} />
+        </div>
+      )
+    ) : rn ? (
+      <RNScoring elapsedMs={elapsed} failed={failed} big />
     ) : (
       <Scoring elapsedMs={elapsed} failed={failed} big />
     );

@@ -23,6 +23,7 @@ import { useRaceNight } from "@/lib/client/uiFlag";
 import { RNJoinForm } from "../rn/phone/JoinForm";
 import { RNWaiting } from "../rn/phone/Waiting";
 import { RNReplay } from "../rn/phone/Replay";
+import { RNCallPad } from "../rn/call/RNCallPad";
 
 export function PlayScreen({ code }: { code: string }) {
   const [removed, setRemoved] = useState(false);
@@ -164,7 +165,8 @@ export function PlayScreen({ code }: { code: string }) {
     return (
       <>
         <ConnNotice conn={conn} code={code} />
-        <CallPad
+        <CallPadView
+          rn={rn}
           code={code}
           me={me!}
           decision={mine}
@@ -503,4 +505,9 @@ function DriverPicker({
       )}
     </fieldset>
   );
+}
+
+// Race Night or classic call pad for the same props (UI flag); both run the same useCallPad logic.
+function CallPadView({ rn, ...p }: { rn: boolean } & React.ComponentProps<typeof CallPad>) {
+  return rn ? <RNCallPad {...p} /> : <CallPad {...p} />;
 }
