@@ -9,7 +9,8 @@ import { METER_SEGMENTS } from "@/lib/client/recorder";
 import { useCallPad, type CallPadProps, type CallPadState } from "@/lib/client/useCallPad";
 import type { Call } from "@/lib/types";
 import { RejoinSentence } from "@/components/DecisionBrief";
-import { IntervalTable, NeighbourList, PitLoss, UndercutClock } from "@/components/Telemetry";
+import { IntervalTable, PitLoss, UndercutClock } from "@/components/Telemetry";
+import { MapAndBox, NeighbourRows } from "./RNBrief";
 import { MicGlyph, clockText } from "@/components/ui";
 import { Banner, Label, Logo, ModeTabs, RNRoot, StartLights, Countdown } from "../kit";
 import { RN_CALL_COPY as T } from "./copy";
@@ -57,7 +58,7 @@ export function RNCallPadView({ props, s }: { props: CallPadProps; s: RNCallPadV
           <div className="rnc-hero-slab" aria-hidden />
           <div className="rnc-hero-in">
             <div className="rnc-hero-row">
-              <Label tone="ink">{locked?.call ? `✓ ${T.lockedIn}` : COPY.freeze.timeUp}</Label>
+              <Label tone="ink">{locked?.call ? `✓ ${T.lockedIn}` : locked ? COPY.freeze.timeUp : ""}</Label>
               <Logo size="phone" />
             </div>
             <h1 className={`rn-d rnc-lock-title ${locked?.call ? "" : "rnc-lock-small"}`}>{title}</h1>
@@ -78,7 +79,7 @@ export function RNCallPadView({ props, s }: { props: CallPadProps; s: RNCallPadV
           <div>
             <div className="rnc-room-head">
               <Label>{T.room}</Label>
-              <Label>{left === 0 ? COPY.freeze.timeUp : T.calledOf(inCount, players.length)}</Label>
+              <Label>{T.calledOf(inCount, players.length)}</Label>
             </div>
             <ul className="rnc-room">
               {players.map((p) => {
@@ -92,7 +93,7 @@ export function RNCallPadView({ props, s }: { props: CallPadProps; s: RNCallPadV
               })}
             </ul>
             <p className="sr-only" aria-live="polite">
-              {left === 0 ? COPY.freeze.timeUp : COPY.freeze.waitingOn(Math.max(0, players.length - submittedNames.length))}
+              {left === 0 ? "" : COPY.freeze.waitingOn(Math.max(0, players.length - submittedNames.length))}
             </p>
           </div>
         </div>
@@ -147,13 +148,25 @@ export function RNCallPadView({ props, s }: { props: CallPadProps; s: RNCallPadV
           </div>
         </section>
         <div className="rnc-brief">
-          {brief && <RejoinSentence brief={brief} withCost={adv} withLaps={adv} className="rnc-rejoin" caveatClass="rnc-caveat" />}
+          {brief && <NeighbourRows brief={brief} />}
+          {brief && <MapAndBox brief={brief} decision={decision} />}
+          {brief && !brief.tele && <RejoinSentence brief={brief} withCost={adv} withLaps={adv} className="rnc-rejoin" caveatClass="rnc-caveat" />}
           {adv && brief?.tele && (
             <div className="rnc-adv">
-              <NeighbourList t={brief.tele} />
-              <UndercutClock t={brief.tele} mode={mode} />
-              <IntervalTable t={brief.tele} />
-              {brief.loss && <PitLoss under={brief.loss.under} normal={brief.loss.normal} trigger={decision.trigger} />}
+              <section>
+                <Label as="h2">{COPY.tele.undercut}</Label>
+                <UndercutClock t={brief.tele} mode={mode} />
+              </section>
+              <section>
+                <Label as="h2">{COPY.tele.intervals}</Label>
+                <IntervalTable t={brief.tele} />
+              </section>
+              {brief.loss && (
+                <section>
+                  <Label as="h2">{COPY.tele.pitLoss}</Label>
+                  <PitLoss under={brief.loss.under} normal={brief.loss.normal} trigger={decision.trigger} />
+                </section>
+              )}
             </div>
           )}
         </div>
@@ -174,7 +187,7 @@ export function RNCallPadView({ props, s }: { props: CallPadProps; s: RNCallPadV
         )}
         {(helper || err) && (
           <div className="rnc-helper" aria-live="polite" data-err={!!err}>
-            <p>{err ?? helper}</p>
+            {err ? <p role="alert">{err}</p> : <p>{helper}</p>}
             {!err && voice.canRetry && !busy && (
               <button type="button" onClick={voice.retry} className="rnc-retry">
                 {VOICE_COPY.retry}
@@ -190,6 +203,7 @@ export function RNCallPadView({ props, s }: { props: CallPadProps; s: RNCallPadV
             disabled={micDisabled}
             aria-pressed={recording}
             aria-busy={voice.status === "transcribing" || undefined}
+            aria-label={micLabel === T.radioIn ? VOICE_COPY.tap : undefined}
             className="rnc-act rnc-mic"
             data-rec={recording}
             style={{ ["--rec" as string]: `${(talkMs / (VOICE_NOTE_MAX_S * 1000)) * 100}%` } as CSSProperties}

@@ -13,4 +13,10 @@ export const RN_CALL_COPY = {
   ahead: "Ahead",
   behind: "Behind",
   ifYouBox: "If you box",
+  closing: "closing",
+  growing: "growing",
+  behindCar: (gap: number, code: string) => `${gap.toFixed(1)} s behind ${code}`,
+  atGreen: (s: number) => `${s.toFixed(1)} s at green`,
+  mapLabel: (code: string, pos: number | null) => (pos ? `Track map: ${code} now, rejoins P${pos} if you box` : `Track map: ${code} now`),
+  raceNow: "Race now",
 } as const;
