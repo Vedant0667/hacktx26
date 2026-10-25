@@ -25,6 +25,10 @@ export function makeApi(base, password) {
       body: new URLSearchParams({ password, next: "/" }).toString(),
     });
     const sc = res.headers.getSetCookie().map((c) => c.split(";")[0]).find((c) => c.includes("="));
+    // Gate open (SITE_GATE=off): /api/unlock redirects home without a cookie; pages then need none.
+    if (!sc && res.status >= 300 && res.status < 400 && new URL(res.headers.get("location") ?? "", base).pathname === "/") {
+      return { name: "site_gate", value: "open" };
+    }
     if (!sc) throw new Error(`unlock failed: HTTP ${res.status}`);
     cookie = sc;
     const i = sc.indexOf("=");
