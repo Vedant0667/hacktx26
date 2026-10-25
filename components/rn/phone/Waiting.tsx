@@ -51,7 +51,7 @@ function WaitingView({
           <span className="rnp-room">{COPY.room.heading(code)}</span>
         </header>
         <div className="rnp-hero">
-          {carNumber != null && <OutlineNumber value={carNumber} size={240} style={{ position: "absolute", right: -40, top: 40 }} />}
+          {carNumber != null && <OutlineNumber value={carNumber} size={240} style={{ position: "absolute", right: -96, top: 40 }} />}
           <span className="rnp-label">{kicker}</span>
           <div className="rnp-cond" style={{ fontSize: carCode ? 112 : 56, fontWeight: 900, lineHeight: 0.9, marginTop: 10, overflowWrap: "anywhere" }}>
             {carCode ?? me}

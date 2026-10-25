@@ -174,7 +174,7 @@ export function RNReplay({ decision, frames, elapsed, mode, setMode, me }: { dec
       seen={seen}
       number={decision.player_role.number}
       totalLaps={decision.total_laps}
-      trackId={decision.race ?? decision.id}
+      trackId={decision.id}
       tele={tele}
       mode={mode}
       setMode={setMode}

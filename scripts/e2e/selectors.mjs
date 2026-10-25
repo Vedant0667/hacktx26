@@ -25,7 +25,8 @@ const BASE = {
 
 const OVERRIDES = {
   classic: {},
-  racenight: {},
+  // The Race Night mic shows "Radio in" / "Stop" (accessible name stays "Tap to say why").
+  racenight: { record: { css: "button[aria-pressed]", text: "^\\s*(radio in|tap to|stop|transcrib|opening)", notIn: "[role=group]" } },
 };
 
 export function selectorsFor(ui) {

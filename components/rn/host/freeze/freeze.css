@@ -60,6 +60,8 @@
 .rn .rnf-s-q { position: absolute; left: 56px; top: 298px; width: 560px; }
 .rn .rnf-h-s { font-size: 60px; font-weight: 900; line-height: 0.96; text-transform: uppercase; margin: 14px 0 0; letter-spacing: -0.005em; }
 .rn .rnf-why { margin-top: 14px; font-size: 14px; }
+/* Host freeze: the trigger chips only; the long explanation lines would run into the options. */
+.rn .rnf-why li.line-clamp-2, .rn .rnf-why p { display: none; }
 .rn .rnf-s-panel { left: 672px; top: 94px; width: 552px; height: 410px; padding: 20px 24px; }
 .rn .rnf-s-map { position: absolute; left: 24px; top: 26px; }
 .rn .rnf-rc { position: absolute; left: 392px; top: 22px; display: flex; flex-direction: column; gap: 8px; }

@@ -181,6 +181,13 @@ export function PlayScreen({ code }: { code: string }) {
     );
 
   // Race Night views draw their own page; the end screen keeps its wrapper (PlayerResult swaps inside).
+  if (rn && (phase === "reveal" || phase === "done"))
+    return (
+      <>
+        <ConnNotice conn={conn} code={code} />
+        <PlayerResult code={code} me={me!} lobby={lobby} elapsed={elapsed} />
+      </>
+    );
   if (rn && (phase === "waiting" || (phase === "replay" && mine && frames)))
     return (
       <>

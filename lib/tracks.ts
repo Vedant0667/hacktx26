@@ -45,7 +45,8 @@ const BY_ID: Record<string, TrackKey> = {
 // The outline for a race key or decision id; null when there is no outline for it (draw no map).
 export function trackFor(id: string | null | undefined): TrackOutline | null {
   if (!id) return null;
-  const k = BY_ID[id] ?? (id.includes("singapore") ? "sg-2008" : id.includes("qatar") ? "qa-2004" : null);
+  const low = id.toLowerCase();
+  const k = BY_ID[id] ?? (low.includes("singapore") ? "sg-2008" : low.includes("qatar") ? "qa-2004" : null);
   return k ? TRACKS[k] : null;
 }
 
@@ -327,7 +328,7 @@ export function buildScene(g: TrackGeometry, markers: readonly MapMarker[], opts
         const [lx0, lx1, ly0, ly1] = l.box;
         const ix = Math.max(0, Math.min(bx1, lx1) - Math.max(bx0, lx0) + u(3));
         const iy = Math.max(0, Math.min(by1, ly1) - Math.max(by0, ly0) + u(3));
-        if (ix > 0 && iy > 0) pen += ix * iy * 0.5;
+        if (ix > 0 && iy > 0) pen += u(400) + ix * iy * 8; // labels must never touch each other
       }
       if (bx0 < vx + u(2) || by0 < vy + u(2) || bx1 > vx + vw - u(2) || by1 > vy + vh - u(2)) pen += 1e5;
       if (m.prefer != null) pen += (1 - Math.cos(a - (m.prefer * Math.PI) / 180)) * u(6);

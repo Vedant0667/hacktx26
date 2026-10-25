@@ -18,7 +18,7 @@
 .rn .rn-tabs.rnc-mode[data-variant] > button { min-width: 0; padding: 0 10px; }
 .rn .rn-tabs.rnc-mode[data-variant] > button > span { font-size: 14px; letter-spacing: 0.04em; }
 .rnc-scroll { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
-.rnc-hero { position: relative; margin: 6px 0 0; padding: 18px 20px 22px 56px; color: var(--on-team); }
+.rnc-hero { position: relative; margin: 6px 0 0; padding: 18px 20px 22px 80px; color: var(--on-team); }
 .rnc-hero-slab { position: absolute; inset: 0 0 0 28px; background: var(--team); transform: skewX(-14deg); transform-origin: bottom left; }
 .rnc-hero-in { position: relative; }
 .rnc-hero-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
