@@ -99,6 +99,9 @@ export async function newPage(browser, { label, gate, base, viewport, token }) {
   const secure = base.startsWith("https");
   const u = new URL(base);
   await page.setCookie({ name: gate.name, value: gate.value, domain: u.hostname, path: "/", secure });
+  // A renderer crash closes the page; say which page and when instead of a bare "Session closed" later.
+  page.on("error", (e) => console.log(`[${label}] renderer crashed: ${e.message} at ${new Date().toISOString()}`));
+  page.on("close", () => console.log(`[${label}] page closed at ${new Date().toISOString()}`));
   page.on("console", (m) => {
     if (m.type() !== "error") return;
     const text = m.text();
