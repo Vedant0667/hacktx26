@@ -116,7 +116,8 @@ async function main() {
   const dbSrc = readFileSync(path.join(root, "lib/db/index.ts"), "utf8");
   assert.ok(dbSrc.includes("[`${ip}:${code}`, opts.readWindowS]"), "lobby_read is keyed by IP and code");
   assert.ok(dbSrc.includes("'lobby_read_all'") && dbSrc.includes("lobby-read:${ip}"), "all-lobbies backstop and per-IP lock");
-  assert.ok(/'lobby_miss', \$1,[\s\S]*\[ip, code, opts\.missWindowS\]/.test(dbSrc), "lobby_miss stays keyed by IP only");
+  assert.ok(/'lobby_miss', \$1,[\s\S]*\[ip, opts\.missWindowS\]/.test(dbSrc), "lobby_miss stays keyed by IP only");
+  assert.ok(dbSrc.indexOf("if (found) {") < dbSrc.indexOf("lobby-read:${ip}"), "the advisory lock is taken only on the unknown-code path");
   // P9: the 429 log line names the bucket, path and retry seconds, never the client address.
   const line = rateLimitLogLine(
     new HttpError(429, "x", 12, "lobby_read"),
