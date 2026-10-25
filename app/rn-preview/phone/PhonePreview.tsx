@@ -7,7 +7,8 @@ import type { DataMode } from "@/lib/client/mode";
 import type { RaceLobby } from "@/lib/client/raceLobby";
 import { RNJoinForm } from "@/components/rn/phone/JoinForm";
 import { RNRaceWaiting, RNWaiting } from "@/components/rn/phone/Waiting";
-import { RNRaceReplay } from "@/components/rn/phone/Replay";
+import { RNRaceReplay, RNReplay } from "@/components/rn/phone/Replay";
+import type { BlindDecision } from "@/lib/client/api";
 import { RNNoCall } from "@/components/rn/phone/NoCall";
 import type { BlindFreeze } from "@/lib/client/api";
 import type { LapFrame } from "@/lib/types";
@@ -74,6 +75,10 @@ export function PhonePreview() {
     return <RNWaiting code="DCFH" lobby={lobby} decision={null} me="Vedant" mode={mode} setMode={setMode} teamColour="#2293D1" carCode="GAS" />;
   if (s === "replay" || s === "replayadv")
     return <RNRaceReplay code="PREV" race={raceFull} me="Vedant" car="GAS" frames={frames} lap={31} mode={s === "replayadv" ? "advanced" : mode} setMode={setMode} />;
+  if (s === "moment") {
+    const d = { id: "singapore-2023-l31", race: "singapore-2023", lap: 31, replay_from_lap: 20, total_laps: 62, player_role: { team: "Alpine", driver: "Pierre Gasly", number: 10 }, options: ["BOX", "STAY"], factors: [] } as unknown as BlindDecision;
+    return <RNReplay decision={d} frames={frames} elapsed={8000} mode={mode} setMode={setMode} me="Vedant" />;
+  }
   if (s === "nocall") return <RNNoCall race={raceFull} me="Vedant" car="GAS" freeze={freeze} loading={false} left={21} teamColour="#2293D1" />;
   return <RNRaceWaiting code="DCFH" race={race} me="Vedant" driver={{ ...drivers[0], freeze_count: 4 }} mode={mode} setMode={setMode} />;
 }
