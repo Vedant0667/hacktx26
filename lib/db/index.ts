@@ -104,6 +104,7 @@ function isPgError(err: unknown, code: string): boolean {
 // Returns false if the code is already taken (caller retries with a new code).
 // The host runs the shared screen and is not a player; players join from their phones.
 // Only the SHA-256 of the host token is stored. driverCode: the car everyone plays ("same"), null for "choose".
+// creatorKey: the creator's rate-limit key (clientIp), for the per-creator hourly Muse cap in reserveMuseCall.
 export async function createLobby(
   code: string,
   decisionId: string,
@@ -112,12 +113,13 @@ export async function createLobby(
   driverCode: string | null = null,
   mode: LobbyMode = "moment",
   raceKey: string | null = null,
+  creatorKey: string | null = null,
 ): Promise<boolean> {
   const rows = await query<{ code: string }>(
-    `insert into lobbies (code, decision_id, host_token_hash, driver_mode, driver_code, mode, race_key)
-     values ($1, $2, $3, $4, $5, $6, $7)
+    `insert into lobbies (code, decision_id, host_token_hash, driver_mode, driver_code, mode, race_key, creator_key)
+     values ($1, $2, $3, $4, $5, $6, $7, $8)
      on conflict (code) do nothing returning code`,
-    [code, decisionId, hostTokenHash, driverMode, driverCode, mode, raceKey],
+    [code, decisionId, hostTokenHash, driverMode, driverCode, mode, raceKey, creatorKey],
   );
   return rows.length === 1;
 }
@@ -581,9 +583,17 @@ export interface MuseCallLog {
   latency_ms: number;
 }
 
-// Atomic budget reservation: under one advisory lock, a 'reserved' row priced at the worst case is inserted
-// only if total spend plus that worst case stays within the budget and the lobby is under its call cap.
-// Returns the row id, or null when the call must not be made.
+export type MuseSkipReason = "lifetime" | "hourly" | "creator" | "lobby_cap";
+
+// Atomic budget reservation: under one advisory lock, one statement inserts a 'reserved' row priced at the worst
+// case only if every cap holds with that worst case added:
+// - lifetime: all spend ever <= budget_usd (a row with cost_usd 1000 is the operator's kill switch);
+// - hourly: spend in the last 60 minutes <= hourly_usd;
+// - creator: for a call tied to a lobby whose creator_key is known, the last hour's spend on every lobby with
+//   that creator_key <= creator_hourly_usd;
+// - lobby_cap: calls of the same group in this lobby ('transcribe' clips, or every other purpose for grading)
+//   stay under lobby_max_race or lobby_max_moment, picked by the lobby's mode.
+// Returns the row id, or null when the call must not be made (onRefused gets the first failing cap).
 export async function reserveMuseCall(r: {
   purpose: string;
   lobby_code: string | null;
@@ -591,21 +601,51 @@ export async function reserveMuseCall(r: {
   model: string;
   worst_cost_usd: number;
   budget_usd: number;
-  lobby_max_calls: number;
+  hourly_usd: number;
+  creator_hourly_usd: number;
+  lobby_cap_group: "grading" | "transcribe";
+  lobby_max_race: number;
+  lobby_max_moment: number;
+  onRefused?: (reason: MuseSkipReason) => void;
 }): Promise<number | null> {
+  type Checks = { id: string | number | null; lifetime_ok: boolean; hourly_ok: boolean; creator_ok: boolean; lobby_ok: boolean };
   const results = (await sql().transaction([
     sql().query(`select pg_advisory_xact_lock(4242)`),
     sql().query(
-      `insert into muse_calls (purpose, lobby_code, decision_id, model, ok, status, cost_usd)
-       select $1, $2, $3, $4, false, 'reserved', $5
-       where (select coalesce(sum(cost_usd), 0) from muse_calls) + $5::numeric <= $6::numeric
-         and ($2::text is null or (select count(*) from muse_calls where lobby_code = $2) < $7::int)
-       returning id`,
-      [r.purpose, r.lobby_code, r.decision_id, r.model, r.worst_cost_usd, r.budget_usd, r.lobby_max_calls],
+      `with lobby as (select mode, creator_key from lobbies where code = $2),
+       c as (
+         select
+           (select coalesce(sum(cost_usd), 0) from muse_calls) + $5::numeric <= $6::numeric as lifetime_ok,
+           (select coalesce(sum(cost_usd), 0) from muse_calls where created_at > now() - interval '1 hour')
+             + $5::numeric <= $7::numeric as hourly_ok,
+           ($2::text is null or (select creator_key from lobby) is null or
+             (select coalesce(sum(m.cost_usd), 0) from muse_calls m join lobbies l on l.code = m.lobby_code
+               where l.creator_key = (select creator_key from lobby) and m.created_at > now() - interval '1 hour')
+             + $5::numeric <= $8::numeric) as creator_ok,
+           ($2::text is null or
+             (select count(*) from muse_calls where lobby_code = $2
+               and case when $9::text = 'transcribe' then purpose = 'transcribe' else purpose <> 'transcribe' end)
+             < case when (select mode from lobby) = 'race' then $10::int else $11::int end) as lobby_ok
+       ),
+       ins as (
+         insert into muse_calls (purpose, lobby_code, decision_id, model, ok, status, cost_usd)
+         select $1, $2, $3, $4, false, 'reserved', $5 from c
+         where lifetime_ok and hourly_ok and creator_ok and lobby_ok
+         returning id
+       )
+       select (select id from ins) as id, lifetime_ok, hourly_ok, creator_ok, lobby_ok from c`,
+      [
+        r.purpose, r.lobby_code, r.decision_id, r.model, r.worst_cost_usd, r.budget_usd, r.hourly_usd,
+        r.creator_hourly_usd, r.lobby_cap_group, Math.floor(r.lobby_max_race), Math.floor(r.lobby_max_moment),
+      ],
     ),
-  ])) as unknown as [unknown, { id: string | number }[]];
+  ])) as unknown as [unknown, Checks[]];
   const row = results[1][0];
-  return row ? Number(row.id) : null;
+  if (row?.id != null) return Number(row.id);
+  const reason: MuseSkipReason =
+    !row || !row.lifetime_ok ? "lifetime" : !row.hourly_ok ? "hourly" : !row.creator_ok ? "creator" : "lobby_cap";
+  r.onRefused?.(reason);
+  return null;
 }
 
 // Replaces the reservation with the call's real usage and cost.

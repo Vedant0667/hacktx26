@@ -2,7 +2,7 @@ import { randomInt } from "node:crypto";
 import { z } from "zod";
 import { createLobby, getLobbyState, purgeExpired } from "@/lib/db";
 import { getDefaultDriver, getRaceEntry } from "@/lib/data";
-import { handle, hashToken, HttpError, newToken, readBody, requireDecision, requireDriver } from "../_lib/http";
+import { clientIp, handle, hashToken, HttpError, newToken, readBody, requireDecision, requireDriver } from "../_lib/http";
 import { guardLobbyCreate } from "../_lib/limits";
 import { redactForPhase } from "../_lib/redact";
 
@@ -62,7 +62,8 @@ export const POST = handle(async (req: Request) => {
   for (let attempt = 0; attempt < 8; attempt++) {
     const code = newCode();
     const raceKey = mode === "race" ? decision_id.slice("race:".length) : null;
-    if (await createLobby(code, decision_id, hashToken(host_token), driver_mode, lobbyDriver, mode, raceKey)) {
+    // creator_key: the creating IP's rate-limit key, for the per-creator hourly Muse cap (reserveMuseCall).
+    if (await createLobby(code, decision_id, hashToken(host_token), driver_mode, lobbyDriver, mode, raceKey, clientIp(req))) {
       const state = await getLobbyState(code);
       if (!state) throw new HttpError(500, "Lobby vanished after create");
       return Response.json({ ...redactForPhase(state, true), host_token }, { status: 201, headers: { "Cache-Control": "no-store" } });
