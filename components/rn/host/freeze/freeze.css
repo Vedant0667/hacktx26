@@ -1,6 +1,7 @@
 /* T1b host freeze + calls locked. Everything is laid out on a 1280x720 stage (absolute px, as the mockups). */
 .rn.rnf-viewport { position: fixed; inset: 0; overflow: hidden; background: var(--rn-ground, #07080a); color: #fff; }
-.rn .rnf-stage { position: absolute; left: 50%; top: 50%; transform-origin: center; overflow: hidden; background: #07080a; }
+.rn .rnf-stage { position: absolute; left: 0; top: 0; transform-origin: top left; overflow: hidden; background: #07080a; }
+.rn .rnf-frame { position: absolute; }
 .rn .rnf-simple, .rn .rnf-adv, .rn .rnf-locked { position: absolute; inset: 0; }
 .rn .rnf-banner { position: absolute; left: 0; right: 0; top: 0; z-index: 3; }
 .rn .rnf-logo { position: absolute; left: 56px; top: 60px; color: #fff; z-index: 2; }
@@ -11,9 +12,9 @@
 .rn .rnf-small { font-size: 14px; line-height: 1.35; color: var(--rn-muted); margin: 6px 0 0; }
 
 /* Slabs (team colour) */
-.rn .rnf-slab-s { position: absolute; left: 690px; top: 0; width: 900px; height: 720px; transform-origin: bottom left; }
-.rn .rnf-slab-a { position: absolute; left: 930px; top: 0; width: 600px; height: 720px; }
-.rn .rnf-slab-l { position: absolute; left: 820px; top: 0; width: 700px; height: 720px; }
+.rn .rnf-slab-s { position: absolute; left: 780px; top: -400px; width: 1400px; height: 2400px; }
+.rn .rnf-slab-a { position: absolute; left: 1100px; top: -400px; width: 1400px; height: 2400px; }
+.rn .rnf-slab-l { position: absolute; left: 990px; top: -400px; width: 1400px; height: 2400px; }
 
 /* Called line */
 .rn .rnf-called { display: flex; flex-direction: column; gap: 8px; }

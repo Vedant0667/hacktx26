@@ -25,20 +25,31 @@ function subscribe(cb: () => void) {
   window.addEventListener("resize", cb);
   return () => window.removeEventListener("resize", cb);
 }
-function useStageScale() {
-  return useSyncExternalStore(
+// Snapshot as a string so useSyncExternalStore sees a stable value between resizes.
+function useViewport(): [number, number] {
+  const v = useSyncExternalStore(
     subscribe,
-    () => Math.min(window.innerWidth / W, window.innerHeight / H),
-    () => 1,
+    () => `${window.innerWidth}x${window.innerHeight}`,
+    () => `${W}x${H}`,
   );
+  const [w, h] = v.split("x").map(Number);
+  return [w, h];
 }
 
-function Stage({ team, children, label }: { team: string | null; children: ReactNode; label: string }) {
-  const s = useStageScale();
+// The stage fills the viewport (so the banner and the slab run edge to edge); the 1280x720 design frame
+// sits centred inside it.
+function Stage({ team, children, label, status }: { team: string | null; children: ReactNode; label: string; status: "GREEN" | "SC" | "VSC" }) {
+  const [vw, vh] = useViewport();
+  const s = Math.min(vw / W, vh / H);
+  const sw = vw / s;
+  const sh = vh / s;
   return (
     <RNRoot as="main" team={team} className="rnf-viewport" aria-label={label}>
-      <div className="rnf-stage" style={{ width: W, height: H, transform: `translate(-50%, -50%) scale(${s})` }}>
-        {children}
+      <div className="rnf-stage" style={{ width: sw, height: sh, transform: `scale(${s})` }}>
+        <TopBanner status={status} />
+        <div className="rnf-frame" style={{ left: (sw - W) / 2, top: (sh - H) / 2, width: W, height: H }}>
+          {children}
+        </div>
       </div>
     </RNRoot>
   );
@@ -127,7 +138,7 @@ export function RNFreeze(props: RNFreezeProps) {
     controls,
   };
   return (
-    <Stage team={team} label={COPY.freeze.question}>
+    <Stage team={team} label={COPY.freeze.question} status={status}>
       {mode === "advanced" ? <Advanced {...v} /> : <Simple {...v} />}
     </Stage>
   );
@@ -293,7 +304,6 @@ function Simple(v: View) {
   const f = v.brief.frame;
   return (
     <div className="rnf-simple">
-      <TopBanner status={v.status} />
       <div className="rn-slab rnf-slab-s" aria-hidden />
       <Logo className="rnf-logo" />
       <div className="rnf-s-clock">
@@ -362,7 +372,6 @@ function Advanced(v: View) {
   const total = f?.drivers.length ?? 0;
   return (
     <div className="rnf-adv">
-      <TopBanner status={v.status} />
       <div className="rn-slab rnf-slab-a" aria-hidden />
       <Logo className="rnf-logo" />
       <div className="rnf-a-clock">
@@ -522,9 +531,8 @@ export function RNLocked({ left, onResume, team = null, label, players = [], cal
   const lockedN = called ? called.length : players.length;
   const pct = holdS > 0 ? Math.max(0, Math.min(1, 1 - left / holdS)) : 1;
   return (
-    <Stage team={team} label={C.lockedTitle}>
+    <Stage team={team} label={C.lockedTitle} status={status}>
       <div className="rnf-locked">
-        <TopBanner status={status} />
         <div className="rn-slab rnf-slab-l" aria-hidden />
         {decision && <OutlineNumber value={decision.player_role.number} size={240} stroke="rgba(7,8,10,0.22)" style={{ position: "absolute", right: 56, top: 70 }} />}
         <Logo className="rnf-logo" />
