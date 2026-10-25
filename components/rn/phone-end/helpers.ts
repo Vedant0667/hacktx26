@@ -1,6 +1,7 @@
 // Pure helpers for the Race Night phone end, mirroring components/EndScreen.tsx (those are module-private there).
 import type { GameSummary, MomentCar, MomentEntry, RankRow, SummaryAudible, SummaryMoment } from "@/lib/client/api";
 import { playerRanks, splitPoints, type Split } from "@/lib/client/score";
+import { COPY } from "@/lib/copy";
 
 export function carFor(m: SummaryMoment, e: { driver_code: string | null }): MomentCar | undefined {
   return m.cars.find((c) => c.code === e.driver_code) ?? m.cars[0];
@@ -83,4 +84,11 @@ export function myCalls(s: GameSummary, me: string): MyCall[] {
     }),
     ...s.audibles.filter((a) => a.name === me).map((a) => ({ kind: "audible" as const, lap: a.lap, a })),
   ].sort((x, y) => x.lap - y.lap);
+}
+
+// Round 9 luck: a later red flag, SC/VSC or rain changed the result (legacy EndScreen luckNote).
+export function luckNote(m: SummaryMoment, e: MomentEntry): string | null {
+  const car = carFor(m, e);
+  if (!car?.luck || !car.explanation || !e.call) return null;
+  return rightOf(m, e) ? `${COPY.end.unlucky} ${car.explanation}` : `${COPY.end.lucky} ${car.explanation}`;
 }

@@ -51,7 +51,7 @@ function entry(kind: MomentEntry["kind"], name: string, call: C | null, right: C
 const moments: SummaryMoment[] = laps.map((l, i) => ({
   lap: l.lap,
   triggers: [l.trig],
-  cars: [{ code: "GAS", team: "Alpine", correct: l.right, swing_s: l.swing, stakes: l.stakes, team_call: l.right }],
+  cars: [{ code: "GAS", team: "Alpine", correct: l.right, swing_s: l.swing, stakes: l.stakes, team_call: l.right, ...(i === 1 ? { luck: true, explanation: "A safety car two laps later bunched the field." } : {}) }],
   entries: [
     ...players.map(([n]) => {
       const c = (myCallsFor[n] ?? ["STAY", "STAY", "BOX", "BOX"])[i];

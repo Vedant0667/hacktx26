@@ -49,7 +49,7 @@
   white-space: nowrap;
 }
 .rnpe .rnpe-place {
-  font-size: clamp(88px, 34vw, 140px);
+  font-size: clamp(96px, 38vw, 150px);
   letter-spacing: -0.02em;
   line-height: 0.85;
   white-space: nowrap;
@@ -209,7 +209,7 @@
 }
 .rnpe .rnpe-card {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-columns: 36px minmax(0, 1fr);
   gap: 0 16px;
   padding: 16px;
   background: var(--rn-panel);
@@ -371,4 +371,10 @@
   .rnpe .rnpe-card-pts {
     font-size: 26px;
   }
+}
+.rnpe .rnpe-luck {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--rn-yellow);
 }

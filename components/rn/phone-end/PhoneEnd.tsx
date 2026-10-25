@@ -9,7 +9,7 @@ import { COPY } from "@/lib/copy";
 import type { GameSummary, MomentEntry, SummaryMoment } from "@/lib/client/api";
 import { RNRoot, Label, Logo, SkewButton } from "@/components/rn/kit";
 import { PHONE_END_COPY as T } from "./copy";
-import { audibleSplit, benchmarks, freezeTally, myCalls, rightOf, shortStandings, splitOf, standingGroups, type StandingGroup } from "./helpers";
+import { audibleSplit, benchmarks, freezeTally, luckNote, myCalls, rightOf, shortStandings, splitOf, standingGroups, type StandingGroup } from "./helpers";
 import { playerRanks } from "@/lib/client/score";
 
 type View = "summary" | "calls" | "everyone";
@@ -30,7 +30,7 @@ export function RNPhoneSummary({ summary: s, me, initialView = "summary" }: { su
     <RNRoot team={team} className="rnpe">
       {view === "summary" && <Summary s={s} me={me} onCalls={() => go("calls")} />}
       {view === "calls" && <Calls s={s} me={me} car={myCar} onBack={() => go("summary")} onEveryone={() => go("everyone")} />}
-      {view === "everyone" && <Everyone s={s} onBack={() => go("calls")} />}
+      {view === "everyone" && <Everyone s={s} car={myCar} onBack={() => go("calls")} />}
     </RNRoot>
   );
 }
@@ -77,7 +77,7 @@ function Summary({ s, me, onCalls }: { s: GameSummary; me: string; onCalls: () =
             <StandingRow key={g.rank} g={g} me={me} />
           ))}
           {short.gap && (
-            <li className="rnpe-gap" aria-label={T.more}>
+            <li className="rnpe-gap" role="presentation" aria-hidden>
               <span />
               <span />
               <span />
@@ -175,12 +175,15 @@ function Calls({ s, me, car, onBack, onEveryone }: { s: GameSummary; me: string;
                 {(() => {
                   const sp = audibleSplit(r.a);
                   return sp ? (
-                    <p className="rnpe-why">
-                      <b>{COPY.end.reasoning(sp.r)}</b>
-                      {r.a.verdict ? ` · ${r.a.verdict}` : ""}
-                    </p>
+                    <>
+                      <p className="rnpe-why">
+                        <b>{COPY.end.reasoning(sp.r)}</b>
+                        {r.a.verdict ? ` · ${r.a.verdict}` : ""}
+                      </p>
+                      <p className="rnpe-split">{COPY.end.split(sp)}</p>
+                    </>
                   ) : (
-                    <p className="rnpe-why">{COPY.end.unscored}</p>
+                    <p className="rnpe-why">{COPY.race.audibleStatus[r.a.status] ?? COPY.end.unscored}</p>
                   );
                 })()}
               </div>
@@ -213,6 +216,7 @@ function Calls({ s, me, car, onBack, onEveryone }: { s: GameSummary; me: string;
 function CallCard({ lap, call, right, points, e, m }: { lap: number; call: "BOX" | "STAY" | null; right: boolean | null; points: number; e: MomentEntry; m: SummaryMoment }) {
   const sp = splitOf(m, e);
   const said = e.said.trim();
+  const luck = luckNote(m, e);
   return (
     <li className="rnpe-card">
       <span className="rn-d rnpe-lap">{T.lap(lap)}</span>
@@ -229,6 +233,7 @@ function CallCard({ lap, call, right, points, e, m }: { lap: number; call: "BOX"
             {said ? (e.verdict ?? <q>{said}</q>) : COPY.end.noReason}
           </p>
         )}
+        {luck && <p className="rnpe-luck">{luck}</p>}
         {sp && <p className="rnpe-split">{COPY.end.split(sp)}</p>}
       </div>
     </li>
@@ -243,12 +248,12 @@ function label(e: { kind: string; name: string; driver_code: string | null }, s:
   return s.cars.length > 1 && e.driver_code ? COPY.end.carTag(base, e.driver_code) : base;
 }
 
-function Everyone({ s, onBack }: { s: GameSummary; onBack: () => void }) {
+function Everyone({ s, car, onBack }: { s: GameSummary; car: string | null; onBack: () => void }) {
   return (
     <div className="rnpe-page rnpe-calls">
       <Head title={T.everyone} onBack={onBack} />
       {s.moments.map((m) => {
-        const main = m.cars[0];
+        const main = m.cars.find((c) => c.code === car) ?? m.cars[0];
         return (
           <section key={m.lap} className="rnpe-moment">
             <Label className="rnpe-meta">
@@ -257,6 +262,7 @@ function Everyone({ s, onBack }: { s: GameSummary; onBack: () => void }) {
                 .join(" · ")}
             </Label>
             {main && <p className="rnpe-moment-head">{COPY.end.wasRight(main.final_right_call ?? main.correct, main.swing_s)}</p>}
+            {main?.luck && main.explanation && <p className="rnpe-luck">{main.explanation}</p>}
             <ul className="rnpe-ev">
               {m.entries.map((e) => {
                 const r = rightOf(m, e);
