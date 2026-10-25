@@ -103,9 +103,9 @@
 .rnpe .rnpe-name {
   font-size: 19px;
   font-weight: 700;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.2;
+  padding: 8px 0;
+  overflow-wrap: anywhere;
 }
 .rnpe .rnpe-pts {
   font-size: 26px;
@@ -362,9 +362,6 @@
   opacity: 0.85;
 }
 @media (max-width: 370px) {
-  .rnpe .rnpe-hero {
-    padding-left: 64px;
-  }
   .rnpe .rnpe-call {
     font-size: 22px;
   }
@@ -377,4 +374,12 @@
   font-size: 14px;
   font-weight: 700;
   color: var(--rn-yellow);
+}
+.rnpe .rnpe-place[data-none] {
+  font-size: 64px;
+  white-space: normal;
+}
+.rnpe .rnpe-hero-top .rn-lbl {
+  font-size: 12px;
+  letter-spacing: 0.1em;
 }

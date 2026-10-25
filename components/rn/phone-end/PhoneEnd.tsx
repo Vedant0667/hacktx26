@@ -55,7 +55,7 @@ function Summary({ s, me, onCalls }: { s: GameSummary; me: string; onCalls: () =
             <Label tone="ink">{T.flag(s.race)}</Label>
             <Logo size="phone" style={{ color: "var(--on-team)" }} />
           </div>
-          <p className="rn-display rnpe-place" aria-label={place ? COPY.end.rankLine(place, myRank!.of) : T.noCall}>
+          <p className="rn-display rnpe-place" data-none={place ? undefined : true} aria-label={place ? COPY.end.rankLine(place, myRank!.of) : T.noCall}>
             {place ?? T.noCall}
           </p>
           {meRow && (
