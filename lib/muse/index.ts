@@ -1,4 +1,4 @@
-import { REASONING_CAP, REASONING_FLOOR } from "../scoring";
+import { ATTEMPT_CAP, REASONING_CAP, REASONING_FLOOR } from "../scoring";
 // Reasoning grades (Round 7). Muse Spark (muse-spark-1.3) scores a reason 0–50 against the decision's rubric
 // with a one-line verdict; rubricScore (lib/muse/rubric.ts) is the deterministic fallback whenever Muse is off,
 // over budget, fails, or twice returns a grade that credits something the player did not say.
@@ -72,13 +72,23 @@ async function askMuse(rubric: Rubric, call: Call | null, said: string, ctx: Gra
 // `ask` is replaceable for hermetic tests (scripts/test-scoring.ts).
 export type AskMuse = (rubric: Rubric, call: Call | null, said: string, ctx: GradeContext, note: string | null) => Promise<{ reasoning_score: number; verdict: string; credited_points: string[] } | null>;
 
-export async function gradeReason(rubric: Rubric, call: Call | null, transcript: string, ctx: GradeContext, ask: AskMuse = askMuse): Promise<Grade> {
+// A failed call (Meta answered 404 "model not found" for a few seconds on 2026-10-24) is retried with a backoff
+// before falling back to the rubric; each retry is its own budget reservation, so over budget stays over budget.
+export const GRADE_RETRY_MS = [1500, 4000];
+
+export async function gradeReason(rubric: Rubric, call: Call | null, transcript: string, ctx: GradeContext, ask: AskMuse = askMuse, retryMs: number[] = GRADE_RETRY_MS): Promise<Grade> {
   const said = transcript.trim();
   if (isUngradeable(said) || rubric.points.length === 0) return rubricScore(rubric, said);
   let note: string | null = null;
+  let retries = 0;
   for (let attempt = 0; attempt < 2; attempt++) {
     const out = await ask(rubric, call, said, ctx, note);
-    if (!out) break; // off, over budget, failed: no re-ask
+    if (!out) {
+      if (retries >= retryMs.length) break; // off, over budget or still failing: rubric
+      await new Promise((r) => setTimeout(r, retryMs[retries++]));
+      attempt--;
+      continue;
+    }
     const credited = [...new Set(out.credited_points)];
     const verdict = out.verdict.replace(/\s+/g, " ").trim();
     const problems = gradeProblems(rubric, said, { credited, verdict });
@@ -87,7 +97,9 @@ export async function gradeReason(rubric: Rubric, call: Call | null, transcript:
       note = problems.join("; ");
       continue;
     }
-    const score = Math.max(REASONING_FLOOR, Math.min(Math.round(out.reasoning_score), capFor(rubric, credited), REASONING_CAP));
+    // A real attempt can reach ATTEMPT_CAP; each credited (grounded) idea adds its maximum on top.
+    const cap = ATTEMPT_CAP + capFor(rubric, credited);
+    const score = Math.max(REASONING_FLOOR, Math.min(Math.round(out.reasoning_score), cap, REASONING_CAP));
     return { reasoning_score: score, verdict, credited, source: "muse" };
   }
   return rubricScore(rubric, said);

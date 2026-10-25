@@ -18,7 +18,7 @@ import {
   type StoredGrade,
 } from "@/lib/db";
 import { callMomentFrame, decisionForDriver, getAudibleTruth, getDriverAnswers, getFrames, getGroundTruth, getRaceFreezes, type DriverReveal, type RaceEntry, type RaceFreeze } from "@/lib/data";
-import { gradeReason, buildRubric, rubricScore, type Rubric, type RubricFacts } from "@/lib/muse";
+import { gradeReason, buildRubric, isUngradeable, rubricScore, type Rubric, type RubricFacts } from "@/lib/muse";
 import { pointsFor, rankLabel, rightCallOf, sharedRanks, stakesFor } from "@/lib/scoring";
 import type { Call, DecisionPoint, LapFrame } from "@/lib/types";
 import { HttpError, requireDecision } from "./http";
@@ -101,7 +101,11 @@ function benchGrade(job: BenchJob, cache: Map<string, StoredGrade>): StoredGrade
 }
 
 async function gradeBench(job: BenchJob): Promise<void> {
-  const g = await gradeReason(job.rubric, job.call, job.reasons.join(". "), { purpose: "grade_benchmark", lobbyCode: null, situation: job.situation });
+  const said = job.reasons.join(". ");
+  const g = await gradeReason(job.rubric, job.call, said, { purpose: "grade_benchmark", lobbyCode: null, situation: job.situation });
+  // Cache only a Muse grade, or a reason Muse never sees. A rubric fallback after a failed call stays uncached,
+  // so the next summary asks Muse again (a cached fallback was never regraded).
+  if (g.source !== "muse" && !isUngradeable(said.trim()) && job.rubric.points.length > 0) return;
   await saveBenchmarkGrade(job.key, { reasoning_score: g.reasoning_score, verdict: g.verdict, credited: g.credited, source: g.source });
 }
 

@@ -165,7 +165,9 @@ async function main() {
   await test("Muse grade: kept when grounded, capped by credited maxima", async () => {
     const ask: AskMuse = async () => ({ reasoning_score: 49, verdict: "Named stops still owed; missed the cheap SC stop.", credited_points: ["tyre_age"] });
     const g = await gradeReason(qatar, "BOX", "box we'll need to pit once more anyway", ctx, ask);
-    assert.deepEqual([g.source, g.reasoning_score, g.credited], ["muse", 15, ["tyre_age"]], "capped at the tyre idea's 15");
+    assert.deepEqual([g.source, g.reasoning_score, g.credited], ["muse", 30, ["tyre_age"]], "capped at the attempt 15 plus the tyre idea's 15");
+    const none: AskMuse = async () => ({ reasoning_score: 49, verdict: "Gave a reason; missed stops owed.", credited_points: [] });
+    assert.equal((await gradeReason(qatar, "BOX", "box because it feels right", ctx, none)).reasoning_score, 15, "no idea credited: attempt cap");
   });
 
   await test("Muse grade: an injected credit is re-asked once, then falls back", async () => {
@@ -192,7 +194,12 @@ async function main() {
 
   await test("Muse off or over budget: rubric fallback; empty reason: no call at all", async () => {
     const off: AskMuse = async () => null;
-    assert.equal((await gradeReason(qatar, "BOX", "box, everyone's pitting", ctx, off)).source, "rubric");
+    assert.equal((await gradeReason(qatar, "BOX", "box, everyone's pitting", ctx, off, [])).source, "rubric");
+    // A transient failure is retried: two failed calls, then Muse answers.
+    let fails = 0;
+    const flaky: AskMuse = async () => (fails++ < 2 ? null : { reasoning_score: 12, verdict: "Named stops still owed; missed the cheap SC stop.", credited_points: ["tyre_age"] });
+    const r = await gradeReason(qatar, "BOX", "box we'll need to pit once more anyway", ctx, flaky, [0, 0]);
+    assert.deepEqual([fails, r.source], [3, "muse"]);
     let called = false;
     const spy: AskMuse = async () => {
       called = true;
