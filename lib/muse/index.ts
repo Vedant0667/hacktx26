@@ -7,7 +7,7 @@ import { z } from "zod";
 import type { Call, ParsedCall } from "../types";
 import { museJson } from "./client";
 import { COPY_RULES_PROMPT, GRADE_TASK } from "./prompt";
-import { capFor, gradeProblems, isUngradeable, reasonWords, rubricScore, talksToGrader, type Grade, type Rubric } from "./rubric";
+import { capFor, gradeProblems, groundedIn, isRealAttempt, isUngradeable, rubricScore, verdictFor, type Grade, type Rubric } from "./rubric";
 
 export * from "./rubric";
 
@@ -80,8 +80,6 @@ export type AskMuse = (rubric: Rubric, call: Call | null, said: string, ctx: Gra
 // A failed call (Meta answered 404 "model not found" for a few seconds on 2026-10-24) is retried with a backoff
 // before falling back to the rubric. A skipped call (no key, over budget, lobby cap) goes straight to the rubric.
 export const GRADE_RETRY_MS = [1000, 2500];
-// A reason this long (content words), not addressed to the grader, counts as a real attempt (ATTEMPT_FLOOR).
-export const ATTEMPT_MIN_WORDS = 8;
 
 export async function gradeReason(rubric: Rubric, call: Call | null, transcript: string, ctx: GradeContext, ask: AskMuse = askMuse, retryMs: number[] = GRADE_RETRY_MS): Promise<Grade> {
   const said = transcript.trim();
@@ -97,18 +95,22 @@ export async function gradeReason(rubric: Rubric, call: Call | null, transcript:
       attempt--;
       continue;
     }
-    const credited = [...new Set(out.credited_points)];
-    const verdict = out.verdict.replace(/\s+/g, " ").trim();
+    let credited = [...new Set(out.credited_points)];
+    let verdict = out.verdict.replace(/\s+/g, " ").trim();
     const problems = gradeProblems(rubric, said, { credited, verdict });
     if (problems.length) {
       console.warn(`muse ${ctx.purpose}: rejected grade (${problems.join("; ")})`);
       note = problems.join("; ");
-      continue;
+      if (attempt === 0) continue;
+      // Second miss: keep the grade with only the grounded ideas. Muse's verdict described the rejected answer,
+      // so the verdict comes from the rubric. Safe because the score below depends only on grounded ideas.
+      const ids = new Set(rubric.points.map((p) => p.id as string));
+      credited = credited.filter((c) => ids.has(c) && groundedIn(c, said));
+      verdict = verdictFor(rubric, credited);
     }
     // Capped by the grounded ideas (plus ATTEMPT_CAP once there is one); a real attempt gets ATTEMPT_FLOOR.
-    const realAttempt = reasonWords(said).length >= ATTEMPT_MIN_WORDS && !talksToGrader(said);
     const cap = capFor(rubric, credited) + (credited.length ? ATTEMPT_CAP : 0);
-    const lowest = realAttempt ? ATTEMPT_FLOOR : REASONING_FLOOR;
+    const lowest = isRealAttempt(said) ? ATTEMPT_FLOOR : REASONING_FLOOR;
     const score = Math.max(lowest, Math.min(Math.round(out.reasoning_score), cap, REASONING_CAP));
     return { reasoning_score: score, verdict, credited, source: "muse" };
   }

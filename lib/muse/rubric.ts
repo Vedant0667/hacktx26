@@ -6,7 +6,7 @@
 // fallback, and groundedIn / verdictGrounded keep Muse from crediting ideas that are not in the player's words.
 import { COPY } from "../copy";
 import type { Call } from "../types";
-import { FALLBACK_SLOPE, REASONING_FLOOR, REASONING_MAX } from "../scoring";
+import { ATTEMPT_FLOOR, FALLBACK_SLOPE, REASONING_FLOOR, REASONING_MAX } from "../scoring";
 
 export type FactorId = "tyre_age" | "cheap_stop_under_sc" | "cheap_stop_under_vsc" | "similar_cars_pitted" | "track_position";
 const KNOWN: FactorId[] = ["tyre_age", "cheap_stop_under_sc", "cheap_stop_under_vsc", "similar_cars_pitted", "track_position"];
@@ -152,6 +152,12 @@ export function talksToGrader(transcript: string): boolean {
   return GRADER_TALK.test(transcript);
 }
 
+// A real attempt: 8+ content words, not addressed to the grader. It never scores below ATTEMPT_FLOOR, on either path.
+export const ATTEMPT_MIN_WORDS = 8;
+export function isRealAttempt(transcript: string): boolean {
+  return reasonWords(transcript).length >= ATTEMPT_MIN_WORDS && !talksToGrader(transcript);
+}
+
 // No reason, or not a reason about the race: 0 with no Muse call. Anything else is a genuine attempt.
 export function isUngradeable(transcript: string): boolean {
   return isEmptyReason(transcript) || isInjection(transcript);
@@ -199,7 +205,7 @@ export const IDEAS: Record<FactorId, RegExp[]> = {
 const CHEAP_GROUND = new RegExp(`${CHEAP.source}|\\b(pit|stop|box)\\w* under (the )?(vsc|sc|safety car|virtual safety car)\\b|\\b(free|cheap) (pit|stop)\\b`, "i");
 export const GROUND_TERMS: Record<FactorId, RegExp> = {
   tyre_age:
-    /\b(tyres?|tires?|rubber|softs?|mediums?|hards?|compound|deg\w*|wear\w*|worn|grip|stint|old tyres?|fresh tyres?|once more|pit again|stop again|another stop|one more stop|stops? (owed|left|to go)|two[- ]stop|out (for|there for) \d+ laps?|\d+ laps? (old|on|out)|laps? on (them|these|the tyres?)|(box|pit|stop)\w* again|last (the )?(rest|distance|race|stint|to the end)|make it to the end|last (until|till|to) the (end|finish|flag))\b/i,
+    /\b(tyres?|tires?|rubber|softs?|mediums?|hards?|compound|deg\w*|wear\w*|worn|grip|stint|old tyres?|fresh tyres?|once more|pit again|stop again|another stop|one more stop|stops? (owed|left|to go)|two[- ]stop|out (for|there for) \d+ laps?|\d+ laps? (old|on|out)|laps? on (them|these|the tyres?)|(box|pit|stop)\w* again|last (just )?(the )?(rest|distance|race|stint|to the end)|rest of the (race|match|stint|way)|\d+ (more )?laps? (left|remaining|to go)|make it to the end|last (until|till|to) the (end|finish|flag))\b/i,
   cheap_stop_under_sc: CHEAP_GROUND,
   cheap_stop_under_vsc: CHEAP_GROUND,
   similar_cars_pitted:
@@ -207,14 +213,20 @@ export const GROUND_TERMS: Record<FactorId, RegExp> = {
   track_position: /\b(track position|lose (the )?(lead|positions?|places?)|keep (the )?(lead|positions?|places?)|traffic|dirty air|clean air|overtak\w*|pass\w*|rejoin|p ?\d{1,2}|(place|position) (\d{1,2}|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty))\b/i,
 };
 
+// Spoken filler removed before matching ideas, so "out for 24, um, laps" reads as "out for 24 laps".
+const FILLER = /,?\s*\b(um+|uh+|er+m?|like|you know|i mean|kind of|sort of|basically|literally)\b,?/gi;
+export const unfill = (t: string) => t.replace(FILLER, " ").replace(/\s+/g, " ");
+
 export function groundedIn(id: string, transcript: string): boolean {
   const f = id as FactorId;
   if (!KNOWN.includes(f)) return false;
-  return GROUND_TERMS[f].test(transcript) || IDEAS[f].some((re) => re.test(transcript));
+  const t = unfill(transcript);
+  return GROUND_TERMS[f].test(t) || IDEAS[f].some((re) => re.test(t));
 }
 
 export function ideasIn(rubric: Rubric, transcript: string): FactorId[] {
-  return rubric.points.filter((p) => IDEAS[p.id].some((re) => re.test(transcript))).map((p) => p.id);
+  const t = unfill(transcript);
+  return rubric.points.filter((p) => IDEAS[p.id].some((re) => re.test(t))).map((p) => p.id);
 }
 
 const listOf = (xs: string[]) => (xs.length > 1 ? `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}` : (xs[0] ?? ""));
@@ -240,7 +252,7 @@ export function rubricScore(rubric: Rubric, transcript: string): Grade {
   if (isUngradeable(transcript)) return { reasoning_score: 0, verdict: COPY.grade.empty, credited: [], source: "empty" };
   const credited = ideasIn(rubric, transcript);
   const raw = Math.min(REASONING_MAX, rubric.points.filter((p) => credited.includes(p.id)).reduce((a, p) => a + p.max, 0));
-  const score = Math.round(REASONING_FLOOR + FALLBACK_SLOPE * raw);
+  const score = Math.max(isRealAttempt(transcript) ? ATTEMPT_FLOOR : REASONING_FLOOR, Math.round(REASONING_FLOOR + FALLBACK_SLOPE * raw));
   return { reasoning_score: score, verdict: verdictFor(rubric, credited), credited, source: "rubric" };
 }
 

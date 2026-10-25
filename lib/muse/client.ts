@@ -22,7 +22,8 @@ export function museBudgetUsd(): number {
 
 function lobbyMaxCalls(): number {
   const v = Number(process.env.MUSE_LOBBY_MAX_CALLS);
-  return Number.isFinite(v) && v >= 0 && process.env.MUSE_LOBBY_MAX_CALLS ? v : 40;
+  // 12 players x 6 freezes x up to 2 asks = 144 grading calls in a full race lobby (about $0.65 at worst).
+  return Number.isFinite(v) && v >= 0 && process.env.MUSE_LOBBY_MAX_CALLS ? v : 160;
 }
 
 export function museEnabled(): boolean {
