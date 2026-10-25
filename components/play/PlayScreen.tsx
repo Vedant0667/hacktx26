@@ -19,6 +19,10 @@ import { Brand, Check, ConnNotice, ErrorText, ModeToggle, ScChip, TrackStrip, Ty
 import { CallPad } from "./CallPad";
 import { PlayerResult } from "./PlayerResult";
 import { RacePlay } from "../race/RacePlay";
+import { useRaceNight } from "@/lib/client/uiFlag";
+import { RNJoinForm } from "../rn/phone/JoinForm";
+import { RNWaiting } from "../rn/phone/Waiting";
+import { RNReplay } from "../rn/phone/Replay";
 
 export function PlayScreen({ code }: { code: string }) {
   const [removed, setRemoved] = useState(false);
@@ -38,6 +42,7 @@ export function PlayScreen({ code }: { code: string }) {
   const [drivers, setDrivers] = useState<BlindDriver[] | null>(null);
   const t = useTicker(serverNow, 200);
   const [mode, setMode] = useDataMode(code, "play");
+  const rn = useRaceNight();
 
   const decisionId = lobby?.decision_id;
   useEffect(() => {
@@ -119,19 +124,36 @@ export function PlayScreen({ code }: { code: string }) {
     return (
       <>
         <ConnNotice conn={conn} code={code} />
-        <JoinForm
-          code={code}
-          players={lobby.players.length}
-          choose={lobby.driver_mode === "choose"}
-          drivers={drivers}
-          frames={frames}
-          initialName={me ?? ""}
-          onRemoved={() => setRemoved(true)}
-          onJoined={(name, state) => {
-            setMe(name);
-            apply(state, Date.now());
-          }}
-        />
+        {rn ? (
+          <RNJoinForm
+            code={code}
+            players={lobby.players.length}
+            choose={lobby.driver_mode === "choose"}
+            drivers={drivers}
+            frames={frames}
+            initialName={me ?? ""}
+            onRemoved={() => setRemoved(true)}
+            onJoined={(name, state) => {
+              setMe(name);
+              apply(state, Date.now());
+            }}
+            pickers={lobby.players}
+          />
+        ) : (
+          <JoinForm
+            code={code}
+            players={lobby.players.length}
+            choose={lobby.driver_mode === "choose"}
+            drivers={drivers}
+            frames={frames}
+            initialName={me ?? ""}
+            onRemoved={() => setRemoved(true)}
+            onJoined={(name, state) => {
+              setMe(name);
+              apply(state, Date.now());
+            }}
+          />
+        )}
       </>
     );
 
@@ -153,6 +175,16 @@ export function PlayScreen({ code }: { code: string }) {
           mode={mode}
           setMode={setMode}
         />
+      </>
+    );
+
+  // Race Night views draw their own page; the end screen keeps its wrapper (PlayerResult swaps inside).
+  if (rn && (phase === "waiting" || (phase === "replay" && mine && frames)))
+    return (
+      <>
+        <ConnNotice conn={conn} code={code} />
+        {phase === "waiting" && <RNWaiting code={code} lobby={lobby} decision={mine} me={me!} mode={mode} setMode={setMode} teamColour={team} carCode={myCode} />}
+        {phase === "replay" && mine && frames && <RNReplay decision={mine} frames={frames} elapsed={elapsed} mode={mode} setMode={setMode} me={me!} />}
       </>
     );
 

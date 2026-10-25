@@ -1,4 +1,4 @@
-import { HomeScreen } from "@/components/HomeScreen";
+import { HomeSwitch } from "@/components/rn/home/HomeSwitch";
 import { getIndex } from "@/lib/data";
 
 async function loadIndex() {
@@ -8,5 +8,5 @@ async function loadIndex() {
 
 export default async function Page() {
   const index = await loadIndex();
-  return <HomeScreen index={index} />;
+  return <HomeSwitch index={index} />;
 }

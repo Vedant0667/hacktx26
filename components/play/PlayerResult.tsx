@@ -3,10 +3,13 @@
 // shared game summary (components/EndScreen.tsx).
 import type { LobbyStateResponse } from "@/lib/client/api";
 import { useSummary } from "@/lib/client/results";
+import { useRaceNight } from "@/lib/client/uiFlag";
 import { PhoneSummary, Scoring } from "../EndScreen";
+import { RNPhoneSummary } from "../rn/phone-end/PhoneEnd";
 
 export function PlayerResult({ code, me, lobby, elapsed }: { code: string; me: string; lobby: LobbyStateResponse; elapsed: number }) {
   const { summary, failed } = useSummary(code, lobby.phase === "reveal" || lobby.phase === "done");
+  const rn = useRaceNight();
   if (!summary) return <Scoring elapsedMs={elapsed} failed={failed} />;
-  return <PhoneSummary summary={summary} me={me} />;
+  return rn ? <RNPhoneSummary summary={summary} me={me} /> : <PhoneSummary summary={summary} me={me} />;
 }

@@ -33,6 +33,12 @@ import { ConnNotice, ErrorText, ModeToggle, ScChip, TrackStrip, TyreChip } from 
 import { RaceProgress, Triggers } from "./parts";
 import { PhoneSummary, Scoring } from "../EndScreen";
 import { useSummary } from "@/lib/client/results";
+import { useRaceNight } from "@/lib/client/uiFlag";
+import { RNJoinForm } from "../rn/phone/JoinForm";
+import { RNRaceWaiting } from "../rn/phone/Waiting";
+import { RNRaceReplay } from "../rn/phone/Replay";
+import { RNNoCall } from "../rn/phone/NoCall";
+import { RNPhoneSummary } from "../rn/phone-end/PhoneEnd";
 
 export function RacePlay({
   code,
@@ -66,12 +72,30 @@ export function RacePlay({
   const freeze = useRaceFreeze(code, joined ? lobby : null);
   const { summary, failed } = useSummary(code, joined && phase === "done");
   const t = useTicker(serverNow, 200);
+  const rn = useRaceNight();
 
   if (!joined || !me) {
     const drivers: BlindDriver[] | null = entry ? entry.drivers.map((d) => ({ ...d, blind_title: "" })) : null;
     return (
       <>
         <ConnNotice conn={conn} code={code} />
+        {rn ? (
+          <RNJoinForm
+            code={code}
+            players={race.players.length}
+            choose={race.driver_mode === "choose" && phase === "waiting"}
+            drivers={drivers}
+            frames={null}
+            initialName={me ?? ""}
+            onRemoved={onRemoved}
+            onJoined={onJoined}
+            pickers={race.players}
+            metaFor={(c) => {
+              const n = entry?.drivers.find((d) => d.code === c)?.freeze_count ?? 0;
+              return <span className="nums text-xs font-bold">{COPY.homeUi.calls(n)}</span>;
+            }}
+          />
+        ) : (
         <JoinForm
           code={code}
           players={race.players.length}
@@ -86,6 +110,7 @@ export function RacePlay({
             return <span className="nums text-xs font-bold">{COPY.homeUi.calls(n)}</span>;
           }}
         />
+        )}
       </>
     );
   }
@@ -117,6 +142,22 @@ export function RacePlay({
           mode={mode}
           setMode={setMode}
         />
+      </>
+    );
+  }
+
+  const lapNow = Math.min(clockLap(race, t), frames.at(-1)?.lap ?? 0);
+  // Race Night views draw their own page; phases without one keep the classic layout below.
+  if (rn && (phase === "waiting" || phase === "replay" || phase === "freeze" || (phase === "done" && summary))) {
+    return (
+      <>
+        <ConnNotice conn={conn} code={code} />
+        {phase === "waiting" && <RNRaceWaiting code={code} race={race} me={me} driver={driver} mode={mode} setMode={setMode} />}
+        {phase === "replay" && <RNRaceReplay code={code} race={race} me={me} car={myCar} frames={frames} lap={lapNow} mode={mode} setMode={setMode} />}
+        {phase === "freeze" && (
+          <RNNoCall race={race} me={me} car={myCar} freeze={freeze?.drivers ?? null} loading={!!myCar && need.includes(myCar)} left={Math.max(0, Math.ceil(CALL_WINDOW_S - elapsed / 1000))} teamColour={colour} />
+        )}
+        {phase === "done" && summary && <RNPhoneSummary summary={summary} me={me} />}
       </>
     );
   }
