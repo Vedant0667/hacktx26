@@ -314,15 +314,19 @@ export function TabNum({ value }: { value: string }) {
   );
 }
 
-// A value with its unit set smaller and lighter: "+1.5 s", "17.5 s", "23 laps", "0.3/lap". The text is unchanged.
+// A value with its unit set smaller and lighter: "+1.5 s", "17.5 s", "23 laps", "0.3/lap". The text is unchanged
+// (the space stays, inside the smaller unit).
 export function Num({ value, className = "" }: { value: string; className?: string }) {
-  const m = /^(.*\d)\s?(s|s\/lap|\/lap|laps?|%)$/.exec(value);
+  const m = /^(.*\d)(\s?)(s|s\/lap|\/lap|laps?|%)$/.exec(value);
   return (
     <span className={`nums ${className}`}>
       {m ? (
         <>
           {m[1]}
-          <span className="unit">{m[2]}</span>
+          <span className="unit">
+            {m[2]}
+            {m[3]}
+          </span>
         </>
       ) : (
         value

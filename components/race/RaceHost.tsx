@@ -406,6 +406,8 @@ function ReplayView({
                   invert
                   fit
                   text={1.3}
+                  aspect={0.42}
+                  maxHeight={500}
                   width={600}
                   height={260}
                   xLabels={xLabels}

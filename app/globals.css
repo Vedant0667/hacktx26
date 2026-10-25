@@ -79,7 +79,6 @@
   font-size: 0.56em;
   font-weight: 600;
   letter-spacing: 0;
-  margin-left: 0.14em;
   opacity: 0.72;
 }
 @utility tnum {
@@ -97,7 +96,6 @@
   line-height: 1.2;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  font-variant-numeric: tabular-nums;
 }
 
 html,

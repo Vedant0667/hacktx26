@@ -58,7 +58,7 @@ export function LapChart({
   // SC/VSC laps get a shaded band and a flag-yellow tick on the x-axis.
   status?: Record<number, TrackStatus>;
 }) {
-  const [box, measured] = useBoxWidth<HTMLDivElement>(width);
+  const [box, measured] = useBoxWidth<HTMLDivElement>(width, fit);
   const vw = fit ? measured : width;
   const fs = (n: number) => n * text;
   const list = cars.filter((c): c is CarTrend => !!c && c.times.some((t) => t != null));
@@ -361,7 +361,7 @@ export function IntervalTable({ t }: { t: Telemetry }) {
 
 // The same intervals as lines (host layout).
 export function IntervalChart({ t, height = 200, fit = false, text = 1 }: { t: Telemetry; height?: number; fit?: boolean; text?: number }) {
-  const [box, measured] = useBoxWidth<HTMLDivElement>(W);
+  const [box, measured] = useBoxWidth<HTMLDivElement>(W, fit);
   const vw = fit ? measured : W;
   const fs = (n: number) => n * text;
   const rows = t.pairs.filter((p) => p.series.some((v) => v != null));

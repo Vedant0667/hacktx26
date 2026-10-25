@@ -46,13 +46,13 @@ export function Tower({
   const showPitCol = showPit && (adv || !!pitTags);
   const ints = showInt ? intervals(drivers) : null;
   const cols = [
-    "28px",
-    "4px",
-    "minmax(44px,1fr)",
-    "76px",
-    showInt ? "64px" : null,
-    showTyre ? "56px" : null,
-    showPitCol ? (pitTags ? "84px" : "40px") : null,
+    "26px",
+    "3px",
+    "minmax(40px,1fr)",
+    "58px",
+    showInt ? "48px" : null,
+    showTyre ? "46px" : null,
+    showPitCol ? (pitTags ? "84px" : "34px") : null,
   ]
     .filter(Boolean)
     .join("_");
@@ -60,7 +60,7 @@ export function Tower({
 
   return (
     <div className={dim ? "tower-dim" : ""}>
-      <div className="grid h-8 items-center gap-x-3 border-b-2 border-ink px-2" style={{ gridTemplateColumns: cols.replaceAll("_", " ") }}>
+      <div className="grid h-8 items-center gap-x-2 border-b-2 border-ink px-2" style={{ gridTemplateColumns: cols.replaceAll("_", " ") }}>
         <span className="meta text-right">{COPY.replay.columns.pos}</span>
         <span />
         <span className="meta">{COPY.replay.columns.driver}</span>
@@ -77,7 +77,7 @@ export function Tower({
           return (
             <li
               key={d.number}
-              className={`tower-row absolute inset-x-0 grid items-center gap-x-3 border-b px-2 ${text} ${mine ? "z-[1] border-ink bg-ink text-white" : "border-line bg-bg"}`}
+              className={`tower-row absolute inset-x-0 grid items-center gap-x-2 border-b px-2 ${text} ${mine ? "z-[1] border-ink bg-ink text-white" : "border-line bg-bg"}`}
               style={{ height: ROW, transform: `translateY(${(slot.get(d.number) ?? 0) * ROW}px)`, gridTemplateColumns: cols.replaceAll("_", " ") }}
               aria-current={mine || undefined}
             >

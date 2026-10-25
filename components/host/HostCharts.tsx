@@ -11,7 +11,7 @@ export interface Line {
   tier: number;
 }
 
-const svgText = { fontFamily: "var(--font-sans)", fontVariantNumeric: "tabular-nums", fontFeatureSettings: '"tnum" 1' } as const;
+const svgText = { fontFamily: "var(--font-sans)" } as const;
 
 const niceStep = (span: number) => {
   const raw = span / 3;
@@ -31,6 +31,8 @@ export function LineChart({
   decimals = 1,
   fit = false,
   text = 1,
+  aspect,
+  maxHeight,
 }: {
   lines: Line[];
   xLabels: string[];
@@ -44,9 +46,13 @@ export function LineChart({
   // fit: a 1:1 viewBox measured from the box, so labels keep their size at any screen width; text scales labels.
   fit?: boolean;
   text?: number;
+  // With fit: height follows the measured width (height = width * aspect), capped at maxHeight.
+  aspect?: number;
+  maxHeight?: number;
 }) {
-  const [box, measured] = useBoxWidth<HTMLDivElement>(width);
+  const [box, measured] = useBoxWidth<HTMLDivElement>(width, fit);
   const vw = fit ? measured : width;
+  const h = fit && aspect ? Math.min(maxHeight ?? Infinity, Math.max(height, Math.round(vw * aspect))) : height;
   const fs = (n: number) => n * text;
   const vals = lines.flatMap((l) => l.values).filter((v): v is number => v != null);
   if (vals.length < 2 || xLabels.length < 2) return <p className="text-base">{COPY.tele.noTimes}</p>;
@@ -63,7 +69,7 @@ export function LineChart({
   const L = fs(44);
   const R = vw - fs(labelRight);
   const T = 8;
-  const B = height - fs(24);
+  const B = h - fs(24);
   const n = xLabels.length;
   const x = (i: number) => L + (i / (n - 1)) * (R - L);
   const y = (v: number) => (invert ? T + ((v - lo) / (hi - lo)) * (B - T) : B - ((v - lo) / (hi - lo)) * (B - T));
@@ -88,7 +94,7 @@ export function LineChart({
   for (let k = 1; k < ends.length; k++) if (ends[k].y - ends[k - 1].y < fs(13)) ends[k].y = ends[k - 1].y + fs(13);
   return (
     <div ref={box}>
-    <svg viewBox={`0 0 ${vw} ${height}`} className="block h-auto w-full" aria-hidden>
+    <svg viewBox={`0 0 ${vw} ${h}`} className="block h-auto w-full" aria-hidden>
       {ticks.map((v) => (
         <g key={v}>
           <line x1={L} x2={R} y1={y(v)} y2={y(v)} stroke="currentColor" strokeOpacity=".14" />
@@ -100,7 +106,7 @@ export function LineChart({
       <line x1={L} x2={R} y1={B} y2={B} stroke="currentColor" strokeOpacity=".28" />
       {xLabels.map((t, i) =>
         i % every === 0 || i === n - 1 ? (
-          <text key={i} x={x(i)} y={height - 6} fontSize={fs(10)} fontWeight="500" textAnchor="middle" fill="currentColor" fillOpacity=".65" style={svgText}>
+          <text key={i} x={x(i)} y={h - 6} fontSize={fs(10)} fontWeight="500" textAnchor="middle" fill="currentColor" fillOpacity=".65" style={svgText}>
             {t}
           </text>
         ) : null,

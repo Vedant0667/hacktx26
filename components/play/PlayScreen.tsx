@@ -182,11 +182,11 @@ export function FieldHead({ status, right, children }: { status: React.ReactNode
   return (
     <div className="bg-field text-on-field">
       <div className="flex h-[52px] items-center justify-between gap-3 px-5">
-        <span className="meta flex items-center gap-2.5 text-[13px]">
+        <span className="nums flex items-center gap-2.5 text-sm font-bold tracking-[-0.01em]">
           <Brand kind="mark" height={13} />
           {status}
         </span>
-        <span className="min-w-0 max-w-[45%] truncate text-[13px] font-bold">{right}</span>
+        <span className="min-w-0 max-w-[45%] truncate text-sm font-semibold opacity-85">{right}</span>
       </div>
       <div className="px-5 pb-[22px] pt-[18px]">{children}</div>
     </div>
@@ -208,11 +208,11 @@ function Waiting({ lobby, decision, me, mode, setMode }: { lobby: LobbyStateResp
         </div>
         <ol className="mt-3 flex flex-col">
           {lobby.players.map((p, i) => (
-            <li key={p.name} className={`rise grid h-10 grid-cols-[40px_1fr] items-center font-mono text-[15px] ${p.name === me ? "-mx-2 bg-field px-2 font-bold text-on-field" : "border-b border-soft-2"}`}>
+            <li key={p.name} className={`rise tnum grid h-11 grid-cols-[40px_1fr] items-center text-[15px] font-semibold ${p.name === me ? "-mx-2 bg-field px-2 text-on-field" : "border-b border-line"}`}>
               <span>{i + 1}</span>
               <span className="flex min-w-0 items-center justify-between gap-2">
-                <span className="truncate font-sans text-base font-bold">{p.name}</span>
-                {p.driver_code && <span className="text-xs font-bold">{p.driver_code}</span>}
+                <span className="truncate text-base font-bold">{p.name}</span>
+                {p.driver_code && <span className="text-xs font-bold tracking-[0.02em] opacity-80">{p.driver_code}</span>}
               </span>
             </li>
           ))}
@@ -278,7 +278,7 @@ function Replay({ decision, frames, elapsed, mode, setMode, me }: { decision: Bl
             return (
               <li
                 key={d.number}
-                className={`grid h-10 items-center font-mono text-[15px] ${mode === "advanced" ? "grid-cols-[32px_6px_1fr_72px_60px]" : "grid-cols-[32px_6px_1fr_80px_60px]"} gap-x-2 ${
+                className={`nums grid h-10 items-center text-[15px] ${mode === "advanced" ? "grid-cols-[32px_6px_1fr_72px_60px]" : "grid-cols-[32px_6px_1fr_80px_60px]"} gap-x-2 ${
                   isMe ? "-mx-2 bg-field px-2 font-bold text-on-field" : "border-b border-soft-2 font-medium"
                 }`}
                 aria-current={isMe || undefined}
@@ -363,14 +363,14 @@ export function JoinForm({
     <form onSubmit={submit} className="mx-auto flex min-h-dvh w-full max-w-[480px] flex-col [&_label]:scroll-mb-28" noValidate>
       <header className="flex h-[52px] items-center justify-between px-5">
         <Brand kind="wordmark" height={16} />
-        <span className="meta text-[13px]">{COPY.room.heading(code)}</span>
+        <span className="text-sm font-bold">{COPY.room.heading(code)}</span>
       </header>
       <div className="flex flex-1 flex-col px-5 pb-6">
         <h1 className="display mb-[30px] mt-[22px] text-[3.25rem] leading-[0.95]">{COPY.phone.joinTitle}</h1>
         <span className="meta">{COPY.phone.roomCode}</span>
         <div className="mt-2.5 grid grid-cols-4 gap-2" aria-label={COPY.room.heading(code)}>
           {letters.map((c, i) => (
-            <div key={i} className={`flex h-[84px] items-center justify-center border-ink font-mono text-[2.75rem] font-bold ${i === 3 ? "border-4" : "border-2"}`} aria-hidden>
+            <div key={i} className={`flex h-[84px] items-center justify-center border-ink text-[2.75rem] font-black tracking-[-0.02em] ${i === 3 ? "border-4" : "border-2"}`} aria-hidden>
               {c}
             </div>
           ))}

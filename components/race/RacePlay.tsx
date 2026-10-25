@@ -176,11 +176,11 @@ function Waiting({ race, me, driver, mode, setMode }: { race: RaceLobby; me: str
         </div>
         <ol className="mt-3 flex flex-col">
           {race.players.map((p, i) => (
-            <li key={p.name} className={`rise grid h-10 grid-cols-[40px_1fr] items-center font-mono text-[15px] ${p.name === me ? "-mx-2 bg-field px-2 font-bold text-on-field" : "border-b border-soft-2"}`}>
+            <li key={p.name} className={`rise tnum grid h-11 grid-cols-[40px_1fr] items-center text-[15px] font-semibold ${p.name === me ? "-mx-2 bg-field px-2 text-on-field" : "border-b border-line"}`}>
               <span>{i + 1}</span>
               <span className="flex min-w-0 items-center justify-between gap-2">
-                <span className="truncate font-sans text-base font-bold">{p.name}</span>
-                {(p.driver_code || race.driver_code) && <span className="text-xs font-bold">{p.driver_code || race.driver_code}</span>}
+                <span className="truncate text-base font-bold">{p.name}</span>
+                {(p.driver_code || race.driver_code) && <span className="text-xs font-bold tracking-[0.02em] opacity-80">{p.driver_code || race.driver_code}</span>}
               </span>
             </li>
           ))}
@@ -268,7 +268,7 @@ function Replay({
             return (
               <li
                 key={d.number}
-                className={`grid h-10 grid-cols-[32px_6px_1fr_80px_60px] items-center gap-x-2 font-mono text-[15px] ${isMe ? "-mx-2 bg-field px-2 font-bold text-on-field" : "border-b border-soft-2 font-medium"}`}
+                className={`nums grid h-10 grid-cols-[32px_6px_1fr_80px_60px] items-center gap-x-2 text-[15px] ${isMe ? "-mx-2 bg-field px-2 font-bold text-on-field" : "border-b border-soft-2 font-medium"}`}
                 aria-current={isMe || undefined}
               >
                 <span>{d.position}</span>
@@ -410,7 +410,7 @@ function NoCall({
         })}
         <ol className="flex flex-wrap gap-1.5">
           {owing.map((p) => (
-            <li key={p.name} className={`inline-flex h-8 max-w-[14ch] items-center truncate px-2 text-sm font-black ${r.called.includes(p.name) ? "bg-ink text-white" : "border border-dashed border-ink"}`}>
+            <li key={p.name} className={`inline-flex h-8 max-w-[14ch] items-center truncate px-2.5 text-sm font-black ${r.called.includes(p.name) ? "bg-ink text-white" : "bg-current/10 shadow-[inset_0_-2px_0_currentColor]"}`}>
               {p.name}
             </li>
           ))}
