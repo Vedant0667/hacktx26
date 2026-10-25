@@ -1,6 +1,6 @@
-"use client";
 // Race Night UI kit: the shared, presentation-only primitives every Race Night screen is built from. No business
-// logic: callers pass display values. Styles live in kit.css, all scoped under the .rn root that RNRoot renders.
+// logic: callers pass display values. No "use client" and no hooks: usable from server and client components alike
+// (event handlers such as onClick can only be passed from client components, as usual). Styles live in kit.css, all scoped under the .rn root that RNRoot renders.
 import "./kit.css";
 import type { ButtonHTMLAttributes, CSSProperties, ElementType, ReactNode } from "react";
 import { COPY } from "@/lib/copy";
