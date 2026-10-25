@@ -11,6 +11,7 @@ import type { LapFrame } from "@/lib/types";
 import { Check } from "@/components/ui";
 import { Logo, RNRoot, SkewButton, teamVars, TyreBadge } from "../kit";
 import { RN_PHONE_COPY as C } from "./copy";
+import { normaliseName } from "@/lib/normalise-name";
 
 export type RNPicker = { name: string; driver_code?: string | null };
 
@@ -44,7 +45,9 @@ export function RNJoinForm({
   const [taken, setTaken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function join(n: string) {
+  async function join(typed: string) {
+    // The server stores the normalised name; use the same form for the token, submits and finding ourselves.
+    const n = normaliseName(typed);
     setErr(null);
     setTaken(null);
     setBusy(true);

@@ -24,6 +24,7 @@ import { RNJoinForm } from "../rn/phone/JoinForm";
 import { RNWaiting } from "../rn/phone/Waiting";
 import { RNReplay } from "../rn/phone/Replay";
 import { RNCallPad } from "../rn/call/RNCallPad";
+import { normaliseName } from "@/lib/normalise-name";
 
 export function PlayScreen({ code }: { code: string }) {
   const [removed, setRemoved] = useState(false);
@@ -370,7 +371,9 @@ export function JoinForm({
   const [taken, setTaken] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function join(n: string) {
+  async function join(typed: string) {
+    // The server stores the normalised name; use the same form for the token, submits and finding ourselves.
+    const n = normaliseName(typed);
     setErr(null);
     setTaken(null);
     setBusy(true);

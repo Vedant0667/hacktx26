@@ -1,6 +1,7 @@
 // Nickname rules and the public leaderboard row shape. Pure (no DB, no network) so scripts/test-names.ts can
 // run it. The profanity check uses the obscenity package's English dataset; no word list lives in this repo.
 import { englishDataset, englishRecommendedTransformers, RegExpMatcher } from "obscenity";
+import { normaliseName } from "./normalise-name";
 
 export const NAME_MAX = 24;
 const MAX_MARKS_IN_A_ROW = 2;
@@ -29,10 +30,8 @@ function spelledOut(name: string): string[] {
   return runs;
 }
 
-// NFKC, trimmed, inner whitespace collapsed to one space. This is the form that is stored and compared.
-export function normaliseName(raw: string): string {
-  return raw.normalize("NFKC").replace(/\s+/gu, " ").trim();
-}
+// NFKC, trimmed, inner whitespace collapsed to one space (lib/normalise-name.ts). The form that is stored and compared.
+export { normaliseName };
 
 export type NameCheck = { ok: true; name: string } | { ok: false; reason: "empty" | "length" | "control" | "marks" | "profanity" | "reserved" };
 

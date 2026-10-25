@@ -76,7 +76,10 @@ export function joinErrorText(e: unknown, code: string, name: string): string {
   if (e.status === 404) return COPY.home.codeNotFound(code);
   if (e.status === 403) return COPY.error.removed;
   if (e.status === 429) return COPY.error.rateLimited(e.retryAfter);
-  if (e.status === 400) return /driver/i.test(e.message) ? COPY.drivers.pick : COPY.play.consentMissing;
+  if (e.status === 400) {
+    if (e.message === COPY.error.nameRejected) return COPY.error.nameRejected;
+    return /driver/i.test(e.message) ? COPY.drivers.pick : COPY.play.consentMissing;
+  }
   return COPY.error.connectionLost;
 }
 
