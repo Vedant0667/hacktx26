@@ -300,8 +300,8 @@ export function buildScene(g: TrackGeometry, markers: readonly MapMarker[], opts
     const th = fs * 0.72;
     // Rendered SVG text boxes run larger than this estimate (mixed case, ascent/descent), so keep labels
     // apart with a padded box when testing against each other.
-    const padX = fs * 0.25 * text.length * 0.5 + u(6);
-    const padY = fs * 0.35 + u(4);
+    const padX = fs * 0.2 * text.length + u(8);
+    const padY = fs * 0.45 + u(5);
     const gap = u(5) + (big ? (u(18) - r) * 0.35 : 0);
     let best: { pen: number; cx: number; cy: number; box: [number, number, number, number] } | null = null;
     for (let deg = 0; deg < 360; deg += 15) {

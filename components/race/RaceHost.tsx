@@ -44,6 +44,7 @@ import { RNRaceLobby } from "../rn/host/lobby/RNLobby";
 import { RNRaceReplay } from "../rn/host/replay/RNReplay";
 import { RNHostSummary, RNScoring } from "../rn/end/RNHostEnd";
 import { RNFreeze, RNLocked } from "../rn/host/freeze/RNFreeze";
+import { FREEZE_COPY } from "../rn/host/freeze/copy";
 import { RNControlButton, RNMuteButton } from "../rn/host/controls";
 import { ModeTabs } from "../rn/kit";
 
@@ -188,7 +189,14 @@ export function RaceHost({
     else {
       const others = need.filter((c) => c !== car);
       const idle = raceCars(race).filter((c) => !need.includes(c));
-      const why = (
+      // Race Night: the featured car's triggers plus one line naming the other cars, so a multi-car freeze
+      // never pushes the reasons under the options.
+      const why = rn ? (
+        <div className="flex flex-col gap-2">
+          <Triggers freeze={f} />
+          {others.length > 0 && <div className="text-sm font-semibold opacity-85">{FREEZE_COPY.alsoCalling(others)}</div>}
+        </div>
+      ) : (
         <div className="flex flex-col gap-2.5">
           <span className="meta opacity-80">{COPY.race.whyTitle}</span>
           <Triggers freeze={f} />

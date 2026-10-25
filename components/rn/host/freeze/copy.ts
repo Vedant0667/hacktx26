@@ -5,6 +5,7 @@ export const FREEZE_COPY = {
   waitingNames: (names: string[]) => (names.length ? `Waiting on ${names.slice(0, 3).join(", ")}${names.length > 3 ? ` +${names.length - 3}` : ""}` : "Everyone has called"),
   headline: (code: string, pos: number | null | undefined) => (pos ? `${code} P${pos}.` : `${code}.`),
   raceControl: "Race control",
+  alsoCalling: (cars: string[]) => `Also calling: ${cars.join(", ")}`,
   rcLine: { SC: "Safety car deployed", VSC: "VSC deployed", GREEN: "Green flag" } as Record<string, string>,
   rcLap: (lap: number) => `Lap ${lap}`,
   rcGaps: (lap: number) => `Gaps from the end of lap ${lap}`,
