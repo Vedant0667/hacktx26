@@ -8,6 +8,9 @@
   --u: calc(100vh / 720);
   display: grid;
   grid-template-columns: calc(216 * var(--u)) 1fr 24vw;
+  /* Standard host gutter on the left (Advanced sets its own padding below). The centre column still ends at 76vw. */
+  padding-left: 4.4vw;
+  column-gap: calc(28 * var(--u));
 }
 .rn.rnr[data-mode="advanced"] {
   grid-template-columns: calc(270 * var(--u)) 1fr 24vw;
@@ -282,7 +285,11 @@
   font-size: calc(30 * var(--u));
   margin-top: 4px;
 }
+/* The rate sits on its own line under the gap, so "+0.20 s/lap opening" never wraps mid-phrase at 1440. */
 .rnr-watch p span {
-  font-size: 0.5em;
+  display: block;
+  margin-top: 6px;
+  font-size: calc(16 * var(--u));
   font-weight: 700;
+  white-space: nowrap;
 }
