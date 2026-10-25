@@ -1,0 +1,701 @@
+/* Race Night host end (H07 Scoring, H08 Reveal, H09 Podium). Laid out on a 1280x720 grid scaled by --u, so the
+   same proportions hold at 1920x1080, 1440x900 and 1366x768. Scoped under .rn.rne. */
+.rn.rne {
+  --u: min(calc(100vw / 1280), calc(100dvh / 720));
+  position: relative;
+  width: 100%;
+  height: 100dvh;
+  overflow: hidden;
+  font-size: calc(16 * var(--u));
+}
+.rn.rne .rn-lbl {
+  font-size: calc(12 * var(--u));
+}
+.rne-trunc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rne-chequer {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: calc(20 * var(--u));
+  background: repeating-conic-gradient(#fff 0 25%, #07080a 0 50%) 0 0 / calc(20 * var(--u)) calc(20 * var(--u));
+  z-index: 3;
+}
+.rne-slab-right {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: calc(-120 * var(--u));
+  width: calc(600 * var(--u));
+  background: var(--team);
+  transform: skewX(-14deg);
+  transform-origin: bottom;
+  box-shadow: calc(-30 * var(--u)) 0 0 color-mix(in srgb, var(--team) 45%, #07080a);
+}
+.rne-slab-reveal {
+  width: calc(480 * var(--u));
+  right: calc(-60 * var(--u));
+}
+.rne-slab-podium {
+  width: calc(620 * var(--u));
+  right: calc(-80 * var(--u));
+}
+
+/* ---- Scoring ---- */
+.rne-chq-stripe {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: calc(150 * var(--u));
+  width: calc(120 * var(--u));
+  background: repeating-conic-gradient(#e8f2fb 0 25%, #07080a 0 50%) 0 0 / calc(16 * var(--u)) calc(16 * var(--u));
+}
+.rne-scoring-l {
+  position: absolute;
+  left: calc(56 * var(--u));
+  top: calc(44 * var(--u));
+  width: calc(620 * var(--u));
+  display: flex;
+  flex-direction: column;
+  z-index: 2;
+}
+.rne-kicker {
+  margin-top: calc(26 * var(--u));
+}
+.rne-scoring-h {
+  margin: calc(14 * var(--u)) 0 0;
+  display: flex;
+  flex-direction: column;
+  text-transform: uppercase;
+  line-height: 0.88;
+}
+.rne-scoring-top {
+  font-size: calc(64 * var(--u));
+  font-weight: 900;
+  color: var(--rn-muted);
+}
+.rne-scoring-big {
+  font-size: calc(132 * var(--u));
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+.rne-scoring-sub {
+  margin: calc(26 * var(--u)) 0 0;
+  font-size: calc(20 * var(--u));
+  color: var(--rn-soft);
+}
+.rne-prog {
+  list-style: none;
+  margin: calc(56 * var(--u)) 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(22 * var(--u));
+}
+.rne-prog li {
+  display: grid;
+  grid-template-columns: calc(68 * var(--u)) calc(196 * var(--u)) calc(276 * var(--u));
+  align-items: center;
+  font-weight: 700;
+  font-size: calc(17 * var(--u));
+}
+.rne-prog b {
+  font-size: calc(20 * var(--u));
+  font-weight: 800;
+}
+.rne-prog-one {
+  margin-top: calc(70 * var(--u));
+  width: calc(540 * var(--u));
+}
+.rne-bar {
+  position: relative;
+  display: block;
+  height: calc(10 * var(--u));
+  background: #262a31;
+  overflow: hidden;
+}
+.rne-bar i {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 38%;
+  background: var(--team);
+  animation: rne-sweep 1.8s ease-in-out infinite;
+}
+@keyframes rne-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(270%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .rne-bar i {
+    animation: none;
+    width: 50%;
+    opacity: 0.7;
+  }
+}
+.rne-scoring-foot {
+  margin: calc(56 * var(--u)) 0 0;
+  font-size: calc(14 * var(--u));
+  color: var(--rn-muted);
+}
+.rne-scoring-r {
+  position: absolute;
+  right: calc(56 * var(--u));
+  top: calc(470 * var(--u));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: calc(28 * var(--u));
+  z-index: 2;
+}
+.rne-who {
+  display: block;
+}
+.rne-scoring-r .rne-who {
+  background: #07080a;
+  color: #fff;
+  font-size: calc(48 * var(--u));
+  font-weight: 900;
+  text-transform: uppercase;
+  padding: calc(10 * var(--u)) calc(30 * var(--u));
+  transform: skewX(-12deg);
+  box-shadow: calc(10 * var(--u)) calc(10 * var(--u)) 0 color-mix(in srgb, var(--team) 50%, #07080a);
+}
+.rne-who-sub {
+  font-weight: 700;
+  font-size: calc(16 * var(--u));
+  color: #fff;
+  background: #07080a;
+  padding: calc(6 * var(--u)) calc(12 * var(--u));
+}
+
+/* ---- Reveal ---- */
+.rne-rv-top {
+  position: absolute;
+  left: calc(56 * var(--u));
+  right: calc(56 * var(--u));
+  top: calc(26 * var(--u));
+  display: flex;
+  align-items: center;
+  gap: calc(20 * var(--u));
+  z-index: 2;
+}
+.rne-stake {
+  margin-left: auto;
+  color: var(--on-team);
+  text-transform: uppercase;
+  font-weight: 800;
+  font-size: calc(16 * var(--u));
+}
+.rne-stake b {
+  font-size: calc(32 * var(--u));
+  font-weight: 900;
+}
+.rne-rv-main {
+  position: absolute;
+  left: calc(56 * var(--u));
+  top: calc(70 * var(--u));
+  width: calc(792 * var(--u));
+  bottom: calc(40 * var(--u));
+  display: flex;
+  flex-direction: column;
+  z-index: 2;
+}
+.rne-stamp {
+  align-self: flex-start;
+  margin: 0;
+  background: #fff;
+  color: #07080a;
+  text-transform: uppercase;
+  font-weight: 900;
+  font-size: calc(70 * var(--u));
+  line-height: 1;
+  padding: calc(8 * var(--u)) calc(34 * var(--u));
+  transform: skewX(-12deg) rotate(-2.5deg);
+  box-shadow: calc(10 * var(--u)) calc(8 * var(--u)) 0 var(--team);
+}
+.rne-stamp > span {
+  display: inline-block;
+  transform: skewX(12deg);
+}
+.rne-rv-line {
+  margin: calc(22 * var(--u)) 0 0;
+  font-size: calc(19 * var(--u));
+  color: var(--rn-soft);
+}
+.rne-rv-luck {
+  margin: calc(4 * var(--u)) 0 0;
+  font-size: calc(15 * var(--u));
+  font-weight: 700;
+  color: var(--rn-yellow);
+}
+.rne-table {
+  margin-top: calc(14 * var(--u));
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--u));
+  min-height: 0;
+}
+.rne-tr {
+  display: grid;
+  grid-template-columns: calc(40 * var(--u)) calc(122 * var(--u)) calc(118 * var(--u)) minmax(0, 1fr) calc(70 * var(--u));
+  align-items: center;
+  column-gap: calc(8 * var(--u));
+  padding: 0 calc(12 * var(--u));
+}
+.rne-th {
+  font-family: var(--font-rn-cond), var(--font-rn), sans-serif;
+  font-size: calc(11 * var(--u));
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--rn-muted);
+  height: calc(22 * var(--u));
+}
+.rne-r {
+  text-align: right;
+}
+.rne-reveal .rne-player {
+  min-height: calc(52 * var(--u));
+  background: var(--rn-panel);
+  position: relative;
+}
+.rne-reveal .rne-bench {
+  min-height: calc(38 * var(--u));
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+  color: var(--rn-muted);
+}
+.rne-reveal[data-dense="sm"] .rne-player {
+  min-height: calc(44 * var(--u));
+}
+.rne-reveal[data-dense="xs"] .rne-player {
+  min-height: calc(29 * var(--u));
+}
+.rne-reveal[data-dense="xs"] .rne-bench {
+  min-height: calc(26 * var(--u));
+}
+.rne-reveal[data-dense="xs"] .rne-table {
+  gap: calc(2 * var(--u));
+}
+.rne-reveal[data-dense="xs"] .rne-stamp {
+  font-size: calc(54 * var(--u));
+}
+.rne-reveal[data-dense="xs"] .rne-player .rne-who {
+  font-size: calc(17 * var(--u));
+}
+.rne-reveal[data-dense="xs"] .rne-pts {
+  font-size: calc(20 * var(--u));
+}
+.rne-reveal[data-dense="xs"] .rne-call {
+  height: calc(21 * var(--u));
+}
+.rne-reveal[data-dense="xs"] .rne-verdict {
+  display: none;
+}
+.rne-first::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(4 * var(--u));
+  background: var(--team);
+}
+.rne-rank {
+  font-weight: 800;
+  font-size: calc(18 * var(--u));
+  color: var(--rn-muted);
+}
+.rne-tr .rne-who,
+.rne-rl .rne-who {
+  display: flex;
+  align-items: baseline;
+  gap: calc(8 * var(--u));
+  min-width: 0;
+}
+.rne-player .rne-who {
+  font-weight: 800;
+  font-size: calc(20 * var(--u));
+}
+.rne-bench .rne-who {
+  font-weight: 700;
+  font-size: calc(14 * var(--u));
+}
+.rne-car {
+  flex-shrink: 0;
+  font-size: calc(12 * var(--u));
+  font-weight: 800;
+  border-left: calc(3 * var(--u)) solid var(--c);
+  padding-left: calc(4 * var(--u));
+  color: var(--rn-soft);
+}
+.rne-call {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: calc(26 * var(--u));
+  padding: 0 calc(12 * var(--u));
+  transform: skewX(-12deg);
+  font-weight: 800;
+  font-size: calc(14 * var(--u));
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.rne-call > span {
+  display: inline-block;
+  transform: skewX(12deg);
+}
+.rne-call-solid {
+  background: #fff;
+  color: #07080a;
+}
+.rne-call-out {
+  border: calc(2 * var(--u)) solid currentColor;
+}
+.rne-call-none {
+  border: calc(2 * var(--u)) dashed var(--rn-muted);
+  color: var(--rn-muted);
+}
+.rne-how {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  font-size: calc(15 * var(--u));
+  line-height: 1.25;
+}
+.rne-bench .rne-how {
+  font-size: calc(14 * var(--u));
+}
+.rne-verdict {
+  font-size: calc(12.5 * var(--u));
+  color: var(--rn-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rne-pts {
+  text-align: right;
+  font-weight: 900;
+  font-size: calc(26 * var(--u));
+}
+.rne-bench .rne-pts {
+  font-size: calc(19 * var(--u));
+}
+.rne-rv-side {
+  position: absolute;
+  right: calc(56 * var(--u));
+  top: calc(214 * var(--u));
+  bottom: calc(44 * var(--u));
+  width: calc(338 * var(--u));
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: calc(18 * var(--u));
+  z-index: 2;
+}
+.rne-map {
+  width: 100%;
+  background: #07080a;
+  padding: calc(14 * var(--u));
+  box-shadow: calc(10 * var(--u)) calc(10 * var(--u)) 0 color-mix(in srgb, var(--team) 50%, #07080a);
+  display: flex;
+  flex-direction: column;
+  gap: calc(8 * var(--u));
+}
+.rne-map p {
+  margin: 0;
+  font-size: calc(14 * var(--u));
+}
+.rne-split {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  color: var(--on-team);
+  text-transform: uppercase;
+  font-weight: 900;
+  font-size: calc(22 * var(--u));
+}
+.rne-split-sub {
+  font-size: calc(14 * var(--u));
+  font-weight: 800;
+}
+.rne-nav {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  align-items: center;
+  gap: calc(14 * var(--u));
+}
+
+/* ---- Podium ---- */
+.rne-pd-l {
+  position: absolute;
+  left: calc(56 * var(--u));
+  top: calc(40 * var(--u));
+  bottom: calc(38 * var(--u));
+  width: calc(640 * var(--u));
+  display: flex;
+  flex-direction: column;
+  z-index: 2;
+}
+.rne-pd-l .rne-kicker {
+  margin-top: calc(18 * var(--u));
+}
+.rne-pd-h {
+  margin: calc(6 * var(--u)) 0 0;
+  font-size: calc(50 * var(--u));
+  font-weight: 900;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.rne-steps {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 1fr 1.05fr 1fr;
+  align-items: end;
+  gap: calc(14 * var(--u));
+  padding-bottom: calc(18 * var(--u));
+}
+.rne-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+}
+.rne-step-who {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  max-width: 100%;
+  margin-bottom: calc(8 * var(--u));
+}
+.rne-step-name {
+  font-weight: 800;
+  font-size: calc(22 * var(--u));
+  max-width: 100%;
+}
+.rne-step-pts {
+  font-weight: 900;
+  font-size: calc(34 * var(--u));
+}
+.rne-step[data-place="1"] .rne-step-name {
+  font-size: calc(28 * var(--u));
+}
+.rne-step[data-place="1"] .rne-step-pts {
+  font-size: calc(52 * var(--u));
+}
+.rne-each {
+  font-size: 0.45em;
+  color: var(--rn-muted);
+  text-transform: uppercase;
+}
+.rne-block {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: skewX(-8deg);
+  background: var(--rn-panel-2);
+  border-top: calc(5 * var(--u)) solid #a9aeb8;
+  color: #a9aeb8;
+  font-weight: 900;
+  font-size: calc(80 * var(--u));
+  box-shadow: calc(10 * var(--u)) calc(10 * var(--u)) 0 #000;
+}
+.rne-block > span {
+  transform: skewX(8deg);
+}
+.rne-step[data-place="1"] .rne-block {
+  height: calc(180 * var(--u));
+  background: #fff;
+  color: #07080a;
+  border-top-color: var(--team);
+  font-size: calc(110 * var(--u));
+}
+.rne-step[data-place="2"] .rne-block {
+  height: calc(128 * var(--u));
+}
+.rne-step[data-place="3"] .rne-block {
+  height: calc(110 * var(--u));
+}
+.rne-best {
+  display: flex;
+  gap: calc(20 * var(--u));
+  background: var(--rn-panel);
+  padding: calc(14 * var(--u)) calc(18 * var(--u));
+}
+.rne-best-l {
+  display: flex;
+  flex-direction: column;
+  gap: calc(6 * var(--u));
+  min-width: 0;
+  flex: 1;
+}
+.rne-best-q {
+  font-size: calc(16 * var(--u));
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.rne-best-r {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.rne-best-score {
+  font-weight: 900;
+  font-size: calc(44 * var(--u));
+}
+.rne-best-score .rn-u {
+  font-size: 0.45em;
+  color: var(--rn-muted);
+  font-weight: 700;
+}
+.rne-best-g {
+  font-size: calc(12 * var(--u));
+  color: var(--rn-muted);
+}
+.rne-pd-r {
+  position: absolute;
+  right: calc(56 * var(--u));
+  top: calc(56 * var(--u));
+  bottom: calc(46 * var(--u));
+  width: calc(434 * var(--u));
+  display: flex;
+  flex-direction: column;
+  gap: calc(22 * var(--u));
+  z-index: 2;
+}
+.rne-rank-panel {
+  flex: 1;
+  min-height: 0;
+  background: #07080a;
+  padding: calc(14 * var(--u)) calc(18 * var(--u));
+  display: flex;
+  flex-direction: column;
+  box-shadow: calc(10 * var(--u)) calc(10 * var(--u)) 0 color-mix(in srgb, var(--team) 50%, #07080a);
+}
+.rne-rank-head {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 calc(12 * var(--u)) calc(8 * var(--u));
+}
+.rne-rank-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: calc(4 * var(--u));
+  min-height: 0;
+  overflow: hidden;
+}
+.rne-rl {
+  display: grid;
+  grid-template-columns: calc(40 * var(--u)) minmax(0, 1fr) auto;
+  align-items: center;
+  padding: 0 calc(12 * var(--u));
+  min-height: calc(48 * var(--u));
+  background: var(--rn-panel);
+  flex-shrink: 0;
+}
+.rne-podium[data-dense="sm"] .rne-rl {
+  min-height: calc(38 * var(--u));
+}
+.rne-podium[data-dense="xs"] .rne-rl {
+  min-height: calc(26 * var(--u));
+}
+.rne-podium[data-dense="xs"] .rne-rank-list {
+  gap: calc(2 * var(--u));
+}
+.rne-podium[data-dense="xs"] .rne-rl .rne-pts,
+.rne-podium[data-dense="xs"] .rne-rl .rne-who {
+  font-size: calc(16 * var(--u));
+}
+.rne-podium[data-dense="xs"] .rne-note {
+  display: none;
+}
+.rne-tag-aud {
+  font-size: calc(11 * var(--u));
+  font-weight: 600;
+  opacity: 0.8;
+  white-space: nowrap;
+}
+.rne-rl.rne-bench {
+  background: transparent;
+  border: 1px dashed rgba(255, 255, 255, 0.22);
+  color: var(--rn-muted);
+}
+.rne-rl.rne-first {
+  background: var(--team);
+  color: var(--on-team);
+}
+.rne-rl.rne-first .rne-rank {
+  color: inherit;
+}
+.rne-rl .rne-pts {
+  font-size: calc(22 * var(--u));
+}
+.rne-tag {
+  font-size: calc(10 * var(--u)) !important;
+}
+.rne-note {
+  margin: calc(10 * var(--u)) 0 0;
+  font-size: calc(12.5 * var(--u));
+  color: var(--rn-soft);
+}
+.rne-pd-btns {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: calc(14 * var(--u));
+}
+
+/* Buttons scaled to the grid (the kit's host sizes are fixed px). */
+.rn.rne .rn-btn[data-size="host-sm"] {
+  padding: calc(12 * var(--u)) calc(26 * var(--u));
+}
+.rn.rne .rn-btn[data-size="host-sm"] .rn-bt {
+  font-size: calc(30 * var(--u));
+}
+.rne-minor {
+  display: flex;
+  gap: calc(14 * var(--u));
+}
+.rne-link {
+  background: rgba(7, 8, 10, 0.85);
+  color: #fff;
+  border: 0;
+  min-height: 44px;
+  padding: 0 calc(14 * var(--u));
+  font: 700 calc(14 * var(--u)) / 1 var(--font-rn), sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+.rne-link:hover,
+.rne-link:focus-visible {
+  text-decoration: underline;
+}
+.rne-scoring-r .rne-who > span {
+  display: inline-block;
+  transform: skewX(12deg);
+}
+.rne-step-more {
+  font-size: calc(14 * var(--u));
+  color: var(--rn-muted);
+  font-weight: 700;
+}
