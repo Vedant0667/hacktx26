@@ -612,11 +612,11 @@ export async function reserveMuseCall(r: {
 export async function finishMuseCall(id: number, c: MuseCallLog): Promise<void> {
   await query(
     `update muse_calls set ok = $2, status = $3, error = $4, input_tokens = $5, cached_tokens = $6,
-       output_tokens = $7, reasoning_tokens = $8, cost_usd = $9, latency_ms = $10
+       output_tokens = $7, reasoning_tokens = $8, cost_usd = $9, latency_ms = $10, model = coalesce($11, model)
      where id = $1`,
     [
       id, c.ok, c.status, c.error?.slice(0, 500) ?? null,
-      c.input_tokens, c.cached_tokens, c.output_tokens, c.reasoning_tokens, c.cost_usd, c.latency_ms,
+      c.input_tokens, c.cached_tokens, c.output_tokens, c.reasoning_tokens, c.cost_usd, c.latency_ms, c.model ?? null,
     ],
   );
 }

@@ -6,6 +6,8 @@ import type { z } from "zod";
 import { finishMuseCall, reserveMuseCall } from "../db";
 
 export const MUSE_MODEL = "muse-spark-1.3";
+// Used only when Meta answers 404 model_not_found for MUSE_MODEL (it did for stretches on 2026-10-24/25).
+export const MUSE_FALLBACK_MODEL = "muse-spark-1.2";
 const ENDPOINT = "https://api.meta.ai/v1/responses";
 const TIMEOUT_MS = 6000;
 const INPUT_FRAMING_TOKENS = 256;
@@ -92,26 +94,36 @@ export async function museJson<T>(req: MuseRequest<T>): Promise<T | null> {
   };
   let result: T | null = null;
   try {
-    const res = await fetch(ENDPOINT, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: MUSE_MODEL,
-        instructions: req.instructions,
-        input: req.input,
-        max_output_tokens: req.maxOutputTokens,
-        reasoning: { effort: "minimal" },
-        text: { format: { type: "json_schema", name: req.schemaName, strict: true, schema: req.jsonSchema } },
-      }),
-      signal: AbortSignal.timeout(req.timeoutMs ?? TIMEOUT_MS),
-    });
-    const body = (await res.json().catch(() => null)) as {
+    type Body = {
       status?: string;
       usage?: Usage;
-      error?: { message?: string } | string | null;
+      error?: { message?: string; code?: string } | string | null;
       incomplete_details?: { reason?: string } | null;
       output?: { type: string; content?: { type: string; text?: string }[] }[];
     } | null;
+    const ask = (model: string) =>
+      fetch(ENDPOINT, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          model,
+          instructions: req.instructions,
+          input: req.input,
+          max_output_tokens: req.maxOutputTokens,
+          reasoning: { effort: "minimal" },
+          text: { format: { type: "json_schema", name: req.schemaName, strict: true, schema: req.jsonSchema } },
+        }),
+        signal: AbortSignal.timeout(req.timeoutMs ?? TIMEOUT_MS),
+      });
+    let res = await ask(MUSE_MODEL);
+    let body = (await res.json().catch(() => null)) as Body;
+    const missing = (b: Body) => typeof b?.error === "object" && b?.error?.code === "model_not_found";
+    if (res.status === 404 && missing(body)) {
+      // The primary model is unavailable (not billed); same request on the fallback Muse Spark model.
+      log.model = MUSE_FALLBACK_MODEL;
+      res = await ask(MUSE_FALLBACK_MODEL);
+      body = (await res.json().catch(() => null)) as Body;
+    }
     const u = body?.usage;
     if (u) {
       log.input_tokens = u.input_tokens ?? 0;
@@ -122,6 +134,8 @@ export async function museJson<T>(req: MuseRequest<T>): Promise<T | null> {
     log.status = body?.status ?? `http_${res.status}`;
     if (!res.ok) {
       const e = body?.error;
+      // A definite 4xx with an error body is not billed: log it at zero rather than the worst case.
+      if (res.status >= 400 && res.status < 500 && e) log.status = `http_${res.status}_unbilled`;
       throw new Error(`HTTP ${res.status}: ${typeof e === "string" ? e : (e?.message ?? "no body")}`);
     }
     if (body?.status !== "completed") throw new Error(`status ${body?.status} ${body?.incomplete_details?.reason ?? ""}`.trim());
@@ -138,7 +152,7 @@ export async function museJson<T>(req: MuseRequest<T>): Promise<T | null> {
     log.ok = true;
   } catch (err) {
     log.error = err instanceof Error ? err.message : String(err);
-    if (log.input_tokens === 0 && log.output_tokens === 0) {
+    if (log.input_tokens === 0 && log.output_tokens === 0 && !log.status?.endsWith("_unbilled")) {
       // No usage came back (timeout or network): log the worst case so the cap stays conservative.
       log.input_tokens = worstInput;
       log.output_tokens = req.maxOutputTokens;
