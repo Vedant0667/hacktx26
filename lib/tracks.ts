@@ -182,6 +182,11 @@ export function placeCars<T extends GapCar>(drivers: readonly T[], opts: PlaceOp
   return out;
 }
 
+// The rejoin ghost's fraction from its projected gap to the leader (e.g. rejoin.gapToLeader), same mapping as placeCars.
+export function ghostAt(gapToLeaderS: number, opts: PlaceOptions): number {
+  return gapToFraction(Math.max(0, gapToLeaderS), opts);
+}
+
 // The leaderFraction that puts a given car (by its gap to the leader) at `fraction` on the lap. Use it to hold the
 // followed car on a readable stretch, as the mockups do (GAS at 0.22 of Marina Bay).
 export function leaderFractionFor(fraction: number, gapToLeaderS: number, lapTimeS: number): number {

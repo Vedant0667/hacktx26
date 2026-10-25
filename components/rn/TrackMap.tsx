@@ -2,8 +2,10 @@
 // Race Night track map: the real circuit outline as layered asphalt, the start/finish chequer, grey field dots,
 // the followed car in team colour with a halo, the named cars ahead/behind in white with labels, and an optional
 // rejoin ghost. Labels avoid the track, the dots and each other (buildScene in lib/tracks.ts). Scales via viewBox.
+// Client component (useMemo). Its helpers (placeCars, ghostAt, leaderFractionFor, trackFor) live in lib/tracks.ts so
+// server components can call them too.
 import { useMemo } from "react";
-import { TRACKS, buildScene, gapToFraction, geometry, type MapMarker, type MapStyle, type PlacedCar, type TrackKey, type TrackOutline } from "@/lib/tracks";
+import { TRACKS, buildScene, geometry, type MapMarker, type MapStyle, type PlacedCar, type TrackKey, type TrackOutline } from "@/lib/tracks";
 
 export type TrackMapSize = "host-lg" | "host" | "host-sm" | "phone-lg" | "phone" | "thumb";
 
@@ -40,11 +42,6 @@ export interface TrackMapProps {
 }
 
 const f1 = (n: number) => Math.round(n * 10) / 10;
-
-// Place the rejoin ghost from a gap to the leader, on the same lap mapping as placeCars.
-export function ghostAt(gapToLeaderS: number, opts: { lapTimeS: number; leaderFraction?: number }): number {
-  return gapToFraction(gapToLeaderS, opts);
-}
 
 export function TrackMap({
   track,
