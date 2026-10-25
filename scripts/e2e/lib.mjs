@@ -55,9 +55,10 @@ export const PROD_BASE = "https://outpacef1.vercel.app";
 export function dbUrlFor(base, override) {
   if (override && !["prod", "dev"].includes(override)) throw new Error(`--db must be prod or dev, got ${override}`);
   const prod = override ? override === "prod" : base.replace(/\/$/, "") === PROD_BASE;
-  const url = prod ? (process.env.PROD_DATABASE_URL ?? process.env.DATABASE_URL) : process.env.DATABASE_URL;
-  if (!url) throw new Error(`${prod ? "PROD_DATABASE_URL / " : ""}DATABASE_URL is not set (run with --env-file=.env.local)`);
-  return { url, which: prod ? (process.env.PROD_DATABASE_URL ? "prod (PROD_DATABASE_URL)" : "prod (DATABASE_URL)") : "dev (DATABASE_URL)" };
+  // Never fall back to DATABASE_URL for a prod run: that is the dev database, so assertions would read the wrong rows.
+  const url = prod ? process.env.PROD_DATABASE_URL : process.env.DATABASE_URL;
+  if (!url) throw new Error(`${prod ? "PROD_DATABASE_URL" : "DATABASE_URL"} is not set (run with --env-file=.env.local)`);
+  return { url, prod, which: prod ? "prod (PROD_DATABASE_URL)" : "dev (DATABASE_URL)" };
 }
 export function makeDb(url) {
   const sql = neon(url);

@@ -321,7 +321,9 @@ const scenarios = [
 let fatal = null;
 try {
   console.log(`e2e: ui=${UI} base=${BASE} db=${DB.which} out=${OUT}`);
-  await sql`delete from rate_limits where bucket = 'lobby_create_ip' and key in ('127.0.0.1', '::1', '0:0:0:0::/64', 'unknown')`;
+  // Clear only this machine's lobby-create limit; 'unknown' is shared by every client without an IP, so leave it on prod.
+  const keys = DB.prod ? ["127.0.0.1", "::1", "0:0:0:0::/64"] : ["127.0.0.1", "::1", "0:0:0:0::/64", "unknown"];
+  await sql`delete from rate_limits where bucket = 'lobby_create_ip' and key = any(${keys})`;
   gate = await api.unlock();
   record("setup", "unlock the password gate", true);
   // The quick moment's driver must be one the decision can be played as.
