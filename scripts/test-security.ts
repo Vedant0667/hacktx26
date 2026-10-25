@@ -4,8 +4,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
 import { z } from "zod";
-import { hashToken, HttpError, newToken, rateLimitKey, readBody, tokenMatches, clientIp } from "../app/api/_lib/http";
-import { LOBBY_MISS_LIMIT, LOBBY_READ_LIMIT, lobbyReadBlocked } from "../app/api/_lib/limits";
+import { hashToken, HttpError, MAX_BODY_BYTES, newToken, rateLimitKey, rateLimitLogLine, readBody, tokenMatches, clientIp } from "../app/api/_lib/http";
+import { LOBBY_CREATE_GLOBAL, LOBBY_CREATE_PER_IP, LOBBY_MISS_LIMIT, LOBBY_READ_ALL_LIMIT, LOBBY_READ_LIMIT, lobbyBlockedBucket, lobbyReadBlocked } from "../app/api/_lib/limits";
 import { minPhaseSeconds } from "../app/api/_lib/phases";
 import { buildRubric, gradeProblems, groundedIn, isInjection, rubricScore } from "../lib/muse";
 
@@ -98,10 +98,46 @@ async function main() {
   assert.equal(clientIp(ipReq({ "x-forwarded-for": "198.51.100.4, 10.0.0.1" })), "198.51.100.4");
 
   // R3: the miss limit never blocks a code that exists; misses past the limit block only missing codes.
-  assert.equal(lobbyReadBlocked({ found: true, reads: 5, misses: LOBBY_MISS_LIMIT + 50 }), false);
-  assert.equal(lobbyReadBlocked({ found: false, reads: 5, misses: LOBBY_MISS_LIMIT + 1 }), true);
-  assert.equal(lobbyReadBlocked({ found: false, reads: 5, misses: LOBBY_MISS_LIMIT }), false);
-  assert.equal(lobbyReadBlocked({ found: true, reads: LOBBY_READ_LIMIT + 1, misses: 0 }), true);
+  assert.equal(lobbyReadBlocked({ found: true, reads: 5, reads_all: 5, misses: LOBBY_MISS_LIMIT + 50 }), false);
+  assert.equal(lobbyReadBlocked({ found: false, reads: 5, reads_all: 5, misses: LOBBY_MISS_LIMIT + 1 }), true);
+  assert.equal(lobbyReadBlocked({ found: false, reads: 5, reads_all: 5, misses: LOBBY_MISS_LIMIT }), false);
+  assert.equal(lobbyReadBlocked({ found: true, reads: LOBBY_READ_LIMIT + 1, reads_all: 5, misses: 0 }), true);
+  // Public launch P2/P3: numbers, per-lobby read key, all-lobbies backstop, 429 bucket names.
+  assert.equal(LOBBY_READ_LIMIT, 2400);
+  assert.equal(LOBBY_READ_ALL_LIMIT, 12000);
+  assert.equal(LOBBY_CREATE_GLOBAL, 1000);
+  assert.equal(LOBBY_CREATE_PER_IP, 30);
+  const okGuard = { found: true, reads: 1, reads_all: 1, misses: 0 };
+  assert.equal(lobbyBlockedBucket(okGuard), null);
+  assert.equal(lobbyBlockedBucket({ ...okGuard, reads: LOBBY_READ_LIMIT + 1 }), "lobby_read");
+  assert.equal(lobbyBlockedBucket({ ...okGuard, reads_all: LOBBY_READ_ALL_LIMIT + 1 }), "lobby_read_all");
+  assert.equal(lobbyBlockedBucket({ ...okGuard, reads_all: LOBBY_READ_ALL_LIMIT }), null);
+  assert.equal(lobbyBlockedBucket({ found: false, reads: 1, reads_all: 1, misses: LOBBY_MISS_LIMIT + 1 }), "lobby_miss");
+  const dbSrc = readFileSync(path.join(root, "lib/db/index.ts"), "utf8");
+  assert.ok(dbSrc.includes("[`${ip}:${code}`, opts.readWindowS]"), "lobby_read is keyed by IP and code");
+  assert.ok(dbSrc.includes("'lobby_read_all'") && dbSrc.includes("lobby-read:${ip}"), "all-lobbies backstop and per-IP lock");
+  assert.ok(/'lobby_miss', \$1,[\s\S]*\[ip, code, opts\.missWindowS\]/.test(dbSrc), "lobby_miss stays keyed by IP only");
+  // P9: the 429 log line names the bucket, path and retry seconds, never the client address.
+  const line = rateLimitLogLine(
+    new HttpError(429, "x", 12, "lobby_read"),
+    new Request("https://x.test/api/lobby/ABCD/submit", { headers: { "x-forwarded-for": "203.0.113.9", authorization: "Bearer tok" } }),
+  );
+  assert.equal(line, "429 bucket=lobby_read path=/api/lobby/ABCD/submit retry_after_s=12");
+  assert.ok(!line.includes("203.0.113.9") && !line.includes("tok"));
+  // Body cap: 413 by declared length, and while streaming when no length is declared.
+  const Loose = z.object({ transcript: z.string() });
+  const big = JSON.stringify({ transcript: "a".repeat(MAX_BODY_BYTES) });
+  assert.equal(await status(readBody(req("application/json", { transcript: "a".repeat(100) }), Loose)), 200);
+  assert.equal(await status(readBody(req("application/json", { transcript: "é".repeat(4000) }), Loose)), 200);
+  assert.equal(await status(readBody(req("application/json", { transcript: "\u20ac".repeat(4000) }), Loose)), 200);
+  assert.equal(await status(readBody(new Request("https://x.test/api", { method: "POST", headers: { "content-type": "application/json", "content-length": String(MAX_BODY_BYTES + 1) }, body: "{}" }), Loose)), 413);
+  const streamed = new Request("https://x.test/api", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode(big)); c.close(); } }),
+    duplex: "half",
+  } as RequestInit);
+  assert.equal(await status(readBody(streamed, Loose)), 413);
   const unlockSrc = src("app/api/unlock/route.ts");
   assert.match(unlockSrc, /UNLOCK_LIMIT = 50;/);
   assert.ok(unlockSrc.indexOf("safeEqual(given, password)") < unlockSrc.indexOf("hitRateLimit("), "unlock counts before checking the password");

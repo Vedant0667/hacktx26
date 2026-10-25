@@ -152,7 +152,8 @@ export async function hitRateLimit(bucket: string, key: string, windowS: number)
 
 export interface LobbyReadGuard {
   found: boolean; // the lobby code exists
-  reads: number; // requests from this IP in the current read window
+  reads: number; // requests from this IP for this lobby code in the current read window
+  reads_all: number; // requests from this IP for any lobby code in the current read window
   misses: number; // lookups of codes that do not exist from this IP in the current miss window (this one included)
   retry_after_s: number;
   state: LobbyStateResponse | null;
@@ -160,6 +161,8 @@ export interface LobbyReadGuard {
 
 // Rate-limit check and lobby read in one transaction, serialised per IP by an advisory lock, so a burst of
 // guesses cannot slip past the miss count. A miss is counted only when the code does not exist.
+// Buckets: lobby_read is keyed by IP and code (one busy room cannot starve another room behind the same IP),
+// lobby_read_all by IP alone (a backstop across codes), lobby_miss by IP alone (guards code guessing).
 export async function guardedLobbyRead(
   ip: string,
   code: string,
@@ -171,6 +174,12 @@ export async function guardedLobbyRead(
       `insert into rate_limits (bucket, key, window_start, count) values ('lobby_read', $1, ${WINDOW("$2")}, 1)
        on conflict (bucket, key, window_start) do update set count = rate_limits.count + 1
        returning count, ceil($2::int - mod(extract(epoch from now()), $2::int))::int as retry_after_s`,
+      [`${ip}:${code}`, opts.readWindowS],
+    ),
+    sql().query(
+      `insert into rate_limits (bucket, key, window_start, count) values ('lobby_read_all', $1, ${WINDOW("$2")}, 1)
+       on conflict (bucket, key, window_start) do update set count = rate_limits.count + 1
+       returning count`,
       [ip, opts.readWindowS],
     ),
     sql().query(
@@ -188,13 +197,15 @@ export async function guardedLobbyRead(
          ceil($3::int - mod(extract(epoch from now()), $3::int))::int as miss_retry_s`,
       [ip, code, opts.missWindowS],
     ),
-  ])) as unknown as [unknown, { count: number; retry_after_s: number }[], { found: boolean; misses: number; miss_retry_s: number }[]];
+  ])) as unknown as [unknown, { count: number; retry_after_s: number }[], { count: number }[], { found: boolean; misses: number; miss_retry_s: number }[]];
   const read = results[1][0];
-  const miss = results[2][0];
+  const all = results[2][0];
+  const miss = results[3][0];
   const state = miss.found && opts.withState ? await getLobbyState(code) : null;
   return {
     found: miss.found,
     reads: read.count,
+    reads_all: all.count,
     misses: miss.misses,
     retry_after_s: Math.max(read.retry_after_s, miss.misses > 0 ? miss.miss_retry_s : 0),
     state,

@@ -6,7 +6,7 @@ import { getDecision, getDefaultDriver, getDriverAnswer, type DriverReveal } fro
 import type { DecisionPoint } from "@/lib/types";
 
 export class HttpError extends Error {
-  constructor(public status: number, message: string, public retryAfterS?: number) {
+  constructor(public status: number, message: string, public retryAfterS?: number, public bucket?: string) {
     super(message);
   }
 }
@@ -75,6 +75,31 @@ export function tokenMatches(given: string | null | undefined, storedHash: strin
   return timingSafeEqual(Buffer.from(hashToken(given), "hex"), Buffer.from(storedHash, "hex"));
 }
 
+// Largest JSON body any route accepts: a 4,000-character transcript is at most about 12 KB even when every
+// character takes 3 bytes in UTF-8; the other routes send under 1 KB.
+export const MAX_BODY_BYTES = 16 * 1024;
+
+// Reads at most MAX_BODY_BYTES of the body as text; 413 over that, by declared length or while reading.
+export async function readCappedText(req: Request, max = MAX_BODY_BYTES): Promise<string> {
+  const declared = req.headers.get("content-length");
+  if (declared !== null && Number(declared) > max) throw new HttpError(413, "Request body too large");
+  if (!req.body) return "";
+  const reader = req.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    total += value.byteLength;
+    if (total > max) {
+      await reader.cancel().catch(() => {});
+      throw new HttpError(413, "Request body too large");
+    }
+    chunks.push(value);
+  }
+  return Buffer.concat(chunks).toString("utf8");
+}
+
 // Parses and validates a JSON body; throws HttpError(415) unless the request says it is JSON (so a
 // cross-site text/plain form cannot post a body), and HttpError(400) with the first schema issue.
 export async function readBody<S extends z.ZodType>(req: Request, schema: S): Promise<z.infer<S>> {
@@ -82,8 +107,9 @@ export async function readBody<S extends z.ZodType>(req: Request, schema: S): Pr
   if (type !== "application/json") throw new HttpError(415, "Content-Type must be application/json");
   let raw: unknown;
   try {
-    raw = await req.json();
-  } catch {
+    raw = JSON.parse(await readCappedText(req));
+  } catch (err) {
+    if (err instanceof HttpError) throw err;
     throw new HttpError(400, "Body must be JSON");
   }
   const parsed = schema.safeParse(raw);
@@ -125,13 +151,27 @@ export async function driverFor(decisionId: string, ...codes: (string | null | u
   throw new HttpError(404, `No scorable car for ${decisionId}`);
 }
 
+// One log line per 429: the bucket, the route path and the retry seconds. Never the IP or any token.
+export function rateLimitLogLine(err: HttpError, req: unknown): string {
+  let path = "unknown";
+  if (req instanceof Request) {
+    try {
+      path = new URL(req.url).pathname;
+    } catch {}
+  }
+  return `429 bucket=${err.bucket ?? "unknown"} path=${path} retry_after_s=${err.retryAfterS ?? 0}`;
+}
+
 // Wraps a handler so HttpErrors become {error} responses and anything else is a logged 500.
 export function handle<A extends unknown[]>(fn: (...args: A) => Promise<Response>) {
   return async (...args: A): Promise<Response> => {
     try {
       return await fn(...args);
     } catch (err) {
-      if (err instanceof HttpError) return jsonError(err.status, err.message, err.retryAfterS);
+      if (err instanceof HttpError) {
+        if (err.status === 429) console.warn(rateLimitLogLine(err, args[0]));
+        return jsonError(err.status, err.message, err.retryAfterS);
+      }
       unstable_rethrow(err); // let Next's own control-flow errors (prerender bailouts) through
       console.error(err);
       return jsonError(500, "Internal error");
