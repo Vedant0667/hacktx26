@@ -1,0 +1,28 @@
+/* Race Night host controls (mute, Continue): a compact host button, 48 px tall, beside the views' own buttons. */
+.rn .rn-btn.rnhc[data-size="host-sm"] {
+  min-height: 48px;
+  padding: 0 16px;
+  flex-shrink: 0;
+}
+.rn .rn-btn.rnhc[data-size="host-sm"] .rn-bt {
+  font-size: 18px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.rn .rn-btn.rnhc[data-size="host-sm"] > .rn-cs {
+  justify-content: center;
+  gap: 8px;
+}
+.rn .rn-btn.rnhc[data-tone="slab"] {
+  box-shadow: none;
+}
+.rn .rn-btn.rnhc[aria-pressed="true"] .rnhc-ico {
+  color: var(--rn-yellow);
+}
+.rn .rn-btn.rnhc[data-tone="dark"]:not(:disabled):hover {
+  background: var(--rn-panel-2);
+}
+.rnhc-ico {
+  flex-shrink: 0;
+}

@@ -18,4 +18,8 @@ export const PHONE_END_COPY = {
   teamWall: (team: string) => `${team} pit wall`,
   credit: "Reasons graded by Muse Spark",
   more: "More players",
+  // Scoring wait (Scoring.tsx), same words as the host's H07
+  scoringTop: "Scoring",
+  scoringBig: "The calls",
+  scoringSub: "Every call checked against what really happened.",
 } as const;

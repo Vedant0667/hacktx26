@@ -1,0 +1,29 @@
+/* Race Night phone "calls locked" beat. Builds on the call pad's locked classes (../call/call.css). */
+.rn.rnpl .rnpl-top { height: 56px; padding-right: 20px; }
+/* The slab's top edge leans right (skewX -14deg from the bottom), so the label row needs more room than the title. */
+.rn.rnpl .rnpl-hero { padding-left: 96px; }
+.rn.rnpl .rnpl-title { font-size: 84px; line-height: 0.86; margin-top: 10px; }
+.rn.rnpl .rnc-lock-body { flex: 0 1 auto; }
+.rn.rnpl .rnpl-foot {
+  margin-top: auto;
+  flex-shrink: 0;
+  border-top: 1px solid #1f232a;
+  padding: 18px 20px max(20px, env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.rn.rnpl .rnpl-foot-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.rn.rnpl .rnpl-count { font-size: 64px !important; font-weight: 900; }
+@media (max-width: 370px) {
+  .rn.rnpl .rnpl-count { font-size: 54px !important; }
+}
+.rn.rnpl .rnpl-bar { height: 4px; background: #1f232a; }
+.rn.rnpl .rnpl-bar > i { display: block; height: 4px; background: var(--team); transition: width 1s linear; }
+@media (prefers-reduced-motion: reduce) {
+  .rn.rnpl .rnpl-bar > i { transition: none; }
+}
+@media (max-height: 760px) {
+  .rn.rnpl .rnpl-title { font-size: 68px; }
+  .rn.rnpl .rnpl-count { font-size: 52px !important; }
+}

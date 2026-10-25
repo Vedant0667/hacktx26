@@ -40,6 +40,8 @@ import { RNRaceReplay } from "../rn/phone/Replay";
 import { RNNoCall } from "../rn/phone/NoCall";
 import { RNPhoneSummary } from "../rn/phone-end/PhoneEnd";
 import { RNCallPad } from "../rn/call/RNCallPad";
+import { RNPhoneLocked } from "../rn/phone/Locked";
+import { RNPhoneScoring } from "../rn/phone-end/Scoring";
 
 export function RacePlay({
   code,
@@ -150,7 +152,7 @@ export function RacePlay({
 
   const lapNow = Math.min(clockLap(race, t), frames.at(-1)?.lap ?? 0);
   // Race Night views draw their own page; phases without one keep the classic layout below.
-  if (rn && (phase === "waiting" || phase === "replay" || phase === "freeze" || (phase === "done" && summary))) {
+  if (rn && (phase === "waiting" || phase === "replay" || phase === "freeze" || phase === "reveal_freeze" || phase === "done")) {
     return (
       <>
         <ConnNotice conn={conn} code={code} />
@@ -159,7 +161,8 @@ export function RacePlay({
         {phase === "freeze" && (
           <RNNoCall race={race} me={me} car={myCar} freeze={freeze?.drivers ?? null} loading={!!myCar && need.includes(myCar)} left={Math.max(0, Math.ceil(CALL_WINDOW_S - elapsed / 1000))} teamColour={colour} />
         )}
-        {phase === "done" && summary && <RNPhoneSummary summary={summary} me={me} />}
+        {phase === "reveal_freeze" && <RNPhoneLocked left={Math.max(0, Math.ceil((REVEAL_HOLD_MS - elapsed) / 1000))} teamColour={colour} />}
+        {phase === "done" && (summary ? <RNPhoneSummary summary={summary} me={me} /> : <RNPhoneScoring elapsedMs={elapsed} failed={failed} />)}
       </>
     );
   }
