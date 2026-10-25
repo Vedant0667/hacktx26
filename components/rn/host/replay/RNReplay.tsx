@@ -10,8 +10,9 @@ import { numberOf, replayDecision, type RaceLobby } from "@/lib/client/raceLobby
 import { lapTimeText, telemetry } from "@/lib/client/telemetry";
 import { leaderFractionFor, placeCars, trackFor } from "@/lib/tracks";
 import type { LapFrame } from "@/lib/types";
-import { Banner, GapValue, Label, Logo, OutlineNumber, RNRoot, RN_KIT_COPY, SkewButton, TowerRow, TyreBadge } from "../../kit";
+import { Banner, GapValue, Label, Logo, OutlineNumber, RNRoot, RN_KIT_COPY, TowerRow, TyreBadge } from "../../kit";
 import { TrackMap } from "../../TrackMap";
+import { RNControlButton } from "../controls";
 import { LOBBY_COPY as L } from "../lobby/copy";
 import "./replay.css";
 
@@ -73,9 +74,7 @@ export function RNReplayView(p: RNReplayViewProps) {
         <span className="rnr-controls">
           {p.controls}
           {p.onAdvance && (
-            <SkewButton size="host-sm" variant="secondary" onClick={p.onAdvance}>
-              {COPY.replay.skip}
-            </SkewButton>
+            <RNControlButton onClick={p.onAdvance}>{COPY.replay.skip}</RNControlButton>
           )}
         </span>
       </header>

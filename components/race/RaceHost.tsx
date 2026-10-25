@@ -45,6 +45,7 @@ import { RNRaceReplay } from "../rn/host/replay/RNReplay";
 import { RNHostSummary, RNScoring } from "../rn/end/RNHostEnd";
 import { RNFreeze, RNLocked } from "../rn/host/freeze/RNFreeze";
 import { RNControlButton, RNMuteButton } from "../rn/host/controls";
+import { ModeTabs } from "../rn/kit";
 
 const MAX_PLAYERS = 12;
 
@@ -164,7 +165,7 @@ export function RaceHost({
         mode={mode}
         controls={
           <>
-            <ModeToggle mode={mode} onChange={setMode} size="sm" />
+            {rn ? <ModeTabs mode={mode} onChange={setMode} variant="split" className="rnhc-tabs" /> : <ModeToggle mode={mode} onChange={setMode} size="sm" />}
             {muteBtn("secondary")}
             {segmentDone(race, t) &&
               (rn ? (

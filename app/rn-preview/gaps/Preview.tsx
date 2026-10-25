@@ -5,7 +5,7 @@ import type { BlindDecision, LobbyStateResponse } from "@/lib/client/api";
 import { CALL_WINDOW_S } from "@/lib/client/race";
 import type { DataMode } from "@/lib/client/mode";
 import type { LapFrame } from "@/lib/types";
-import { ModeToggle } from "@/components/ui";
+import { ModeTabs } from "@/components/rn/kit";
 import { RNPhoneLocked } from "@/components/rn/phone/Locked";
 import { RNPhoneScoring } from "@/components/rn/phone-end/Scoring";
 import { RNControlButton, RNMuteButton } from "@/components/rn/host/controls";
@@ -45,12 +45,12 @@ function Inner({ fixtures }: { fixtures: Fx[] }) {
         code="ABCD"
         decision={decision}
         frames={frames}
-        lap={decision.lap - 3}
+        lap={Number(sp.get("lap") ?? decision.lap - 3)}
         onAdvance={() => {}}
         mode={mode}
         controls={
           <>
-            <ModeToggle mode={mode} onChange={setMode} size="sm" />
+            <ModeTabs mode={mode} onChange={setMode} variant="split" className="rnhc-tabs" />
             {mute("dark")}
             <RNControlButton onClick={() => {}}>{COPY.race.continue}</RNControlButton>
           </>

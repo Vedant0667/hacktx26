@@ -29,6 +29,7 @@ import { HostReveal } from "./HostReveal";
 import { carOf, carsInPlay, driverBy, lobbyCarCode } from "./cars";
 import { RaceHost } from "../race/RaceHost";
 import { RNMuteButton } from "../rn/host/controls";
+import { ModeTabs } from "../rn/kit";
 
 const MAX_PLAYERS = 12;
 
@@ -166,7 +167,7 @@ export function HostScreen({ code }: { code: string }) {
           mode={mode}
           controls={
             <>
-              <ModeToggle mode={mode} onChange={setMode} size="sm" />
+              {rn ? <ModeTabs mode={mode} onChange={setMode} variant="split" className="rnhc-tabs" /> : <ModeToggle mode={mode} onChange={setMode} size="sm" />}
               {muteBtn("secondary")}
             </>
           }
