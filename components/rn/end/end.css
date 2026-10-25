@@ -170,7 +170,9 @@
 .rne-who-sub {
   font-weight: 700;
   font-size: calc(16 * var(--u));
-  color: var(--on-team);
+  color: #fff;
+  background: #07080a;
+  padding: calc(6 * var(--u)) calc(12 * var(--u));
 }
 
 /* ---- Reveal ---- */
@@ -273,7 +275,25 @@
   min-height: calc(44 * var(--u));
 }
 .rne-reveal[data-dense="xs"] .rne-player {
-  min-height: calc(36 * var(--u));
+  min-height: calc(29 * var(--u));
+}
+.rne-reveal[data-dense="xs"] .rne-bench {
+  min-height: calc(26 * var(--u));
+}
+.rne-reveal[data-dense="xs"] .rne-table {
+  gap: calc(2 * var(--u));
+}
+.rne-reveal[data-dense="xs"] .rne-stamp {
+  font-size: calc(54 * var(--u));
+}
+.rne-reveal[data-dense="xs"] .rne-player .rne-who {
+  font-size: calc(17 * var(--u));
+}
+.rne-reveal[data-dense="xs"] .rne-pts {
+  font-size: calc(20 * var(--u));
+}
+.rne-reveal[data-dense="xs"] .rne-call {
+  height: calc(21 * var(--u));
 }
 .rne-reveal[data-dense="xs"] .rne-verdict {
   display: none;
@@ -595,7 +615,23 @@
   min-height: calc(38 * var(--u));
 }
 .rne-podium[data-dense="xs"] .rne-rl {
-  min-height: calc(30 * var(--u));
+  min-height: calc(26 * var(--u));
+}
+.rne-podium[data-dense="xs"] .rne-rank-list {
+  gap: calc(2 * var(--u));
+}
+.rne-podium[data-dense="xs"] .rne-rl .rne-pts,
+.rne-podium[data-dense="xs"] .rne-rl .rne-who {
+  font-size: calc(16 * var(--u));
+}
+.rne-podium[data-dense="xs"] .rne-note {
+  display: none;
+}
+.rne-tag-aud {
+  font-size: calc(11 * var(--u));
+  font-weight: 600;
+  opacity: 0.8;
+  white-space: nowrap;
 }
 .rne-rl.rne-bench {
   background: transparent;

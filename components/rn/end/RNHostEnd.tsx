@@ -6,7 +6,7 @@ import "./end.css";
 import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
 import { useRouter } from "next/navigation";
 import { COPY } from "@/lib/copy";
-import type { GameSummary, MomentCar, MomentEntry, RankRow, SummaryMoment } from "@/lib/client/api";
+import type { GameSummary, MomentCar, MomentEntry, RankRow, SummaryAudible, SummaryMoment } from "@/lib/client/api";
 import { playerRanks, rankText, splitPoints, type PlayerRank, type Split } from "@/lib/client/score";
 import { Logo, RNRoot, SkewButton } from "@/components/rn/kit";
 import { TrackMap, type TrackMapProps } from "@/components/rn/TrackMap";
@@ -154,11 +154,14 @@ export interface RNHostSummaryProps {
 
 export function RNHostSummary({ summary: s, code, carCode, rejoinMaps, onPlayAgain }: RNHostSummaryProps) {
   const n = s.moments.length;
-  const [step, setStep] = useState(0); // 0..n-1 reveals, n = podium
-  const next = useCallback(() => setStep((x) => Math.min(n, x + 1)), [n]);
+  const aud = s.audibles.length > 0;
+  const podiumStep = n + (aud ? 1 : 0); // 0..n-1 reveals, n = audibles (when any), then the podium
+  const [step, setStep] = useState(0);
+  const next = useCallback(() => setStep((x) => Math.min(podiumStep, x + 1)), [podiumStep]);
   const prev = useCallback(() => setStep((x) => Math.max(0, x - 1)), []);
   useEffect(() => {
     const onKey = (ev: KeyboardEvent) => {
+      if (ev.repeat || ev.metaKey || ev.ctrlKey || ev.altKey) return;
       const t = ev.target as HTMLElement | null;
       if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable)) return;
       if (ev.key === "ArrowRight" || (ev.key === " " && !(t && t.tagName === "BUTTON"))) {
@@ -173,9 +176,12 @@ export function RNHostSummary({ summary: s, code, carCode, rejoinMaps, onPlayAga
     return () => window.removeEventListener("keydown", onKey);
   }, [next, prev]);
   const team = colourOf(s, carCode) ?? s.cars[0]?.team_colour ?? null;
+  const skip = step < podiumStep - 1 ? () => setStep(podiumStep) : undefined;
+  if (aud && step === n)
+    return <RNAudibles summary={s} team={team} onNext={next} onBack={n > 0 ? prev : undefined} />;
   const m = s.moments[step];
-  if (step >= n || !m)
-    return <RNPodium summary={s} code={code} team={team} onBack={n > 0 ? prev : undefined} onPlayAgain={onPlayAgain} />;
+  if (step >= podiumStep || !m)
+    return <RNPodium summary={s} code={code} team={team} onBack={podiumStep > 0 ? prev : undefined} onPlayAgain={onPlayAgain} />;
   return (
     <RNReveal
       summary={s}
@@ -186,8 +192,73 @@ export function RNHostSummary({ summary: s, code, carCode, rejoinMaps, onPlayAga
       rejoin={rejoinMaps?.[m.lap]}
       onNext={next}
       onBack={step > 0 ? prev : undefined}
-      onSkip={next !== undefined && step < n - 1 ? () => setStep(n) : undefined}
+      onSkip={skip}
+      nextLabel={step === n - 1 && !aud ? C.standings : step === n - 1 ? COPY.end.audibles : C.next}
     />
+  );
+}
+
+// ---- Audibles (no mockup: the legacy HostAudibles list, in the reveal layout) ----
+
+const audibleMark = (a: SummaryAudible) => (a.status === "scored" ? (a.right ? "✓" : "✗") : "–");
+
+export function RNAudibles({ summary: s, team, onNext, onBack }: { summary: GameSummary; team: string | null; onNext: () => void; onBack?: () => void }) {
+  return (
+    <RNRoot as="main" team={team} className="rne rne-reveal" data-dense={s.audibles.length > 9 ? "xs" : "md"}>
+      <div className="rne-slab-right rne-slab-reveal" aria-hidden />
+      <header className="rne-rv-top">
+        <Logo size="host" />
+        <span className="rn-lbl">{COPY.end.gameLine(s.moments.length, s.audibles.length)}</span>
+      </header>
+      <section className="rne-rv-main">
+        <h1 className="rne-stamp rn-d">
+          <span>{COPY.end.audibles}</span>
+        </h1>
+        <div className="rne-table" role="table" aria-label={COPY.end.audibles}>
+          {s.audibles.map((a) => {
+            const sp = a.status === "scored" ? splitPoints(a.stakes, !!a.right, a.reasoning, a.points) : null;
+            return (
+              <div role="row" key={`${a.name}:${a.lap}`} className="rne-tr rne-player rne-aud">
+                <span role="cell" className="rn-d rne-rank">
+                  L{a.lap}
+                </span>
+                <span role="cell" className="rne-who rn-d">
+                  <span className="rne-trunc">{a.name}</span>
+                </span>
+                <span role="cell">
+                  <span className="rne-call rn-d rne-call-out">
+                    <span>
+                      {COPY.end.boxNow} {audibleMark(a)}
+                    </span>
+                  </span>
+                </span>
+                <span role="cell" className="rne-how">
+                  <span className="rn-num">{sp ? COPY.end.split(sp, false) : (COPY.race.audibleStatus[a.status] ?? COPY.end.unscored)}</span>
+                  {sp && a.verdict && <q className="rne-verdict">{a.verdict}</q>}
+                </span>
+                <span role="cell" className="rn-d rn-num rne-pts">
+                  {a.status === "scored" ? COPY.end.points(a.points) : ""}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </section>
+      <aside className="rne-rv-side">
+        <div className="rne-nav">
+          <span className="rne-minor">
+            {onBack && (
+              <button type="button" className="rne-link" onClick={onBack}>
+                {C.back}
+              </button>
+            )}
+          </span>
+          <SkewButton variant="dark" size="host-sm" onClick={onNext} aria-keyshortcuts="ArrowRight Space">
+            {C.standings}
+          </SkewButton>
+        </div>
+      </aside>
+    </RNRoot>
   );
 }
 
@@ -203,7 +274,9 @@ export function RNReveal({
   onNext,
   onBack,
   onSkip,
+  nextLabel,
 }: {
+  nextLabel?: string;
   summary: GameSummary;
   moment: SummaryMoment;
   index: number;
@@ -292,7 +365,7 @@ export function RNReveal({
             )}
           </span>
           <SkewButton variant="dark" size="host-sm" onClick={onNext} aria-keyshortcuts="ArrowRight Space">
-            {last ? C.standings : C.next}
+            {nextLabel ?? (last ? C.standings : C.next)}
           </SkewButton>
         </div>
       </aside>
@@ -471,12 +544,15 @@ export function RNPodium({
 
 function RankLine({ r, s, rank }: { r: RankRow; s: GameSummary; rank?: PlayerRank }) {
   const bench = r.kind !== "player";
+  const mine = bench ? [] : s.audibles.filter((a) => a.name === r.name);
+  const aud = { n: mine.length, points: mine.reduce((t, a) => t + a.points, 0) };
   return (
     <li className={cx("rne-rl", bench ? "rne-bench" : "rne-player", !bench && rank?.rank === 1 && "rne-first")}>
       <span className="rn-d rne-rank">{!bench && rank ? rankText(rank) : ""}</span>
       <span className={cx("rne-who", !bench && "rn-d")}>
         <span className="rne-trunc">{label(r, s)}</span>
         {bench && <span className="rn-lbl rne-tag">{C.benchmark}</span>}
+        {!bench && aud.n > 0 && <span className="rne-tag-aud">{COPY.end.audiblesLine(aud.n, aud.points)}</span>}
       </span>
       <span className="rn-d rn-num rne-pts">{COPY.end.points(r.points)}</span>
     </li>

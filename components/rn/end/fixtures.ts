@@ -51,7 +51,15 @@ export function raceSummary(players = 6): GameSummary {
     moment(28, "TYRE_WINDOW", "STAY", 50, callsFor(["STAY", "STAY", "STAY", "BOX", "STAY", "BOX"]), rs),
     moment(39, "VSC", "BOX", 88, callsFor(["BOX", "BOX", "STAY", "BOX", "STAY", null]), rs),
   ];
-  return finish(moments, "Singapore 2026", "race");
+  const sum = finish(moments, "Singapore 2026", "race");
+  sum.audibles = [
+    { name: "Vedant", driver_code: "GAS", lap: 33, status: "scored", right: true, stakes: 40, reasoning: 28, verdict: "Spotted the gap behind before the stop.", said: "Box now, the gap behind is 24 s.", points: 18 },
+    { name: "Maya", driver_code: "GAS", lap: 47, status: "unscored", right: null, stakes: 0, reasoning: 0, verdict: null, said: "", points: 0 },
+  ];
+  for (const r of sum.ranking) r.points += sum.audibles.filter((a) => a.name === r.name && r.kind === "player").reduce((t, a) => t + a.points, 0);
+  const top = Math.max(...sum.ranking.filter((r) => r.kind === "player").map((r) => r.points));
+  sum.winners = { names: sum.ranking.filter((r) => r.kind === "player" && r.points === top).map((r) => r.name), points: top };
+  return sum;
 }
 
 export function momentSummary(players = 3): GameSummary {
