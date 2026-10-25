@@ -8,7 +8,18 @@ import type { Call } from "@/lib/types";
 import { RNCallPadView, type RNCallPadViewState } from "@/components/rn/call/RNCallPad";
 import type { CallPadProps } from "@/lib/client/useCallPad";
 
-const decision = { id: "fixture", trigger: "VSC", lap: 22, total_laps: 57, player_role: { number: 10 } } as unknown as BlindDecision;
+import decisionJson from "@/components/rn/call/fixtures/decision.json";
+import framesJson from "@/components/rn/call/fixtures/frames.json";
+import { getBrief } from "@/components/DecisionBrief";
+import { teamColourOf } from "@/lib/client/field";
+import type { LapFrame } from "@/lib/types";
+
+// Real blind data from GET /api/decisions/singapore-2026-vsc and /frames (no answer fields).
+const decision = decisionJson as unknown as BlindDecision;
+const frames = framesJson as unknown as LapFrame[];
+const brief = getBrief(decision, frames);
+const team = teamColourOf(frames, decision.player_role.number);
+const myCode = brief?.frame?.drivers.find((d) => d.number === decision.player_role.number)?.code ?? "";
 const players = ["Vedant", "Maya", "Priya", "Ekb", "Jordan", "Sam"];
 const noop = () => {};
 type Voice = RNCallPadViewState["voice"];
@@ -23,7 +34,7 @@ function build(st: S, adv: boolean): { s: Omit<RNCallPadViewState, "inputRef">; 
   const base: Omit<RNCallPadViewState, "inputRef"> = {
     call: null, why: "", sending: false, queued: false, locked: null, err: null, setWhy: noop, voice: voice({}), busy: false,
     recording: false, talkMs: 0, recSecs: 0, micDown: false, showTyping: false, tooLate: false, hasNote: false, left: 17, urgent: false,
-    alreadyIn: false, brief: null, team: "#3671C6", myCode: "GAS", pos: 10, adv, typing: false, helper: null,
+    alreadyIn: false, brief, team, myCode, pos: brief?.ctx?.pos, adv, typing: false, helper: null,
     onSubmit: (e) => e.preventDefault(), choose: noop, toggleTyping: noop,
   };
   const box: Partial<RNCallPadViewState> = { call: "BOX" as Call };
@@ -66,6 +77,6 @@ export function CallPreview() {
     if (q.get("mode") === "advanced") setMode("advanced");
   }, []);
   const { s, submitted } = build(st, mode === "advanced");
-  const props: CallPadProps = { code: "FIXT", me: "Vedant", decision, frames: null, elapsed: 0, players, submittedNames: submitted, mode, setMode };
+  const props: CallPadProps = { code: "FIXT", me: "Vedant", decision, frames, elapsed: 0, players, submittedNames: submitted, mode, setMode };
   return <RNCallPadView props={props} s={{ ...s, inputRef }} />;
 }
