@@ -15,3 +15,4 @@ npx tsx scripts/test-luck.ts
 npx tsx lib/client/race.check.ts
 npx tsx scripts/test-voice.ts
 npx tsx lib/tracks.check.ts
+npx tsx scripts/test-names.ts

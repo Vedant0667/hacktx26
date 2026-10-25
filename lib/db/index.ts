@@ -230,7 +230,8 @@ export async function getLobbyState(code: string): Promise<LobbyStateResponse | 
 export const MAX_PLAYERS = 12;
 
 // Adds a player (token hash and consent time stored) unless the lobby is full, the name is taken, or the host
-// removed that name or the presented device token from this lobby (kicked_players).
+// removed that name or the presented device token from this lobby (kicked_players). Names compare ignoring case:
+// "alice" is taken while "Alice" is in the lobby, and "taken" carries the stored spelling.
 // Serialised per lobby with an advisory lock so concurrent joins cannot pass the cap or race a kick.
 // "taken" carries the stored token hash so the route can allow a rejoin by the same device. driverCode is stored
 // only on a new row: a rejoin keeps the car picked at the first join.
@@ -240,28 +241,29 @@ export async function addPlayer(
   tokenHash: string,
   presentedTokenHash: string | null = null,
   driverCode: string | null = null,
-): Promise<{ result: "ok" } | { result: "taken"; token_hash: string | null } | { result: "full" | "no_lobby" | "kicked" }> {
+): Promise<{ result: "ok" } | { result: "taken"; token_hash: string | null; name: string } | { result: "full" | "no_lobby" | "kicked" }> {
   try {
     const results = (await sql().transaction([
       sql().query(`select pg_advisory_xact_lock(hashtext($1))`, [`lobby-join:${code}`]),
       sql().query(
         `select exists(select 1 from kicked_players
-                       where lobby_code = $1 and (name = $2 or ($3::text is not null and token_hash = $3))) as kicked`,
+                       where lobby_code = $1 and (lower(name) = lower($2) or ($3::text is not null and token_hash = $3))) as kicked`,
         [code, name, presentedTokenHash],
       ),
       sql().query(
         `insert into players (lobby_code, name, token_hash, consent_at, driver_code)
          select $1, $2, $3, now(), $6 where (select count(*) from players where lobby_code = $1) < $4
+           and not exists(select 1 from players where lobby_code = $1 and lower(name) = lower($2))
            and not exists(select 1 from kicked_players
-                          where lobby_code = $1 and (name = $2 or ($5::text is not null and token_hash = $5)))
+                          where lobby_code = $1 and (lower(name) = lower($2) or ($5::text is not null and token_hash = $5)))
          on conflict (lobby_code, name) do nothing returning name`,
         [code, name, tokenHash, MAX_PLAYERS, presentedTokenHash, driverCode],
       ),
-      sql().query(`select token_hash from players where lobby_code = $1 and name = $2`, [code, name]),
-    ])) as unknown as [unknown, { kicked: boolean }[], { name: string }[], { token_hash: string | null }[]];
+      sql().query(`select token_hash, name from players where lobby_code = $1 and lower(name) = lower($2) order by (name = $2) desc limit 1`, [code, name]),
+    ])) as unknown as [unknown, { kicked: boolean }[], { name: string }[], { token_hash: string | null; name: string }[]];
     if (results[1][0]?.kicked) return { result: "kicked" };
     if (results[2].length === 1) return { result: "ok" };
-    if (results[3].length === 1) return { result: "taken", token_hash: results[3][0].token_hash };
+    if (results[3].length === 1) return { result: "taken", token_hash: results[3][0].token_hash, name: results[3][0].name };
     return { result: "full" };
   } catch (err) {
     if (isPgError(err, "23503")) return { result: "no_lobby" }; // foreign key: lobby does not exist
@@ -269,13 +271,12 @@ export async function addPlayer(
   }
 }
 
-// Host removes a player: records the name and device token in kicked_players (so neither can rejoin), and,
-// before the reveal, deletes that player's submission and grading claim. False when no player has that name.
+// Host removes a player: records the name and device token in kicked_players (so neither can rejoin),
+// deletes that player's submission (in any phase, so a kick after the reveal also clears the public leaderboard),
+// their race calls (the race board lists finished lobbies) and, before the reveal, their grading claim. False
+// when no player has that name.
 export async function kickPlayer(code: string, name: string): Promise<boolean> {
   const beforeReveal = `exists(select 1 from lobbies where code = $1 and mode = 'moment' and phase in ('waiting', 'replay', 'decision'))`;
-  // Race lobby: only the call on the current, unrevealed freeze goes (and its grading claim).
-  const raceFreezeOpen = `exists(select 1 from lobbies l where l.code = $1 and l.mode = 'race' and l.phase = 'freeze'
-    and ${CURRENT_FREEZE_LAP} = race_calls.lap)`;
   const results = (await sql().transaction([
     sql().query(`select pg_advisory_xact_lock(hashtext($1))`, [`lobby-join:${code}`]),
     sql().query(
@@ -284,7 +285,7 @@ export async function kickPlayer(code: string, name: string): Promise<boolean> {
        on conflict (lobby_code, name) do update set token_hash = excluded.token_hash, created_at = now()`,
       [code, name],
     ),
-    sql().query(`delete from submissions where lobby_code = $1 and player_name = $2 and ${beforeReveal}`, [code, name]),
+    sql().query(`delete from submissions where lobby_code = $1 and player_name = $2`, [code, name]),
     sql().query(`delete from submission_claims where lobby_code = $1 and player_name = $2 and ${beforeReveal}`, [code, name]),
     sql().query(
       `delete from submission_claims where lobby_code = $1 and player_name = $2 and decision_id = (
@@ -292,7 +293,7 @@ export async function kickPlayer(code: string, name: string): Promise<boolean> {
          where l.code = $1 and l.mode = 'race' and l.phase = 'freeze')`,
       [code, name],
     ),
-    sql().query(`delete from race_calls where lobby_code = $1 and player_name = $2 and kind = 'freeze' and ${raceFreezeOpen}`, [code, name]),
+    sql().query(`delete from race_calls where lobby_code = $1 and player_name = $2`, [code, name]),
     sql().query(`delete from players where lobby_code = $1 and name = $2 returning name`, [code, name]),
   ])) as unknown as [unknown, unknown, unknown, unknown, unknown, unknown, { name: string }[]];
   return results[6].length === 1;

@@ -180,7 +180,7 @@ export const COPY = {
     joining: "Joining lobby",
     // added: consent checkbox (docs/05 logistics; audit M6). The server rejects a join without it.
     consent:
-      "Show my nickname and spoken reasons to the room and on the public leaderboard. Voice notes are sent to Meta's speech service to turn them into text (if it's down, your browser's recognizer is used, which in Chrome means Google). Lobbies, names and calls are deleted within a day.",
+      "Show my nickname and reasons to the room and on the public leaderboard. Reasons go to Meta's Muse AI for grading, and voice notes to Meta's speech service to turn them into text (if it's down, your browser's recognizer is used, which in Chrome means Google). Lobbies, names, calls and IP addresses are deleted within a day.",
     consentMissing: "Tick the box to join.", // added
     // added: the Join bar names what is still missing, in form order
     need: { name: "Add your nickname", consent: "Tick consent", driver: "Pick a driver" },
@@ -198,6 +198,7 @@ export const COPY = {
     connectionLost: "Connection lost. Reconnecting.",
     reconnected: (lap: number) => `Back. Replay synced to lap ${lap}.`,
     gaveUp: "Can't reach the lobby. Check your connection and reload.",
+    nameRejected: "Pick another nickname.",
     nameTaken: (name: string) => `${name} is taken in this lobby. Pick another.`,
     lobbyFull: "Lobby is full: 12 players. Ask the host to start a new one.", // added: 409 on join
     rateLimited: (s: number | null) => `Too many requests from this network. Try again in ${s ? waitText(s) : "a few seconds"}.`, // added: 429
