@@ -11,7 +11,7 @@ export const LOBBY_COPY = {
   everyoneDrives: (code: string) => `Everyone drives ${code}`,
   eachPicks: "Each player picks a car",
   dataOnScreen: "Data on screen",
-  privacy: "Names and calls are deleted within a day.",
+  privacy: "Names and calls are deleted within two days.",
   following: (team: string, n: number) => `Following · ${team} #${n}`,
   lastLap: "Last lap",
   lap: "Lap",

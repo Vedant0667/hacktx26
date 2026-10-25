@@ -3,7 +3,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { callTarget, checkDeclaredLength, readPcm, requireOctetStream, ASR_PER_CALL, ASR_PER_IP, ASR_PER_IP_ALL } from "../app/api/lobby/[code]/transcribe/gate";
+import { callsStillOpen, callTarget, checkDeclaredLength, readPcm, requireOctetStream, ASR_PER_CALL, ASR_PER_IP, ASR_PER_IP_ALL } from "../app/api/lobby/[code]/transcribe/gate";
 import { hashToken, HttpError, newToken } from "../app/api/_lib/http";
 import { ASR_MAX_BYTES, ASR_MIN_BYTES, asrCostUsd, museTranscribe, pcmToWav } from "../lib/muse/asr";
 import { Downsampler, meterLevel, toPcm16 } from "../lib/client/recorder";
@@ -186,6 +186,24 @@ async function main() {
   assert.ok(/addModule\("\/worklets\/pcm\.js"\)/.test(rec) && /createScriptProcessor/.test(rec), "worklet plus ScriptProcessor fallback");
 
   console.log("test-voice: all checks passed");
+}
+
+// A late transcript is attached only while calls are open for the same moment, or inside the 2 s reveal grace.
+{
+  const plan = [{ lap: 24, drivers: ["NOR"] }, { lap: 31, drivers: ["NOR"] }] as never;
+  const race = (phase: string, elapsed: number, idx = 0) => ({ mode: "race", phase, phase_elapsed_s: elapsed, freeze_plan: plan, freeze_index: idx }) as never;
+  const lap24 = { key: "L24", decisionId: null, raceLap: 24 };
+  assert.equal(callsStillOpen(race("freeze", 39), lap24), true);
+  assert.equal(callsStillOpen(race("reveal_freeze", 1.5), lap24), true);
+  assert.equal(callsStillOpen(race("reveal_freeze", 2.5), lap24), false, "held upload past the grace");
+  assert.equal(callsStillOpen(race("replay", 0), lap24), false);
+  assert.equal(callsStillOpen(race("freeze", 1, 1), lap24), false, "next freeze is a different moment");
+  const moment = (phase: string, elapsed: number) => ({ mode: "moment", phase, phase_elapsed_s: elapsed, freeze_plan: null, freeze_index: 0 }) as never;
+  const m = { key: "d", decisionId: "d", raceLap: null };
+  assert.equal(callsStillOpen(moment("decision", 30), m), true);
+  assert.equal(callsStillOpen(moment("reveal", 1), m), true);
+  assert.equal(callsStillOpen(moment("reveal", 3), m), false);
+  console.log("ok callsStillOpen");
 }
 
 main().catch((err) => {

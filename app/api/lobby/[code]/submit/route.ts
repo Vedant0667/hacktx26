@@ -6,10 +6,9 @@ import { parseCallLocal, rubricScore } from "@/lib/muse";
 import { CALL_WINDOW_S, percentile, scoreCall } from "@/lib/scoring";
 import { momentRubricFor } from "../../../_lib/grading";
 import { lobbyMetaGuarded } from "../../../_lib/access";
-import { driverFor, handle, HttpError, normalizeCode, readBody, requireDecision, tokenMatches } from "../../../_lib/http";
+import { driverFor, handle, HttpError, normalizeCode, readBody, requireDecision, tokenMatches, REVEAL_GRACE_S } from "../../../_lib/http";
 import { currentFreeze, freezeDecision, freezeRubric, type RacePhase } from "../../../_lib/race";
 
-const REVEAL_GRACE_S = 2;
 
 const Body = z.object({
   player_name: z.string().trim().min(1).max(24),

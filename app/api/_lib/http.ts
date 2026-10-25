@@ -5,6 +5,9 @@ import type { z } from "zod";
 import { getDecision, getDefaultDriver, getDriverAnswer, type DriverReveal } from "@/lib/data";
 import type { DecisionPoint } from "@/lib/types";
 
+// Calls still count this long into the reveal: auto-sends in flight when the host reveals (submit and transcribe).
+export const REVEAL_GRACE_S = 2;
+
 export class HttpError extends Error {
   constructor(public status: number, message: string, public retryAfterS?: number, public bucket?: string) {
     super(message);

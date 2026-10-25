@@ -439,20 +439,21 @@ export async function attachLateReason(
   code: string,
   player: string,
   target: { raceLap: number } | { scope: string },
-  build: (call: Call | null) => { transcript: string; reasons: string[] },
+  build: (call: Call) => { transcript: string; reasons: string[] },
 ): Promise<boolean> {
   const race = "raceLap" in target;
   const rows = race
     ? await query<{ call: Call | null }>(
-        `select call from race_calls where lobby_code = $1 and player_name = $2 and kind = 'freeze' and lap = $3 and graded_at is null and ${REASONLESS}`,
+        `select call from race_calls where lobby_code = $1 and player_name = $2 and kind = 'freeze' and lap = $3 and call is not null and graded_at is null and ${REASONLESS}`,
         [code, player, target.raceLap],
       )
     : await query<{ call: Call | null }>(
-        `select call from submissions where lobby_code = $1 and player_name = $2 and graded_at is null and ${REASONLESS}`,
-        [code, player],
+        `select call from submissions where lobby_code = $1 and player_name = $2 and decision_id = $3 and call is not null and graded_at is null and ${REASONLESS}`,
+        [code, player, target.scope],
       );
-  if (!rows.length) return false;
-  const next = build(rows[0].call);
+  const call = rows[0]?.call;
+  if (!call) return false; // no call: never add one, or words to a "No call", after the deadline
+  const next = build(call);
   const updated = race
     ? await query(
         `update race_calls set transcript = $4, reasons = $5::jsonb
@@ -463,7 +464,7 @@ export async function attachLateReason(
       )
     : await query(
         `update submissions set transcript = $3, reasons = $4::jsonb
-         where lobby_code = $1 and player_name = $2 and graded_at is null and ${REASONLESS}
+         where lobby_code = $1 and player_name = $2 and decision_id = $5 and graded_at is null and ${REASONLESS}
            and not exists (select 1 from grading_claims g where g.lobby_code = $1 and g.scope = $5)
          returning 1`,
         [code, player, next.transcript, JSON.stringify(next.reasons), target.scope],

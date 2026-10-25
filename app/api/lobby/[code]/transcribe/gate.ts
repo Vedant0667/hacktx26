@@ -3,7 +3,7 @@
 // (409) -> rate limits (429) -> body read with a hard cap (413, 400) -> Muse (503 with fallback: true).
 import type { LobbyMeta } from "@/lib/db";
 import { ASR_MAX_BYTES, ASR_MIN_BYTES } from "@/lib/muse/asr";
-import { HttpError, tokenMatches } from "../../../_lib/http";
+import { HttpError, REVEAL_GRACE_S, tokenMatches } from "../../../_lib/http";
 
 export const ASR_PER_CALL = 4; // clips per player per call window (one decision, or one race freeze)
 export const ASR_PER_CALL_WINDOW_S = 3600;
@@ -78,4 +78,15 @@ export async function readPcm(req: Request, max = ASR_MAX_BYTES, min = ASR_MIN_B
     o += c.byteLength;
   }
   return out;
+}
+
+// After the audio is read and transcribed: calls must still be open for the same moment (or inside the reveal grace)
+// before the words may be attached to a stored call. Otherwise an upload held open past the reveal could add a
+// reason after the answer is known.
+export function callsStillOpen(meta: Pick<LobbyMeta, "mode" | "phase" | "phase_elapsed_s" | "freeze_plan" | "freeze_index">, target: CallTarget): boolean {
+  if (meta.mode === "race") {
+    const open = meta.phase === "freeze" || (meta.phase === "reveal_freeze" && meta.phase_elapsed_s < REVEAL_GRACE_S);
+    return open && target.raceLap != null && meta.freeze_plan?.[meta.freeze_index]?.lap === target.raceLap;
+  }
+  return meta.phase === "decision" || (meta.phase === "reveal" && meta.phase_elapsed_s < REVEAL_GRACE_S);
 }

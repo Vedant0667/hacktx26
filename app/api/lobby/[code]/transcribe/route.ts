@@ -5,7 +5,7 @@ import { parseCallLocal } from "@/lib/muse";
 import { museTranscribe } from "@/lib/muse/asr";
 import { lobbyMetaGuarded } from "../../../_lib/access";
 import { clientIp, handle, hashToken, HttpError, normalizeCode } from "../../../_lib/http";
-import { ASR_PER_CALL, ASR_PER_CALL_WINDOW_S, ASR_PER_IP, ASR_PER_IP_ALL, ASR_PER_IP_ALL_WINDOW_S, ASR_PER_IP_WINDOW_S, callTarget, checkDeclaredLength, readPcm, requireOctetStream } from "./gate";
+import { ASR_PER_CALL, ASR_PER_CALL_WINDOW_S, ASR_PER_IP, ASR_PER_IP_ALL, ASR_PER_IP_ALL_WINDOW_S, ASR_PER_IP_WINDOW_S, callsStillOpen, callTarget, checkDeclaredLength, readPcm, requireOctetStream } from "./gate";
 
 // Round 8 (voice): a player's voice note -> text with Muse Voice Transcribe. Body: raw PCM16 LE mono at 16 kHz,
 // Content-Type application/octet-stream, at most 30 s (960,000 bytes). Header x-player-token. Only while the
@@ -44,11 +44,12 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
     return Response.json({ error, fallback: true }, { status: 503, headers: { "Cache-Control": "no-store" } });
   }
   // The 0 s auto-send may have stored this call while the note was still transcribing: give it these words.
+  // Only while calls are still open for this moment (re-read now: the upload and transcription took time).
   const text = r.transcript.trim();
-  if (text) {
+  const now = text ? await getLobbyMeta(code, player) : null;
+  if (text && now && callsStillOpen(now, target)) {
     await attachLateReason(code, player, target.raceLap != null ? { raceLap: target.raceLap } : { scope: meta.decision_id }, (call) => {
-      const word = call ? COPY.freeze.options[call] : "";
-      const transcript = word && !text.toLowerCase().startsWith(word.toLowerCase()) ? `${word}. ${text}` : text;
+      const transcript = text.toLowerCase().startsWith(COPY.freeze.options[call].toLowerCase()) ? text : `${COPY.freeze.options[call]}. ${text}`;
       return { transcript, reasons: parseCallLocal(transcript).reasons };
     }).catch((err) => console.warn("transcribe: late reason not attached", err instanceof Error ? err.message : err));
   }

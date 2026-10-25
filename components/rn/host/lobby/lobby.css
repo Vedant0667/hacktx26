@@ -32,11 +32,13 @@
   padding-top: calc(42 * var(--u));
   min-width: 0;
   position: relative;
+  container-type: inline-size;
 }
 .rnl-code {
   font-family: var(--rn-display, inherit);
   font-weight: 900;
-  font-size: calc(150 * var(--u)); /* wide codes (MWMW) must clear the grid column at 1440 */
+  /* Capped by the column width: four wide letters (MWMW) are about 3.7 em, so 26cqi always clears the grid column. */
+  font-size: min(calc(150 * var(--u)), 26cqi);
   line-height: 0.82;
   letter-spacing: 0.01em;
   margin: calc(10 * var(--u)) 0 0;
