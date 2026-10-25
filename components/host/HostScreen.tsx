@@ -703,13 +703,13 @@ function SimpleFreeze({ brief, decision, left, urgent, meCode, code, room, statu
         <Top left={label ?? COPY.host.statusLong(decision.trigger, decision.lap, decision.total_laps)} right={`${COPY.mode.simple} · ${COPY.host.room(code)}`} />
         <div className="grid min-h-0 grid-cols-12 items-center gap-x-6">
           <section className="col-span-7 flex flex-col">
-            <Clock left={left} urgent={urgent} className="text-[4.75rem]" />
-            <h1 className={`display mt-3 leading-[0.92] ${why ? "text-[3.75rem]" : "text-[4.5rem]"}`}>
+            <Clock left={left} urgent={urgent} className="text-[length:min(4.75rem,7dvh)]" />
+            <h1 className={`display mt-3 leading-[0.92] ${why ? "text-[length:min(3.75rem,5.6dvh)]" : "text-[length:min(4.5rem,6.6dvh)]"}`}>
               {brief.ctx ? COPY.host.lead(meCode, brief.ctx.pos) : ""} {COPY.freeze.question}
             </h1>
             {why && <div className="mt-4">{why}</div>}
-            <Sentence brief={brief} decision={decision} className="mt-4 max-w-[44ch] text-[1.375rem] font-medium leading-[1.3]" />
-            {brief.rejoin && <RejoinCaveat frame={brief.frame} lap={decision.lap} className="mt-2 text-xl font-bold" />}
+            <Sentence brief={brief} decision={decision} className="mt-4 max-w-[60ch] text-[1.375rem] font-medium leading-[1.3]" />
+            {brief.rejoin && <RejoinCaveat frame={brief.frame} lap={decision.lap} className="mt-1.5 text-base font-medium" />}
           </section>
           <section className="col-span-5 col-start-8">
             <Options brief={brief} compact={false} />
@@ -719,8 +719,8 @@ function SimpleFreeze({ brief, decision, left, urgent, meCode, code, room, statu
           <section className="grid grid-cols-12 gap-x-6 border-t-2 border-on-field pt-3">
             <div className="col-span-5">
               <span className="meta">{simpleChartLabel(t)}</span>
-              <div className="mt-1 max-h-[150px] overflow-hidden">
-                <LapChart laps={t.laps} cars={[t.me, t.ahead, t.behind]} height={120} />
+              <div className="mt-1">
+                <LapChart laps={t.laps} cars={[t.me, t.ahead, t.behind]} height={100} status={t.status} />
               </div>
             </div>
             <div className="col-span-7">

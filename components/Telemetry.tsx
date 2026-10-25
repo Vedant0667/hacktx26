@@ -52,18 +52,25 @@ export function LapChart({
   const list = cars.filter((c): c is CarTrend => !!c && c.times.some((t) => t != null));
   const vals = list.flatMap((c) => c.times).filter((t): t is number => t != null);
   if (laps.length < 2 || vals.length < 2) return <p className="text-sm font-medium">{COPY.tele.noTimes}</p>;
-  let lo = Math.min(...vals);
-  let hi = Math.max(...vals);
+  // Robust range: a lap far slower than the median (SC/VSC, pit in or out) does not set the scale. It is drawn
+  // in a band just above the normal laps with a caret; its end label keeps the real time.
+  const sorted = [...vals].sort((a, b) => a - b);
+  const med = sorted[Math.floor(sorted.length / 2)];
+  let lo = sorted[0];
+  const cap = med + Math.max(2.5, (med - lo) * 2);
+  let hi = Math.max(...sorted.filter((t) => t <= cap));
+  const capped = sorted[sorted.length - 1] > hi;
   if (hi - lo < 0.6) {
     const mid = (hi + lo) / 2;
     lo = mid - 0.3;
     hi = mid + 0.3;
   }
   const left = axis ? 40 : 14;
-  const right = W - (values ? 78 : 44);
+  const right = W - (values ? 92 : 44);
   const bottom = height - 18;
+  const top = capped ? hi + (hi - lo) * 0.3 : hi;
   const x = (i: number) => left + (laps.length === 1 ? 0 : (i / (laps.length - 1)) * (right - left));
-  const y = (t: number) => bottom - 8 - ((t - lo) / (hi - lo)) * (bottom - 16);
+  const y = (t: number) => bottom - 8 - ((Math.min(t, top) - lo) / (top - lo)) * (bottom - 16);
   const ticks = axis ? Array.from({ length: Math.floor(hi) - Math.ceil(lo) + 1 }, (_, k) => Math.ceil(lo) + k).filter((_, k, arr) => arr.length <= 5 || k % 2 === 0) : [];
   const styles = [
     { w: 2.75, o: 1, dash: undefined },
@@ -140,6 +147,12 @@ export function LapChart({
             ));
         })
         .reverse()}
+      {capped &&
+        list.flatMap((c) =>
+          c.times.map((t, i) =>
+            t != null && t > hi ? <path key={`cap-${c.number}-${i}`} d={`M${x(i) - 4} ${y(t) - 5} h8 l-4 -6 z`} fill="currentColor" /> : null,
+          ),
+        )}
       {ends
         .filter((e) => e.k === 0)
         .map((e) => (

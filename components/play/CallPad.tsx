@@ -192,7 +192,7 @@ export function CallPad({
       void sendRef.current(true);
     }
   });
-  // If the pad unmounts (phase flipped to reveal) with the 0 s send still pending, send now: the request
+  // If the pad unmounts (phase flipped to reveal) with the 0 s send or a queued Send still pending, send now: the request
   // outlives the unmount and the server still accepts it during its short grace.
   const lockedRef = useRef(false);
   useEffect(() => {
@@ -200,7 +200,7 @@ export function CallPad({
   });
   useEffect(
     () => () => {
-      if (autoTimer.current !== undefined && autoSent.current && !lockedRef.current) {
+      if (((autoTimer.current !== undefined && autoSent.current) || awaitingNote.current) && !lockedRef.current) {
         clearTimeout(autoTimer.current);
         void sendRef.current(true);
       } else {
