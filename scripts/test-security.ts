@@ -114,7 +114,8 @@ async function main() {
   assert.equal(lobbyBlockedBucket({ ...okGuard, reads_all: LOBBY_READ_ALL_LIMIT }), null);
   assert.equal(lobbyBlockedBucket({ found: false, reads: 1, reads_all: 1, misses: LOBBY_MISS_LIMIT + 1 }), "lobby_miss");
   const dbSrc = readFileSync(path.join(root, "lib/db/index.ts"), "utf8");
-  assert.ok(dbSrc.includes("[`${ip}:${code}`, opts.readWindowS]"), "lobby_read is keyed by IP and code");
+  assert.ok(dbSrc.includes("[`${ip}:${code}`, opts.readWindowS, code]"), "lobby_read is keyed by IP and code");
+  assert.ok(/'lobby_read', \$1, [^\n]*where exists \(select 1 from lobbies where code = \$3\)/.test(dbSrc), "a guessed code writes no per-lobby row");
   assert.ok(dbSrc.includes("'lobby_read_all'") && dbSrc.includes("lobby-read:${ip}"), "all-lobbies backstop and per-IP lock");
   assert.ok(/'lobby_miss', \$1,[\s\S]*\[ip, opts\.missWindowS\]/.test(dbSrc), "lobby_miss stays keyed by IP only");
   assert.ok(dbSrc.indexOf("if (found) {") < dbSrc.indexOf("lobby-read:${ip}"), "the advisory lock is taken only on the unknown-code path");
