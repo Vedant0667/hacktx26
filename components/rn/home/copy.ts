@@ -1,0 +1,25 @@
+// Race Night home builder strings (H01). The integrator moves these into COPY.rn.home.
+export const RN_HOME_COPY = {
+  step: { mode: "Mode", race: "Race", moment: "Moment", drivers: "Drivers" },
+  modes: { race: "Race", moment: "Quick moment" },
+  modeHint: { race: "Lap 1 to the flag, a call at every freeze", moment: "One pit call under a safety car. About 2 minutes." },
+  pickRace: "Pick a race",
+  pickMoment: "Pick a moment",
+  driverModes: { same: "Same for everyone", choose: "Each player picks" },
+  driverChip: (code: string) => `Driver: ${code}. Change driver`,
+  pickerTitle: "Pick the driver",
+  raceSub: (laps: number, calls: number | null) => (calls == null ? `${laps} laps` : `${laps} laps · ${calls} ${calls === 1 ? "call" : "calls"}`),
+  momentSub: (lap: number, total: number | null, trigger: string | null) =>
+    `Lap ${lap}${total ? ` of ${total}` : ""}${trigger && trigger !== "GREEN" ? ` · ${trigger}` : ""}`,
+  yourLobby: "Your lobby",
+  chooseBig: (n: number) => `${n} cars`,
+  chooseSub: "Each player picks on join",
+  driverLine: (name: string, team: string, number: number) => `${name} · ${team} · #${number}`,
+  create: "Create lobby",
+  creating: "Creating",
+  join: "Join",
+  joinTitle: "Join a room",
+  footer: "Not affiliated with Formula 1 or any F1 team.",
+  loadingRaces: "Loading races",
+  loadingDrivers: "Loading drivers",
+} as const;
