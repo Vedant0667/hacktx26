@@ -145,6 +145,13 @@ export function isInjection(transcript: string): boolean {
   return INJECTION.test(transcript);
 }
 
+// Softer than an injection: words addressed to the grader or about the score. Still graded, but such a reason
+// gets no attempt allowance (lib/muse/index.ts), so persuading Muse alone earns nothing above the floor.
+const GRADER_TALK = /\b(grader|judge|marker|whoever reads)\b|\b(score|rate|mark|grade)s? (this|it|me|my|them|him|her)\b|\bdeserves? (a |the )?(top|full|max|best|highest|good|great)\b|\bscore (of )?\d+\b|\b(top|full|max|perfect) (score|marks|points)\b/i;
+export function talksToGrader(transcript: string): boolean {
+  return GRADER_TALK.test(transcript);
+}
+
 // No reason, or not a reason about the race: 0 with no Muse call. Anything else is a genuine attempt.
 export function isUngradeable(transcript: string): boolean {
   return isEmptyReason(transcript) || isInjection(transcript);
