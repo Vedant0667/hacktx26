@@ -233,10 +233,10 @@ export function CallPad({
 
   const status = (
     <header className="flex h-[52px] shrink-0 items-center justify-between gap-3 px-5">
-      <span className="meta shrink-0 text-[13px]">{COPY.phone.status(decision.trigger, decision.lap, decision.total_laps)}</span>
-      <span className="flex min-w-0 items-baseline gap-1.5 text-[13px] font-bold">
-        <span className="truncate">{me}</span>
-        {myCode && pos ? <span className="meta shrink-0 text-[13px]">· {myCode} P{pos}</span> : null}
+      <span className="nums shrink-0 text-sm font-bold tracking-[-0.01em]">{COPY.phone.status(decision.trigger, decision.lap, decision.total_laps)}</span>
+      <span className="flex min-w-0 items-baseline gap-1.5 text-sm font-semibold">
+        <span className="truncate opacity-80">{me}</span>
+        {myCode && pos ? <span className="nums shrink-0 font-bold">· {myCode} P{pos}</span> : null}
       </span>
     </header>
   );
@@ -244,7 +244,7 @@ export function CallPad({
   const countdown = (
     <span
       key={urgent ? left : "n"}
-      className={`nums inline-block font-bold leading-none tracking-[-0.04em] ${mode === "advanced" ? "text-[3.5rem]" : "text-[4.75rem]"} ${urgent ? "tick bg-on-field px-2 text-field" : ""}`}
+      className={`nums inline-block font-extrabold leading-[0.9] tracking-[-0.035em] ${mode === "advanced" ? "text-[3.5rem]" : "text-[4.75rem]"} ${urgent ? "tick bg-on-field px-2 text-field" : ""}`}
       aria-live="polite"
       aria-label={`${left} s`}
     >
@@ -280,15 +280,15 @@ export function CallPad({
           <h1 className="display mt-6 text-3xl">
             {locked?.call ? COPY.phone.lockedTitle(locked.call) : locked ? COPY.freeze.noCall : COPY.freeze.timeUp}
           </h1>
-          {why && <q className="mt-5 text-lg leading-snug">{why}</q>}
+          {why && <q className="mt-5 text-lg font-medium leading-snug">{why}</q>}
         </div>
         <div className="on-dark bg-ink px-5 pb-[max(20px,env(safe-area-inset-bottom))] pt-5 text-white">
-          <p className="nums text-lg font-bold">{left === 0 ? COPY.freeze.timeUp : COPY.freeze.waitingOn(waitingOn)}</p>
-          <ol className="mt-3 flex flex-wrap gap-1.5">
+          <p className="nums text-lg font-semibold">{left === 0 ? COPY.freeze.timeUp : COPY.freeze.waitingOn(waitingOn)}</p>
+          <ol className="mt-3 flex flex-wrap gap-2">
             {players.map((p) => {
               const inn = submittedNames.includes(p);
               return (
-                <li key={p} className={`inline-flex h-8 max-w-[14ch] items-center truncate px-2 text-sm font-black ${inn ? "bg-white text-ink" : "border border-dashed border-white/60"}`}>
+                <li key={p} className={`inline-flex h-8 max-w-[14ch] items-center truncate px-2.5 text-sm font-black ${inn ? "bg-white text-ink" : "bg-white/10 shadow-[inset_0_-2px_0_rgba(255,255,255,0.55)]"}`}>
                   {p}
                 </li>
               );
@@ -325,8 +325,8 @@ export function CallPad({
           other ? "bg-soft text-ink-2" : base
         } ${c === "BOX" ? "border-t border-white/10" : ""}`}
       >
-        <span className="text-[1.75rem] font-black tracking-[-0.02em]">{COPY.freeze.options[c]}</span>
-        <span className="flex items-center gap-2 font-mono text-[13px] font-medium">
+        <span className="text-[1.875rem] font-black leading-none tracking-[-0.025em]">{COPY.freeze.options[c]}</span>
+        <span className="nums flex items-center gap-2 text-[15px] font-semibold opacity-80">
           {on ? (
             <>
               <Check />
@@ -356,15 +356,15 @@ export function CallPad({
             <ModeToggle mode={mode} onChange={setMode} size="sm" onField />
           </div>
         </div>
-        <h1 className={`display ${adv ? "mt-2 text-[1.875rem]" : "mt-3 text-[2.625rem] leading-[0.95]"}`}>{COPY.freeze.question}</h1>
-        {brief && !adv && <RejoinSentence brief={brief} withCost={false} className="mt-3 text-[1.1875rem] leading-[1.3]" caveatClass="mt-1.5 text-base font-bold" />}
-        {brief && adv && <RejoinSentence brief={brief} withLaps className="mt-2.5 text-base leading-[1.35]" caveatClass="mt-1 text-sm font-bold" />}
+        <h1 className={`display ${adv ? "mt-2 text-[1.875rem] leading-[0.98]" : "mt-3 text-[2.625rem] leading-[0.95]"}`}>{COPY.freeze.question}</h1>
+        {brief && !adv && <RejoinSentence brief={brief} withCost={false} className="nums mt-3.5 text-[1.1875rem] font-medium leading-[1.32]" caveatClass="mt-2 text-[15px] font-semibold leading-snug opacity-85" />}
+        {brief && adv && <RejoinSentence brief={brief} withLaps className="nums mt-2.5 text-base font-medium leading-[1.4]" caveatClass="mt-1.5 text-sm font-semibold leading-snug opacity-85" />}
         {brief?.tele && adv && (
-          <div className="mt-3.5 flex flex-col">
+          <div className="mt-5 flex flex-col">
             <Sec label={COPY.tele.stintLapTimes} meta={COPY.tele.lapRange(brief.tele.stintLaps[0] ?? 1, brief.tele.stintLaps[brief.tele.stintLaps.length - 1] ?? 1)}>
               <LapChart laps={brief.tele.stintLaps} cars={[brief.tele.stint.me, brief.tele.stint.ahead, brief.tele.stint.behind]} height={124} axis values={false} status={brief.tele.status} />
             </Sec>
-            <div className="pb-4">
+            <div className="pb-5 pt-1">
               <NeighbourList t={brief.tele} />
             </div>
             <UndercutClock t={brief.tele} mode={mode} />
@@ -416,7 +416,7 @@ export function CallPad({
           </div>
         )}
         {(helper || err) && (
-          <div className="border-t border-line bg-white px-5 pb-2 pt-2 text-sm font-bold text-ink" aria-live="polite">
+          <div className="border-t border-line bg-white px-5 py-2.5 text-sm font-semibold text-ink" aria-live="polite">
             {err ? (
               <ErrorText>{err}</ErrorText>
             ) : (
@@ -445,7 +445,7 @@ export function CallPad({
           >
             {recording ? <span className="rec-dot size-3 shrink-0 rounded-full bg-white" aria-hidden /> : <MicGlyph className="shrink-0" />}
             <span className="flex min-w-0 flex-col">
-              <span className="truncate text-[1.0625rem] font-bold">
+              <span className="truncate text-[1.0625rem] font-bold tracking-[-0.01em]">
                 {recording ? VOICE_COPY.stop : voice.status === "starting" ? VOICE_COPY.starting : voice.status === "transcribing" ? VOICE_COPY.transcribingShort : hasNote ? VOICE_COPY.again : VOICE_COPY.tap}
               </span>
               <span className="mt-1 flex items-center gap-2">
@@ -456,7 +456,7 @@ export function CallPad({
                     ))}
                   </span>
                 )}
-                <span className="nums text-xs text-white/75">
+                <span className="nums text-xs font-medium text-white/70">
                   {clockText(recSecs)} / {clockText(VOICE_NOTE_MAX_S)}
                 </span>
               </span>
