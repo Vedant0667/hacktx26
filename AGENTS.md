@@ -10,6 +10,7 @@ HackTX 2026 hackathon project. Planning docs (`docs/`, `PRODUCT.md`, `tasks/`, `
 - `node --env-file=.env.local scripts/seed-db.mjs`: race data ingest. Runs `python3 engine/build.py` (data/ = cached Jolpica + OpenF1 + hand-entered facts -> build/race-data/, gitignored), then upserts races, race_laps, decision_points and decision_drivers and prints row counts. Idempotent; `--skip-build` reuses the last build. Run after migrate and after any change to data/ or engine/.
 - `npx tsx scripts/test-data.ts`: hermetic data checks (race_laps rebuild the frames, the TypeScript call-moment port matches build.py, blind columns hold no answer, per-driver answers).
 - Muse spend: GET /api/muse/usage; cap via MUSE_BUDGET_USD (default 5).
+- Databases: `.env.local` points at the dev database `outpace_dev` (same Neon server); production (Vercel) uses `neondb`. `PROD_DATABASE_URL` in `.env.local` is only for checking live lobbies (e.g. `scripts/e2e` runs against the live site). Run migrate/seed against each when the schema or race data changes; ai_verdicts and benchmark_grades can be copied from prod instead of regenerated.
 
 ## Conventions
 - Read `docs/` before making scope decisions; the judging criteria and submission rules live there.
