@@ -1,7 +1,7 @@
 // Neon (Postgres over HTTP) client and typed queries for lobbies, players and submissions.
 // Schema: db/schema.sql. Timestamps are returned as epoch milliseconds.
 import { neon, NeonDbError } from "@neondatabase/serverless";
-import type { LobbyPhase, LobbyState, Submission } from "../types";
+import type { Call, LobbyPhase, LobbyState, Submission } from "../types";
 
 let client: ReturnType<typeof neon> | null = null;
 
@@ -431,6 +431,46 @@ export async function getRaceCall(code: string, player: string, kind: "freeze" |
 }
 
 // First call per player and freeze wins; a repeat returns the stored row with duplicate = true.
+// A voice note that finished transcribing after its call went in (the 0 s auto-send waits only briefly) attaches
+// its words to that call: only when the stored call has no reason yet and grading has not started for its scope.
+// `build` turns the stored call into the new transcript and parsed reasons. Returns true when a row was updated.
+const REASONLESS = `regexp_replace(lower(coalesce(transcript, '')), '[^a-z]', '', 'g') in ('', 'box', 'stayout')`;
+export async function attachLateReason(
+  code: string,
+  player: string,
+  target: { raceLap: number } | { scope: string },
+  build: (call: Call | null) => { transcript: string; reasons: string[] },
+): Promise<boolean> {
+  const race = "raceLap" in target;
+  const rows = race
+    ? await query<{ call: Call | null }>(
+        `select call from race_calls where lobby_code = $1 and player_name = $2 and kind = 'freeze' and lap = $3 and graded_at is null and ${REASONLESS}`,
+        [code, player, target.raceLap],
+      )
+    : await query<{ call: Call | null }>(
+        `select call from submissions where lobby_code = $1 and player_name = $2 and graded_at is null and ${REASONLESS}`,
+        [code, player],
+      );
+  if (!rows.length) return false;
+  const next = build(rows[0].call);
+  const updated = race
+    ? await query(
+        `update race_calls set transcript = $4, reasons = $5::jsonb
+         where lobby_code = $1 and player_name = $2 and kind = 'freeze' and lap = $3 and graded_at is null and ${REASONLESS}
+           and not exists (select 1 from grading_claims g where g.lobby_code = $1 and g.scope = 'race')
+         returning 1`,
+        [code, player, target.raceLap, next.transcript, JSON.stringify(next.reasons)],
+      )
+    : await query(
+        `update submissions set transcript = $3, reasons = $4::jsonb
+         where lobby_code = $1 and player_name = $2 and graded_at is null and ${REASONLESS}
+           and not exists (select 1 from grading_claims g where g.lobby_code = $1 and g.scope = $5)
+         returning 1`,
+        [code, player, next.transcript, JSON.stringify(next.reasons), target.scope],
+      );
+  return updated.length > 0;
+}
+
 export async function insertRaceCall(code: string, c: RaceCallRow): Promise<{ call: RaceCallRow; duplicate: boolean }> {
   const rows = await query<RaceCallRow>(
     `insert into race_calls (lobby_code, ${RACE_CALL_COLS}, verdict, credited)

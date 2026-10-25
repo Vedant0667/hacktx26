@@ -1,5 +1,7 @@
 import type { NextRequest } from "next/server";
-import { getLobbyMeta, getRaceCall, hitRateLimit } from "@/lib/db";
+import { attachLateReason, getLobbyMeta, getRaceCall, hitRateLimit } from "@/lib/db";
+import { COPY } from "@/lib/copy";
+import { parseCallLocal } from "@/lib/muse";
 import { museTranscribe } from "@/lib/muse/asr";
 import { lobbyMetaGuarded } from "../../../_lib/access";
 import { clientIp, handle, hashToken, HttpError, normalizeCode } from "../../../_lib/http";
@@ -40,6 +42,15 @@ export const POST = handle(async (req: NextRequest, ctx: RouteContext<"/api/lobb
   if (!r.ok) {
     const error = r.reason === "budget" ? "Voice service is over budget" : r.reason === "disabled" ? "Voice service is off" : "Voice service didn't respond";
     return Response.json({ error, fallback: true }, { status: 503, headers: { "Cache-Control": "no-store" } });
+  }
+  // The 0 s auto-send may have stored this call while the note was still transcribing: give it these words.
+  const text = r.transcript.trim();
+  if (text) {
+    await attachLateReason(code, player, target.raceLap != null ? { raceLap: target.raceLap } : { scope: meta.decision_id }, (call) => {
+      const word = call ? COPY.freeze.options[call] : "";
+      const transcript = word && !text.toLowerCase().startsWith(word.toLowerCase()) ? `${word}. ${text}` : text;
+      return { transcript, reasons: parseCallLocal(transcript).reasons };
+    }).catch((err) => console.warn("transcribe: late reason not attached", err instanceof Error ? err.message : err));
   }
   return Response.json({ transcript: r.transcript, duration_ms: r.duration_ms }, { headers: { "Cache-Control": "no-store" } });
 });

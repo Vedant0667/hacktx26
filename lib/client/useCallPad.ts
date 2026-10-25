@@ -20,8 +20,10 @@ const SLOW_MS = 4000;
 // calls open 2 s into the reveal).
 // The host reveals 1.5 s after 0 s and the pad unmounts then, so the 0 s send must go out well inside that.
 const AUTO_SEND_WAIT_MS = 600;
-// A voice note still recording this close to the end is stopped, so its transcript lands before 0 s.
-const VOICE_CUTOFF_S = 5;
+// A voice note still recording this close to the end is stopped, so its transcript lands before 0 s: upload plus
+// Muse transcription takes up to about 6 s on a phone. A transcript that still lands late is attached to the stored
+// call by the transcribe route.
+const VOICE_CUTOFF_S = 8;
 
 export interface CallPadProps {
   code: string;
