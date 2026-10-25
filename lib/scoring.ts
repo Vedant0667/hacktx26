@@ -25,8 +25,11 @@ export const BASE_PENALTY = 0.15;
 // reason, or text aimed at the grader); the cap keeps the top of the scale out of reach.
 export const REASONING_FLOOR = 5;
 export const REASONING_CAP = 45;
-// What a Muse grade can reach with no rubric idea credited (a real attempt); each credited idea adds its maximum.
+// Muse grades: a reason with at least one grounded idea may reach ATTEMPT_CAP above those ideas' maxima; a real
+// attempt (8+ content words, not addressed to the grader) never scores below ATTEMPT_FLOOR. Neither depends on what
+// Muse says, so persuading the grader earns nothing without a grounded idea.
 export const ATTEMPT_CAP = 15;
+export const ATTEMPT_FLOOR = 10;
 // Keyword fallback curve: floor + 70% of the credited ideas' points (1 idea ~14, 2 ~23, 3 ~31, all 4 = 40).
 export const FALLBACK_SLOPE = 0.7;
 
