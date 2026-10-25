@@ -21,6 +21,13 @@ const BASE = {
   send: { css: "button[type=submit]", text: "^\\s*send\\b" },
   // End summary: the page must NOT show this while the server is still grading
   scoringText: "Scoring the calls",
+  // room.mjs: the typed reason on the call pad, the replay audible, the host's two-tap remove, the removed screen
+  typeBtn: { css: "button[aria-controls=why]" },
+  why: { css: "input#why" },
+  audible: { css: "form button[type=submit]", text: "box now" },
+  kick: { css: 'button[aria-label="Remove {name}"]' },
+  kickConfirm: { css: 'button[aria-label="Tap again to remove"]' },
+  removed: { css: "[role=alert]", text: "removed by the host" },
 };
 
 const OVERRIDES = {

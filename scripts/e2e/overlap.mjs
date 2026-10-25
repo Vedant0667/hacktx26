@@ -1,9 +1,10 @@
 // Runs inside the page (serialised by puppeteer: keep it self-contained, no imports or closures).
-// Returns { overlaps, clipped, hscroll } for the visible text on screen.
+// Returns { overlaps, clipped, hscroll, occluded } for the visible text on screen.
 export function findLayoutIssues(minOverlap) {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const items = [];
+  const occluded = [];
   const label = (el) => {
     const t = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 40);
     const cls = typeof el.className === "string" ? el.className.split(/\s+/).slice(0, 2).join(".") : "";
@@ -64,12 +65,26 @@ export function findLayoutIssues(minOverlap) {
     const w4 = (box.r - box.l) / 4;
     const h4 = (box.b - box.t) / 4;
     const pts = [[cx, cy], [cx - w4, cy - h4], [cx + w4, cy - h4], [cx - w4, cy + h4], [cx + w4, cy + h4]];
-    const seen = pts.some(([x, y]) => {
-      if (x < 0 || y < 0 || x >= vw || y >= vh) return true; // off-screen points cannot be hit-tested
-      const hit = document.elementFromPoint(x, y);
-      return !hit || hit === el || el.contains(hit) || hit.contains(el);
-    });
-    if (!seen) continue;
+    const hits = pts.map(([x, y]) => (x < 0 || y < 0 || x >= vw || y >= vh ? null : document.elementFromPoint(x, y)));
+    const seen = hits.some((hit) => !hit || hit === el || el.contains(hit) || hit.contains(el));
+    if (!seen) {
+      // Under a fixed or sticky bar (content scrolled beneath it) is fine; text buried under an element in the
+      // normal flow (a dock or card drawn over a list that ran too long) is a layout bug the user cannot read.
+      // Only an opaque box counts: a tall transparent line box over a label paints nothing on it. Decorative
+      // (aria-hidden) text is meant to sit behind things.
+      const cover = hits.find((h) => h);
+      let pinned = false;
+      let painter = null;
+      for (let a = cover; a && !a.contains(el); a = a.parentElement) {
+        const cs = getComputedStyle(a);
+        if (cs.position === "fixed" || cs.position === "sticky") pinned = true;
+        const opaque = (st) => (st.backgroundColor && st.backgroundColor !== "transparent" && !/rgba\([^)]*,\s*0\)$/.test(st.backgroundColor)) || st.backgroundImage !== "none";
+        const pseudo = ["::before", "::after"].map((p) => getComputedStyle(a, p)).some((st) => st.content !== "none" && st.content !== "normal" && opaque(st));
+        if (!painter && (opaque(cs) || pseudo)) painter = a;
+      }
+      if (cover && painter && !pinned && !inPortal(cover) && !el.closest("[aria-hidden=true]")) occluded.push(`${label(el)} @${at(box)} is under ${label(painter)}`);
+      continue;
+    }
     items.push({ el, ...box });
   }
   const overlaps = [];
@@ -89,5 +104,5 @@ export function findLayoutIssues(minOverlap) {
   }
   const root = document.documentElement;
   const hscroll = root.scrollWidth > vw + 1 ? `page scrollWidth ${root.scrollWidth} > viewport ${vw}` : null;
-  return { overlaps: [...new Set(overlaps)], clipped: [...new Set(clipped)], hscroll };
+  return { overlaps: [...new Set(overlaps)], clipped: [...new Set(clipped)], hscroll, occluded: [...new Set(occluded)] };
 }
